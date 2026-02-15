@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
 // Message Types
-export type MessageType = "join" | "leave" | "move" | "error" | "broadcast";
+export type MessageType = "join" | "leave" | "action" | "error";
 
 // Base Message Structure
 export interface WebSocketMessage {
@@ -14,32 +14,20 @@ export interface WebSocketMessage {
 }
 
 // Join Message Payload
-export interface JoinPayload {
+export interface JoinPayload extends Record<string, unknown> {
   player_name: string;
   metadata?: Record<string, unknown>;
 }
 
 // Leave Message Payload
-export interface LeavePayload {
+export interface LeavePayload extends Record<string, unknown> {
   reason?: string;
-}
-
-// Move Message Payload
-export interface MovePayload {
-  action: string;
-  data?: Record<string, unknown>;
 }
 
 // Error Message Payload
 export interface ErrorPayload {
   code: string;
   message: string;
-}
-
-// Broadcast Message Payload
-export interface BroadcastPayload {
-  event: string;
-  data?: Record<string, unknown>;
 }
 
 // Hook Options
@@ -65,8 +53,22 @@ export interface UseActionsReturn {
   // Action methods
   sendJoin: (roomId: string, payload: JoinPayload) => boolean;
   sendLeave: (roomId: string, payload?: LeavePayload) => boolean;
-  sendMove: (roomId: string, payload: MovePayload) => boolean;
   sendCustomMessage: (message: Partial<WebSocketMessage>) => boolean;
+
+  plantBean: (
+    roomId: string,
+    playerId: string,
+    cardId: string,
+    fieldId: string,
+  ) => boolean;
+  tradeBean: (
+    roomId: string,
+    fromPlayerId: string,
+    toPlayerId: string,
+    cardId: string,
+  ) => boolean;
+  harvestField: (roomId: string, playerId: string, fieldId: string) => boolean;
+  turnOverBean: (roomId: string) => boolean;
 }
 
 /**
@@ -102,7 +104,8 @@ export function useActions({
 
         // Handle error messages
         if (message.type === "error" && onError) {
-          onError(message.payload as ErrorPayload);
+          const errorPayload = message.payload as unknown as ErrorPayload;
+          onError(errorPayload);
         }
 
         // Call custom message handler
@@ -115,7 +118,6 @@ export function useActions({
     },
   });
 
-  // Helper to check if connection is ready
   const isConnectionReady = useCallback(() => {
     if (readyState !== ReadyState.OPEN) {
       console.warn("WebSocket is not connected. Cannot send message.");
@@ -124,7 +126,6 @@ export function useActions({
     return true;
   }, [readyState]);
 
-  // Helper to create base message
   const createMessage = useCallback(
     (
       type: MessageType,
@@ -140,7 +141,6 @@ export function useActions({
     [playerId],
   );
 
-  // Send join message
   const sendJoin = useCallback(
     (roomId: string, payload: JoinPayload): boolean => {
       if (!isConnectionReady()) return false;
@@ -152,7 +152,6 @@ export function useActions({
     [isConnectionReady, createMessage, sendJsonMessage],
   );
 
-  // Send leave message
   const sendLeave = useCallback(
     (roomId: string, payload: LeavePayload = {}): boolean => {
       if (!isConnectionReady()) return false;
@@ -164,25 +163,18 @@ export function useActions({
     [isConnectionReady, createMessage, sendJsonMessage],
   );
 
-  // Send move message
-  const sendMove = useCallback(
-    (roomId: string, payload: MovePayload): boolean => {
-      if (!isConnectionReady()) return false;
-
-      const message = createMessage("move", roomId, payload);
-      sendJsonMessage(message);
-      return true;
-    },
-    [isConnectionReady, createMessage, sendJsonMessage],
-  );
-
-  // Send custom message
   const sendCustomMessage = useCallback(
     (message: Partial<WebSocketMessage>): boolean => {
       if (!isConnectionReady()) return false;
 
+      // Ensure type is defined
+      if (!message.type) {
+        console.error("Message type is required");
+        return false;
+      }
+
       const fullMessage: WebSocketMessage = {
-        type: message.type || "broadcast",
+        type: message.type,
         room_id: message.room_id,
         player_id: message.player_id || playerId,
         payload: message.payload || {},
@@ -193,6 +185,64 @@ export function useActions({
       return true;
     },
     [isConnectionReady, playerId, sendJsonMessage],
+  );
+
+  const plantBean = useCallback(
+    (
+      roomId: string,
+      playerId: string,
+      cardId: string,
+      fieldId: string,
+    ): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload = { type: "plantBean", playerId, cardId, fieldId };
+      const message = createMessage("action", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
+
+  const tradeBean = useCallback(
+    (
+      roomId: string,
+      fromPlayerId: string,
+      toPlayerId: string,
+      cardId: string,
+    ): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload = { type: "tradeBean", fromPlayerId, toPlayerId, cardId };
+      const message = createMessage("action", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
+
+  const harvestField = useCallback(
+    (roomId: string, playerId: string, fieldId: string): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload = { type: "harvestField", playerId, fieldId };
+      const message = createMessage("action", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
+
+  const turnOverBean = useCallback(
+    (roomId: string): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload = { type: "harvestField" };
+      const message = createMessage("action", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
   );
 
   return {
@@ -209,7 +259,11 @@ export function useActions({
     // Actions
     sendJoin,
     sendLeave,
-    sendMove,
     sendCustomMessage,
+
+    plantBean,
+    tradeBean,
+    harvestField,
+    turnOverBean,
   };
 }

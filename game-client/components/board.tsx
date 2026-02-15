@@ -5,14 +5,14 @@ import Field from "@/components/field";
 import { CardType, ExternalPlayer, FieldType } from "@/schemas/types";
 
 type BoardProp = {
-  myDeck: CardType[];
+  myHand: CardType[];
   myField: FieldType;
   players: ExternalPlayer[];
   centerCards: CardType[];
 };
 
-export default function Page({
-  myDeck,
+export default function Board({
+  myHand,
   myField,
   players,
   centerCards,
@@ -59,6 +59,14 @@ export default function Page({
           );
         })}
 
+        <div
+          className="flex text-center items-center w-20 h-20 mr-4 
+												bg-linear-to-b from-green-600 to-green-700 
+												border-2 border-green-800 rounded-lg shadow-lg"
+        >
+          Center Deck
+        </div>
+
         {/* Center cards */}
         <div className="flex gap-4">
           {centerCards.map((card, index) => {
@@ -74,7 +82,7 @@ export default function Page({
       {/* Main player at the bottom */}
       <div className="w-full mt-auto mx-auto">
         <div className="flex justify-center gap-4">
-          {myDeck.map((card, index) => {
+          {myHand.map((card, index) => {
             return <Card key={index} cardName={card.cardName} />;
           })}
         </div>
