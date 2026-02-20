@@ -1,0 +1,12 @@
+{"type": "join", "room_id": "1111", "player_id": "TestPlayer1", "payload": { "player_name": "TestPlayer1" }, "timestamp": "2026-02-18T14:58:37Z" }
+
+{"type": "join", "room_id": "1111", "player_id": "TestPlayer2", "payload": { "player_name": "TestPlayer2" }, "timestamp": "2026-02-18T14:58:37Z" }
+
+
+{"type": "state", "room_id": "1111", "player_id": "TestPlayer1", "payload": { "player_name": "TestPlayer1" }, "timestamp": "2026-02-18T14:58:37Z" }
+
+
+-- Actions
+{"type": "action", "room_id": "1111", "player_id": "TestPlayer1", "payload": { "type": "plantBean", "cardId": "card-85","fieldId": "field-TestPlayer1"}, "timestamp": "2026-02-18T14:58:37Z" }
+
+

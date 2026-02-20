@@ -1,12 +1,20 @@
 import { FieldType } from "@/schemas/types";
 
-type FieldProp = { field: FieldType };
+type FieldProp = {
+  field: FieldType;
+  onSlotClick?: (slotIndex: number) => void;
+  highlightEmpty?: boolean;
+};
 
-export default function Field({ field }: FieldProp) {
+export default function Field({
+  field,
+  onSlotClick,
+  highlightEmpty = false,
+}: FieldProp) {
   const maxSlots = 2;
   const slots = Array.from(
     { length: maxSlots },
-    (_, index) => field[index] || null,
+    (_, index) => field.slots?.[index] || null,
   );
 
   return (
@@ -14,14 +22,15 @@ export default function Field({ field }: FieldProp) {
       {slots.map((slot, index) => (
         <div
           key={slot?.slotId || `empty-${index}`}
+          onClick={() => onSlotClick?.(index)}
           className={`
             relative flex flex-col items-center justify-center
             w-20 h-28 rounded-md border-2
             transition-all duration-200
             ${
               slot
-                ? "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 shadow-md hover:shadow-xl hover:-translate-y-1"
-                : "bg-green-700/50 border-green-600 border-dashed"
+                ? "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 shadow-md hover:shadow-xl hover:-translate-y-1 cursor-pointer"
+                : `bg-green-700/50 border-dashed ${highlightEmpty ? "border-green-400 hover:bg-green-600/70 hover:border-green-500 cursor-pointer" : "border-green-600"}`
             }
           `}
         >
@@ -43,7 +52,11 @@ export default function Field({ field }: FieldProp) {
               </div>
             </>
           ) : (
-            <div className="text-green-500/50 text-2xl">+</div>
+            <div
+              className={`text-2xl ${highlightEmpty ? "text-green-400" : "text-green-500/50"}`}
+            >
+              +
+            </div>
           )}
         </div>
       ))}

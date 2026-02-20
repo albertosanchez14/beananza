@@ -1,10 +1,14 @@
 import { useCallback } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
-// Message Types
-export type MessageType = "join" | "leave" | "action" | "error";
+export type MessageType =
+  | "join"
+  | "leave"
+  | "action"
+  | "error"
+  | "state"
+  | "myState";
 
-// Base Message Structure
 export interface WebSocketMessage {
   type: MessageType;
   room_id?: string;
@@ -13,24 +17,20 @@ export interface WebSocketMessage {
   timestamp: string;
 }
 
-// Join Message Payload
 export interface JoinPayload extends Record<string, unknown> {
   player_name: string;
   metadata?: Record<string, unknown>;
 }
 
-// Leave Message Payload
 export interface LeavePayload extends Record<string, unknown> {
   reason?: string;
 }
 
-// Error Message Payload
 export interface ErrorPayload {
   code: string;
   message: string;
 }
 
-// Hook Options
 export interface UseActionsOptions {
   wsUrl: string;
   playerId: string;
@@ -39,7 +39,6 @@ export interface UseActionsOptions {
   shouldReconnect?: boolean;
 }
 
-// Hook Return Type
 export interface UseActionsReturn {
   // Connection state
   readyState: ReadyState;
@@ -47,10 +46,8 @@ export interface UseActionsReturn {
   isConnecting: boolean;
   isDisconnected: boolean;
 
-  // Last message received
   lastMessage: WebSocketMessage | null;
 
-  // Action methods
   sendJoin: (roomId: string, payload: JoinPayload) => boolean;
   sendLeave: (roomId: string, payload?: LeavePayload) => boolean;
   sendCustomMessage: (message: Partial<WebSocketMessage>) => boolean;
@@ -69,6 +66,8 @@ export interface UseActionsReturn {
   ) => boolean;
   harvestField: (roomId: string, playerId: string, fieldId: string) => boolean;
   turnOverBean: (roomId: string) => boolean;
+  myState: (roomId: string) => boolean;
+  nextPhase: (roomId: string) => boolean;
 }
 
 /**
@@ -237,7 +236,31 @@ export function useActions({
     (roomId: string): boolean => {
       if (!isConnectionReady()) return false;
 
-      const payload = { type: "harvestField" };
+      const payload = { type: "turnOverBean" };
+      const message = createMessage("action", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
+
+  const myState = useCallback(
+    (roomId: string): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload = { type: "myState" };
+      const message = createMessage("myState", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
+
+  const nextPhase = useCallback(
+    (roomId: string): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload = { type: "nextPhase" };
       const message = createMessage("action", roomId, payload);
       sendJsonMessage(message);
       return true;
@@ -246,17 +269,14 @@ export function useActions({
   );
 
   return {
-    // Connection state
     readyState,
     isConnected: readyState === ReadyState.OPEN,
     isConnecting: readyState === ReadyState.CONNECTING,
     isDisconnected:
       readyState === ReadyState.CLOSED || readyState === ReadyState.CLOSING,
 
-    // Last message
     lastMessage: lastJsonMessage as WebSocketMessage | null,
 
-    // Actions
     sendJoin,
     sendLeave,
     sendCustomMessage,
@@ -265,5 +285,8 @@ export function useActions({
     tradeBean,
     harvestField,
     turnOverBean,
+
+    myState,
+    nextPhase,
   };
 }

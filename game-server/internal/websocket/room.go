@@ -10,17 +10,10 @@ import (
 
 // Room represents a game room where multiple clients can interact
 type Room struct {
-	// Unique room identifier
-	ID string
-
-	// Registered clients in this room
+	ID      string
 	clients map[*Client]bool
-
-	// Mutex for thread-safe operations
-	mu sync.RWMutex
-
-	// Logger for this room
-	logger *zap.Logger
+	mu      sync.RWMutex
+	logger  *zap.Logger
 }
 
 // NewRoom creates a new room
@@ -32,7 +25,6 @@ func NewRoom(id string, logger *zap.Logger) *Room {
 	}
 }
 
-// Join adds a client to the room
 func (r *Room) Join(client *Client) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -44,7 +36,6 @@ func (r *Room) Join(client *Client) {
 		zap.Int("total_clients", len(r.clients)),
 	)
 
-	// Notify other clients about the new player
 	joinMsg, err := protocol.NewMessage(
 		protocol.MessageTypeBroadcast,
 		r.ID,
@@ -65,7 +56,6 @@ func (r *Room) Join(client *Client) {
 	r.broadcastToOthers(joinMsg, client)
 }
 
-// Leave removes a client from the room
 func (r *Room) Leave(client *Client) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -80,7 +70,6 @@ func (r *Room) Leave(client *Client) {
 		zap.Int("total_clients", len(r.clients)),
 	)
 
-	// Notify other clients about the player leaving
 	leaveMsg, err := protocol.NewMessage(
 		protocol.MessageTypeBroadcast,
 		r.ID,
@@ -101,7 +90,6 @@ func (r *Room) Leave(client *Client) {
 	r.broadcastToOthers(leaveMsg, client)
 }
 
-// Broadcast sends a message to all clients in the room
 func (r *Room) Broadcast(msg *protocol.Message, sender *Client) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -123,7 +111,6 @@ func (r *Room) Broadcast(msg *protocol.Message, sender *Client) {
 	)
 }
 
-// broadcastToOthers sends a message to all clients except the sender
 func (r *Room) broadcastToOthers(msg *protocol.Message, sender *Client) {
 	data, err := msg.ToJSON()
 	if err != nil {
@@ -138,14 +125,12 @@ func (r *Room) broadcastToOthers(msg *protocol.Message, sender *Client) {
 	}
 }
 
-// ClientCount returns the number of clients in the room
 func (r *Room) ClientCount() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.clients)
 }
 
-// GetClients returns a slice of all clients in the room
 func (r *Room) GetClients() []*Client {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -157,7 +142,6 @@ func (r *Room) GetClients() []*Client {
 	return clients
 }
 
-// IsEmpty checks if the room has no clients
 func (r *Room) IsEmpty() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

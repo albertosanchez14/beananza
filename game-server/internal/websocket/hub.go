@@ -5,6 +5,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/yourusername/game-server/internal/game"
 	"github.com/yourusername/game-server/internal/storage"
 )
 
@@ -15,6 +16,9 @@ type Hub struct {
 
 	// Active rooms
 	rooms map[string]*Room
+
+	// Game manager for game sessions
+	gameManager *game.Manager
 
 	// Register requests from clients
 	register chan *Client
@@ -35,12 +39,13 @@ type Hub struct {
 // NewHub creates a new Hub
 func NewHub(logger *zap.Logger, repo *storage.Repository) *Hub {
 	return &Hub{
-		clients:    make(map[*Client]bool),
-		rooms:      make(map[string]*Room),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		logger:     logger,
-		repo:       repo,
+		clients:     make(map[*Client]bool),
+		rooms:       make(map[string]*Room),
+		gameManager: game.NewManager(repo, logger),
+		register:    make(chan *Client),
+		unregister:  make(chan *Client),
+		logger:      logger,
+		repo:        repo,
 	}
 }
 
@@ -117,6 +122,10 @@ func (h *Hub) cleanupEmptyRooms() {
 	for roomID, room := range h.rooms {
 		if room.IsEmpty() {
 			delete(h.rooms, roomID)
+
+			// Also remove the game session
+			h.gameManager.RemoveSession(roomID)
+
 			h.logger.Info("room deleted",
 				zap.String("room_id", roomID),
 				zap.Int("total_rooms", len(h.rooms)),

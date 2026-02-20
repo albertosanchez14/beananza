@@ -7,6 +7,7 @@ import (
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 
+	"github.com/yourusername/game-server/internal/game"
 	"github.com/yourusername/game-server/pkg/protocol"
 )
 
@@ -53,7 +54,6 @@ type Client struct {
 	cancel context.CancelFunc
 }
 
-// NewClient creates a new WebSocket client
 func NewClient(id string, conn *websocket.Conn, hub *Hub, logger *zap.Logger) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -68,7 +68,6 @@ func NewClient(id string, conn *websocket.Conn, hub *Hub, logger *zap.Logger) *C
 	}
 }
 
-// ReadPump pumps messages from the WebSocket connection to the hub
 func (c *Client) ReadPump() {
 	defer func() {
 		c.hub.Unregister(c)
@@ -110,7 +109,6 @@ func (c *Client) ReadPump() {
 	}
 }
 
-// WritePump pumps messages from the hub to the WebSocket connection
 func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -157,7 +155,6 @@ func (c *Client) WritePump() {
 	}
 }
 
-// handleMessage processes incoming messages
 func (c *Client) handleMessage(msg *protocol.Message) {
 	c.logger.Debug("received message",
 		zap.String("type", string(msg.Type)),
@@ -169,14 +166,18 @@ func (c *Client) handleMessage(msg *protocol.Message) {
 		c.handleJoin(msg)
 	case protocol.MessageTypeLeave:
 		c.handleLeave(msg)
-	case protocol.MessageTypeMove:
-		c.handleMove(msg)
+	case protocol.MessageTypeAction:
+		c.handleAction(msg)
+	case protocol.MessageTypeState:
+		session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
+		c.sendGameState(msg.RoomID, session)
+	case protocol.MessageTypePlayerState:
+		c.handlePlayerState(msg)
 	default:
 		c.sendError("unknown_message_type", "Unknown message type")
 	}
 }
 
-// handleJoin handles a join message
 func (c *Client) handleJoin(msg *protocol.Message) {
 	var payload protocol.JoinPayload
 	if err := msg.ParsePayload(&payload); err != nil {
@@ -194,6 +195,12 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 	room.Join(c)
 	c.room = room
 
+	// Add player to game session
+	session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
+	if err := session.HandlePlayerJoin(c.PlayerID, c.PlayerName); err != nil {
+		c.logger.Error("failed to add player to game session", zap.Error(err))
+	}
+
 	c.logger.Info("player joined room",
 		zap.String("room_id", msg.RoomID),
 		zap.String("player_name", payload.PlayerName),
@@ -205,12 +212,21 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 		defer cancel()
 		c.hub.repo.AddPlayerToRoom(ctx, msg.RoomID, c.PlayerID)
 	}
+
+	// Send current game state to the joining client
+	c.sendGameState(msg.RoomID, session)
 }
 
-// handleLeave handles a leave message
 func (c *Client) handleLeave(msg *protocol.Message) {
 	if c.room == nil {
 		return
+	}
+
+	// Remove player from game session
+	if session, ok := c.hub.gameManager.GetSession(c.room.ID); ok {
+		if err := session.HandlePlayerLeave(c.PlayerID); err != nil {
+			c.logger.Error("failed to remove player from game session", zap.Error(err))
+		}
 	}
 
 	c.room.Leave(c)
@@ -229,28 +245,57 @@ func (c *Client) handleLeave(msg *protocol.Message) {
 	c.room = nil
 }
 
-// handleMove handles a move message
-func (c *Client) handleMove(msg *protocol.Message) {
+func (c *Client) handleAction(msg *protocol.Message) {
 	if c.room == nil {
 		c.sendError("not_in_room", "You must join a room first")
 		return
 	}
 
-	var payload protocol.MovePayload
+	var payload map[string]interface{}
 	if err := msg.ParsePayload(&payload); err != nil {
-		c.sendError("invalid_payload", "Invalid move payload")
+		c.sendError("invalid_payload", "Invalid action payload")
 		return
 	}
 
-	c.logger.Debug("player move",
+	// Get action type
+	actionType, ok := payload["type"].(string)
+	if !ok {
+		c.sendError("invalid_action", "Action type missing")
+		return
+	}
+
+	// Get game session
+	session, ok := c.hub.gameManager.GetSession(c.room.ID)
+	if !ok {
+		c.sendError("session_not_found", "Game session not found")
+		return
+	}
+
+	// Handle different action types
+	switch actionType {
+	case "plantBean":
+		c.handlePlantBean(session, payload)
+	case "tradeBean":
+		c.handleTradeBean(session, payload)
+	case "harvestField":
+		c.handleHarvestField(session, payload)
+	case "turnOverBean":
+		c.handleTurnOverBean(session, payload)
+	case "nextPhase":
+		c.handleNextPhase(session, payload)
+	default:
+		c.sendError("unknown_action", "Unknown action type")
+		return
+	}
+
+	c.logger.Debug("player action",
 		zap.String("room_id", c.room.ID),
-		zap.String("action", payload.Action),
+		zap.String("action", actionType),
 	)
 
-	// Broadcast the move to all clients in the room
+	// Broadcast action to all clients in room
 	c.room.Broadcast(msg, c)
 
-	// Persist message to Redis
 	if c.hub.repo != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -258,7 +303,69 @@ func (c *Client) handleMove(msg *protocol.Message) {
 	}
 }
 
-// sendError sends an error message to the client
+func (c *Client) handlePlantBean(session interface{}, payload map[string]interface{}) {
+	cardID, _ := payload["cardId"].(string)
+	fieldID, _ := payload["fieldId"].(string)
+
+	if cardID == "" || fieldID == "" {
+		c.sendError("invalid_params", "Missing cardId or fieldId")
+		return
+	}
+
+	if s, ok := session.(*game.Session); ok {
+		if err := s.HandlePlantBean(c.PlayerID, cardID, fieldID); err != nil {
+			c.sendError("plant_failed", "Failed to plant bean")
+		}
+	}
+}
+
+func (c *Client) handleTradeBean(session interface{}, payload map[string]interface{}) {
+	cardID, _ := payload["cardId"].(string)
+	toPlayerID, _ := payload["toPlayerId"].(string)
+
+	if cardID == "" || toPlayerID == "" {
+		c.sendError("invalid_params", "Missing cardId or toPlayerId")
+		return
+	}
+
+	if s, ok := session.(*game.Session); ok {
+		if err := s.HandleTradeBean(c.PlayerID, toPlayerID, cardID); err != nil {
+			c.sendError("trade_failed", "Failed to trade bean")
+		}
+	}
+}
+
+func (c *Client) handleHarvestField(session interface{}, payload map[string]interface{}) {
+	fieldID, _ := payload["fieldId"].(string)
+
+	if fieldID == "" {
+		c.sendError("invalid_params", "Missing fieldId")
+		return
+	}
+
+	if s, ok := session.(*game.Session); ok {
+		if err := s.HandleHarvestField(c.PlayerID, fieldID); err != nil {
+			c.sendError("harvest_failed", "Failed to harvest field")
+		}
+	}
+}
+
+func (c *Client) handleTurnOverBean(session interface{}, payload map[string]interface{}) {
+	if s, ok := session.(*game.Session); ok {
+		if err := s.HandleTurnOverBean(); err != nil {
+			c.sendError("turnover_failed", "Failed to turn over bean")
+		}
+	}
+}
+
+func (c *Client) handleNextPhase(session interface{}, payload map[string]interface{}) {
+	if s, ok := session.(*game.Session); ok {
+		if err := s.HandleNextPhase(); err != nil {
+			c.sendError("next_phase", "Failed to go to the next phase")
+		}
+	}
+}
+
 func (c *Client) sendError(code, message string) {
 	errorMsg, err := protocol.NewMessage(
 		protocol.MessageTypeError,
@@ -284,6 +391,77 @@ func (c *Client) sendError(code, message string) {
 	case c.send <- data:
 	default:
 		c.logger.Warn("send channel full, dropping error message")
+	}
+}
+
+func (c *Client) sendGameState(roomID string, session interface{}) {
+	var stateData map[string]interface{}
+
+	if s, ok := session.(*game.Session); ok {
+		stateData = s.GetFullSnapshot()
+	} else {
+		c.logger.Error("invalid session type")
+		return
+	}
+
+	stateMsg, err := protocol.NewMessage(
+		protocol.MessageTypeState,
+		roomID,
+		c.PlayerID,
+		stateData,
+	)
+	if err != nil {
+		c.logger.Error("failed to create state message", zap.Error(err))
+		return
+	}
+
+	data, err := stateMsg.ToJSON()
+	if err != nil {
+		c.logger.Error("failed to marshal state message", zap.Error(err))
+		return
+	}
+
+	select {
+	case c.send <- data:
+		c.logger.Debug("sent game state to client", zap.String("room_id", roomID))
+	default:
+		c.logger.Warn("send channel full, dropping state message")
+	}
+}
+
+func (c *Client) handlePlayerState(msg *protocol.Message) {
+	var stateData map[string]interface{}
+
+	// Get game session
+	session, ok := c.hub.gameManager.GetSession(c.room.ID)
+	if !ok {
+		c.sendError("session_not_found", "Game session not found")
+		return
+	}
+	stateData = session.GetPlayerSnapshot(msg.PlayerID)
+
+	stateMsg, err := protocol.NewMessage(
+		protocol.MessageTypePlayerState,
+		msg.RoomID,
+		c.PlayerID,
+		stateData,
+	)
+	if err != nil {
+		c.logger.Error("failed to create state message", zap.Error(err))
+		return
+	}
+
+	data, err := stateMsg.ToJSON()
+	if err != nil {
+		c.logger.Error("failed to marshal state message", zap.Error(err))
+		return
+	}
+
+	select {
+	case c.send <- data:
+		c.logger.Debug("sent game state to client", zap.String("room_id", c.room.ID))
+	default:
+		c.logger.Warn("send channel full, dropping state message")
 	}
 }
 

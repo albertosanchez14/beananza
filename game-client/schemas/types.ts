@@ -9,7 +9,10 @@ export type Slot = {
   cardQuantity: number;
 };
 
-export type FieldType = Array<Slot>;
+export type FieldType = {
+  fieldId: string;
+  slots: Array<Slot>;
+};
 
 export type ExternalPlayer = {
   playerId: string;

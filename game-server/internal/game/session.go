@@ -2,7 +2,9 @@ package game
 
 import (
 	"context"
+	"math/rand"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -11,25 +13,22 @@ import (
 
 // Session manages a game session for a specific room
 type Session struct {
-	// Game state
-	state *State
-
-	// Storage repository
-	repo *storage.Repository
-
-	// Logger
-	logger *zap.Logger
-
-	// Mutex for thread-safe operations
-	mu sync.RWMutex
+	state       *State
+	deck        *Deck
+	centerCards []*Card // Cards in the center for trading
+	repo        *storage.Repository
+	logger      *zap.Logger
+	mu          sync.RWMutex
 }
 
 // NewSession creates a new game session
 func NewSession(roomID string, repo *storage.Repository, logger *zap.Logger) *Session {
 	return &Session{
-		state:  NewState(roomID),
-		repo:   repo,
-		logger: logger.With(zap.String("room_id", roomID)),
+		state:       NewState(roomID),
+		deck:        nil,
+		centerCards: make([]*Card, 0),
+		repo:        repo,
+		logger:      logger.With(zap.String("room_id", roomID)),
 	}
 }
 
@@ -38,6 +37,66 @@ func (s *Session) GetState() *State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.state.Clone()
+}
+
+// GetFullSnapshot returns a complete snapshot of the session including all game data
+func (s *Session) GetFullSnapshot() map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	snapshot := map[string]interface{}{
+		"room_id":      s.state.RoomID,
+		"phase":        s.state.Phase,
+		"players":      s.state.Players,
+		"turn_order":   s.state.TurnOrder,
+		"current_turn": s.state.CurrentTurn,
+		"center_cards": s.centerCards,
+		"started_at":   s.state.StartedAt,
+		"ended_at":     s.state.EndedAt,
+		"updated_at":   s.state.UpdatedAt,
+		"data":         s.state.Data,
+	}
+
+	// Include deck size but not the actual deck contents (to prevent cheating)
+	if s.deck != nil {
+		snapshot["deck_size"] = s.deck.Size()
+	} else {
+		snapshot["deck_size"] = 0
+	}
+
+	return snapshot
+}
+
+// GetPlayerSnapshot returns a complete snapshot of the session for a player
+func (s *Session) GetPlayerSnapshot(playerId string) map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	playerData, ok := s.state.GetPlayer(playerId)
+	if !ok {
+	}
+
+	snapshot := map[string]interface{}{
+		"room_id":      s.state.RoomID,
+		"phase":        s.state.Phase,
+		"player":       playerData,
+		"turn_order":   s.state.TurnOrder,
+		"current_turn": s.state.CurrentTurn,
+		"center_cards": s.centerCards,
+		"started_at":   s.state.StartedAt,
+		"ended_at":     s.state.EndedAt,
+		"updated_at":   s.state.UpdatedAt,
+		"data":         s.state.Data,
+	}
+
+	// Include deck size but not the actual deck contents (to prevent cheating)
+	if s.deck != nil {
+		snapshot["deck_size"] = s.deck.Size()
+	} else {
+		snapshot["deck_size"] = 0
+	}
+
+	return snapshot
 }
 
 // HandlePlayerJoin handles a player joining the game
@@ -61,7 +120,6 @@ func (s *Session) HandlePlayerJoin(playerID, playerName string) error {
 		}
 	}
 
-	// Auto-start game if enough players (example: 2 players)
 	if s.state.Phase == "waiting" && s.state.PlayerCount() >= 2 {
 		s.startGame()
 	}
@@ -99,58 +157,47 @@ func (s *Session) HandlePlayerLeave(playerID string) error {
 	return nil
 }
 
-// HandleMove handles a player's move
-func (s *Session) HandleMove(playerID string, action string, data map[string]interface{}) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.state.Phase != "playing" {
-		s.logger.Warn("move attempted while game not playing",
-			zap.String("player_id", playerID),
-			zap.String("phase", s.state.Phase),
-		)
-		return nil
-	}
-
-	s.logger.Debug("player move",
-		zap.String("player_id", playerID),
-		zap.String("action", action),
-	)
-
-	// Store move data in game state
-	// This is game-specific logic - customize as needed
-	moves, _ := s.state.GetData("moves")
-	var movesList []map[string]interface{}
-	if moves != nil {
-		movesList = moves.([]map[string]interface{})
-	}
-
-	moveData := map[string]interface{}{
-		"player_id": playerID,
-		"action":    action,
-		"data":      data,
-	}
-	movesList = append(movesList, moveData)
-	s.state.SetData("moves", movesList)
-
-	// Persist to Redis
-	if s.repo != nil {
-		ctx := context.Background()
-		if err := s.repo.SaveGameState(ctx, s.state.RoomID, s.state); err != nil {
-			s.logger.Error("failed to save game state", zap.Error(err))
-			return err
-		}
-	}
-
-	return nil
-}
-
 // startGame transitions the game to playing phase
 func (s *Session) startGame() {
-	s.state.SetPhase("playing")
+	s.deck = NewDeck()
+	s.deck.Shuffle()
+
+	// Create random turn order from players
+	s.state.TurnOrder = make([]string, 0, len(s.state.Players))
+	for _, player := range s.state.Players {
+		s.state.TurnOrder = append(s.state.TurnOrder, player.ID)
+	}
+
+	// Shuffle the turn order randomly
+	s.shuffleTurnOrder()
+
+	// Deal cards to players (5 cards each in standard Bohnanza)
+	for playerID, player := range s.state.Players {
+		player.Hand = s.deck.Draw(5)
+		s.logger.Info("dealt cards to player",
+			zap.String("player_id", playerID),
+			zap.Int("cards_dealt", len(player.Hand)),
+		)
+	}
+
+	s.state.SetPhase("plantHand")
+	s.state.CurrentTurn = 0
+	playerTurn := s.state.TurnOrder[s.state.CurrentTurn]
+
 	s.logger.Info("game started",
 		zap.Int("player_count", s.state.PlayerCount()),
+		zap.Int("deck_size", s.deck.Size()),
+		zap.Int("center_cards", len(s.centerCards)),
+		zap.String("player_turn_id", playerTurn),
 	)
+}
+
+// shuffleTurnOrder randomizes the turn order
+func (s *Session) shuffleTurnOrder() {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	r.Shuffle(len(s.state.TurnOrder), func(i, j int) {
+		s.state.TurnOrder[i], s.state.TurnOrder[j] = s.state.TurnOrder[j], s.state.TurnOrder[i]
+	})
 }
 
 // endGame transitions the game to finished phase
@@ -176,8 +223,244 @@ func (s *Session) LoadFromStorage(ctx context.Context) error {
 	s.state = &state
 	s.logger.Info("game state loaded from storage",
 		zap.Int("player_count", s.state.PlayerCount()),
-		zap.String("phase", s.state.Phase),
+		zap.String("phase", string(s.state.Phase)),
 	)
 
+	return nil
+}
+
+// HandlePlantBean handles planting a bean card on a field
+func (s *Session) HandlePlantBean(playerID string, cardID string, fieldID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	player, ok := s.state.GetPlayer(playerID)
+	if !ok {
+		s.logger.Warn("player not found", zap.String("player_id", playerID))
+		return nil
+	}
+
+	// Needs to be in phase - plantBean or turnTrade
+	if s.state.Phase != PhaseTypePlantHand {
+		s.logger.Warn("action not valid in phase plantBean or turnTrade")
+		return nil
+	}
+
+	// TODO:Max 2 cards and min 1 card
+
+	// Find card in player's hand
+	var cardToPlant *Card
+	cardIndex := -1
+	for i, card := range player.Hand {
+		if card.ID == cardID {
+			cardToPlant = card
+			cardIndex = i
+			break
+		}
+	}
+
+	if cardToPlant == nil {
+		s.logger.Warn("card not found in player's hand",
+			zap.String("player_id", playerID),
+			zap.String("card_id", cardID),
+		)
+		return nil
+	}
+
+	// Only plant a bean if there are slots free or
+	// a card of the same kind
+	slotAdded := false
+
+	// First, try to add to an existing matching slot
+	for _, slot := range player.Field.Slots {
+		if slot.CardType == cardToPlant.Name {
+			slot.CardNumber++
+			slotAdded = true
+			break
+		}
+	}
+
+	// If no matching slot found, try to add a new slot
+	if !slotAdded {
+		if player.Field.IsFull() {
+			s.logger.Warn("field is full and card doesn't match existing slots",
+				zap.String("player_id", playerID),
+			)
+			return nil
+		}
+		// Add a new slot to the field
+		if !player.Field.AddSlot(cardToPlant.Name) {
+			s.logger.Warn("failed to add slot to field",
+				zap.String("player_id", playerID),
+			)
+			return nil
+		}
+	}
+
+	// Remove card from hand
+	player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
+
+	s.logger.Info("bean planted",
+		zap.String("player_id", playerID),
+		zap.String("card_id", cardID),
+		zap.String("card_type", string(cardToPlant.Name)),
+	)
+
+	return s.persistState()
+}
+
+// HandleTradeBean handles trading a bean card between players
+func (s *Session) HandleTradeBean(fromPlayerID, toPlayerID, cardID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	fromPlayer, ok := s.state.GetPlayer(fromPlayerID)
+	if !ok {
+		s.logger.Warn("from player not found", zap.String("player_id", fromPlayerID))
+		return nil
+	}
+
+	toPlayer, ok := s.state.GetPlayer(toPlayerID)
+	if !ok {
+		s.logger.Warn("to player not found", zap.String("player_id", toPlayerID))
+		return nil
+	}
+
+	// Find card in from player's hand
+	var cardToTrade *Card
+	cardIndex := -1
+	for i, card := range fromPlayer.Hand {
+		if card.ID == cardID {
+			cardToTrade = card
+			cardIndex = i
+			break
+		}
+	}
+
+	if cardToTrade == nil {
+		s.logger.Warn("card not found in player's hand",
+			zap.String("player_id", fromPlayerID),
+			zap.String("card_id", cardID),
+		)
+		return nil
+	}
+
+	// Remove from source player's hand
+	fromPlayer.Hand = append(fromPlayer.Hand[:cardIndex], fromPlayer.Hand[cardIndex+1:]...)
+
+	// Add to target player's hand
+	toPlayer.Hand = append(toPlayer.Hand, cardToTrade)
+
+	s.logger.Info("bean traded",
+		zap.String("from_player_id", fromPlayerID),
+		zap.String("to_player_id", toPlayerID),
+		zap.String("card_id", cardID),
+	)
+
+	return s.persistState()
+}
+
+// HandleHarvestField handles harvesting a field
+func (s *Session) HandleHarvestField(playerID, fieldID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	player, ok := s.state.GetPlayer(playerID)
+	if !ok {
+		s.logger.Warn("player not found", zap.String("player_id", playerID))
+		return nil
+	}
+
+	// Parse field slot index from fieldID (format: "field-{playerID}-slot-{index}")
+	// For simplicity, harvest the first slot if field is not empty
+	if player.Field.IsEmpty() {
+		s.logger.Warn("field is empty, nothing to harvest",
+			zap.String("player_id", playerID),
+		)
+		return nil
+	}
+
+	// Get the first slot
+	slot := player.Field.Slots[0]
+
+	// Calculate coins earned
+	coinsEarned := 0
+	// In a real implementation, you'd look up the card definition to get the exchange rate
+	// For now, we'll use a simple calculation
+	if slot.CardNumber >= 4 {
+		coinsEarned = slot.CardNumber / 2
+	}
+
+	player.Coins += coinsEarned
+
+	// Remove the slot
+	player.Field.RemoveSlot(0)
+
+	s.logger.Info("field harvested",
+		zap.String("player_id", playerID),
+		zap.String("card_type", string(slot.CardType)),
+		zap.Int("cards_harvested", slot.CardNumber),
+		zap.Int("coins_earned", coinsEarned),
+	)
+
+	return s.persistState()
+}
+
+// HandleTurnOverBean handles turning over a bean from the center deck
+func (s *Session) HandleTurnOverBean() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.deck == nil || s.deck.IsEmpty() {
+		s.logger.Warn("deck is empty, cannot turn over bean")
+		return nil
+	}
+
+	// Needs to be in phase - turnTrade
+	if s.state.Phase != PhaseTypeTurnTrade {
+		s.logger.Error("action not valid in phase turnTrade")
+		return nil
+	}
+
+	// Draw 2 cards from deck and add to center
+	cards := s.deck.Draw(2)
+	s.centerCards = cards
+
+	s.logger.Info("beans turned over",
+		zap.String("card_id1", cards[0].ID),
+		zap.String("card_id2", cards[1].ID),
+		zap.String("card_type1", string(cards[0].Name)),
+		zap.String("card_type2", string(cards[1].Name)),
+	)
+
+	return s.persistState()
+}
+
+func (s *Session) HandleNextPhase() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.state.NextPhase()
+
+	s.logger.Info("next phase triggered",
+		zap.String("phase", string(s.state.GetPhase())))
+
+	if s.state.GetPhase() == PhaseTypeTurnTrade {
+		// Deadlock
+		s.HandleTurnOverBean()
+	}
+
+	return s.persistState()
+}
+
+// persistState persists the current game state to Redis
+func (s *Session) persistState() error {
+	if s.repo != nil {
+		ctx := context.Background()
+		if err := s.repo.SaveGameState(ctx, s.state.RoomID, s.state); err != nil {
+			s.logger.Error("failed to save game state", zap.Error(err))
+			return err
+		}
+	}
 	return nil
 }

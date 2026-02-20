@@ -5,23 +5,18 @@ import (
 	"time"
 )
 
-// MessageType represents the type of WebSocket message
 type MessageType string
 
 const (
-	// MessageTypeJoin is sent when a player joins a room
-	MessageTypeJoin MessageType = "join"
-	// MessageTypeLeave is sent when a player leaves a room
-	MessageTypeLeave MessageType = "leave"
-	// MessageTypeMove is sent when a player makes a move
-	MessageTypeMove MessageType = "move"
-	// MessageTypeError is sent when an error occurs
-	MessageTypeError MessageType = "error"
-	// MessageTypeBroadcast is sent for general broadcasts
-	MessageTypeBroadcast MessageType = "broadcast"
+	MessageTypeJoin        MessageType = "join"
+	MessageTypeLeave       MessageType = "leave"
+	MessageTypeAction      MessageType = "action"
+	MessageTypeError       MessageType = "error"
+	MessageTypeBroadcast   MessageType = "broadcast"
+	MessageTypeState       MessageType = "state"
+	MessageTypePlayerState MessageType = "myState"
 )
 
-// Message represents the base WebSocket message structure
 type Message struct {
 	Type      MessageType     `json:"type"`
 	RoomID    string          `json:"room_id,omitempty"`
@@ -30,36 +25,32 @@ type Message struct {
 	Timestamp time.Time       `json:"timestamp"`
 }
 
-// JoinPayload represents the payload for a join message
 type JoinPayload struct {
 	PlayerName string                 `json:"player_name"`
 	Metadata   map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// LeavePayload represents the payload for a leave message
 type LeavePayload struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// MovePayload represents the payload for a move message
-type MovePayload struct {
+type ActionPayload struct {
 	Action string                 `json:"action"`
 	Data   map[string]interface{} `json:"data,omitempty"`
 }
 
-// ErrorPayload represents the payload for an error message
 type ErrorPayload struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 
-// BroadcastPayload represents the payload for a broadcast message
 type BroadcastPayload struct {
 	Event string                 `json:"event"`
 	Data  map[string]interface{} `json:"data,omitempty"`
 }
 
-// NewMessage creates a new message with the current timestamp
+type StatePayload interface{}
+
 func NewMessage(msgType MessageType, roomID, playerID string, payload interface{}) (*Message, error) {
 	var rawPayload json.RawMessage
 	if payload != nil {
@@ -79,7 +70,6 @@ func NewMessage(msgType MessageType, roomID, playerID string, payload interface{
 	}, nil
 }
 
-// ParsePayload parses the message payload into the given destination
 func (m *Message) ParsePayload(dest interface{}) error {
 	if m.Payload == nil {
 		return nil
@@ -87,12 +77,10 @@ func (m *Message) ParsePayload(dest interface{}) error {
 	return json.Unmarshal(m.Payload, dest)
 }
 
-// ToJSON converts the message to JSON bytes
 func (m *Message) ToJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// FromJSON creates a message from JSON bytes
 func FromJSON(data []byte) (*Message, error) {
 	var msg Message
 	if err := json.Unmarshal(data, &msg); err != nil {
