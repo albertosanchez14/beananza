@@ -5,13 +5,14 @@ import (
 )
 
 type Player struct {
-	ID       string    `json:"id"`
-	Name     string    `json:"name"`
-	Status   string    `json:"status"` // "active", "idle", "disconnected"
-	Coins    int       `json:"coins"`
-	Hand     []*Card   `json:"hand"`
-	Field    *Field    `json:"field"`
-	JoinedAt time.Time `json:"joined_at"`
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Status           string    `json:"status"` // "active", "idle", "disconnected"
+	Coins            int       `json:"coins"`
+	Hand             []*Card   `json:"hand"`
+	Field            *Field    `json:"field"`
+	BeansPlantedTurn int       `json:"beans_planted_turn"`
+	JoinedAt         time.Time `json:"joined_at"`
 }
 
 type State struct {
@@ -22,13 +23,10 @@ type State struct {
 	CenterCards []*Card
 	TurnOrder   []string
 	CurrentTurn int
-
-	// TODO: Remove?
-	Data map[string]interface{}
-
-	StartedAt time.Time
-	EndedAt   time.Time
-	UpdatedAt time.Time
+	Data        map[string]interface{} // TODO: Remove?
+	StartedAt   time.Time
+	EndedAt     time.Time
+	UpdatedAt   time.Time
 }
 
 // NewState creates a new game state
@@ -49,13 +47,14 @@ func (s *State) AddPlayer(playerID, playerName string) *Player {
 	field := NewField(fieldID, 2)
 
 	player := &Player{
-		ID:       playerID,
-		Name:     playerName,
-		Status:   "active",
-		Coins:    0,
-		Hand:     make([]*Card, 0),
-		Field:    field,
-		JoinedAt: time.Now(),
+		ID:               playerID,
+		Name:             playerName,
+		Status:           "active",
+		Coins:            0,
+		Hand:             make([]*Card, 0),
+		Field:            field,
+		BeansPlantedTurn: 0,
+		JoinedAt:         time.Now(),
 	}
 
 	s.Players[playerID] = player

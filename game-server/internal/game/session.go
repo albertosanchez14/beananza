@@ -246,7 +246,14 @@ func (s *Session) HandlePlantBean(playerID string, cardID string, fieldID string
 		return nil
 	}
 
-	// TODO:Max 2 cards and min 1 card
+	// Check if player has already planted max 2 cards this turn
+	if player.BeansPlantedTurn >= 2 {
+		s.logger.Warn("player has already planted max 2 beans this turn",
+			zap.String("player_id", playerID),
+			zap.Int("beans_planted", player.BeansPlantedTurn),
+		)
+		return nil
+	}
 
 	// Find card in player's hand
 	var cardToPlant *Card
@@ -258,7 +265,6 @@ func (s *Session) HandlePlantBean(playerID string, cardID string, fieldID string
 			break
 		}
 	}
-
 	if cardToPlant == nil {
 		s.logger.Warn("card not found in player's hand",
 			zap.String("player_id", playerID),
@@ -270,8 +276,6 @@ func (s *Session) HandlePlantBean(playerID string, cardID string, fieldID string
 	// Only plant a bean if there are slots free or
 	// a card of the same kind
 	slotAdded := false
-
-	// First, try to add to an existing matching slot
 	for _, slot := range player.Field.Slots {
 		if slot.CardType == cardToPlant.Name {
 			slot.CardNumber++
@@ -279,8 +283,6 @@ func (s *Session) HandlePlantBean(playerID string, cardID string, fieldID string
 			break
 		}
 	}
-
-	// If no matching slot found, try to add a new slot
 	if !slotAdded {
 		if player.Field.IsFull() {
 			s.logger.Warn("field is full and card doesn't match existing slots",
@@ -288,7 +290,6 @@ func (s *Session) HandlePlantBean(playerID string, cardID string, fieldID string
 			)
 			return nil
 		}
-		// Add a new slot to the field
 		if !player.Field.AddSlot(cardToPlant.Name) {
 			s.logger.Warn("failed to add slot to field",
 				zap.String("player_id", playerID),
@@ -297,13 +298,16 @@ func (s *Session) HandlePlantBean(playerID string, cardID string, fieldID string
 		}
 	}
 
-	// Remove card from hand
 	player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
+
+	player.BeansPlantedTurn++
+	//TODO: If reached 2 beans planted go to the next turn
 
 	s.logger.Info("bean planted",
 		zap.String("player_id", playerID),
 		zap.String("card_id", cardID),
 		zap.String("card_type", string(cardToPlant.Name)),
+		zap.Int("beans_planted_turn", player.BeansPlantedTurn),
 	)
 
 	return s.persistState()
@@ -406,11 +410,8 @@ func (s *Session) HandleHarvestField(playerID, fieldID string) error {
 	return s.persistState()
 }
 
-// HandleTurnOverBean handles turning over a bean from the center deck
-func (s *Session) HandleTurnOverBean() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+// turnOverBean performs the turn over bean logic without acquiring locks
+func (s *Session) turnOverBean() error {
 	if s.deck == nil || s.deck.IsEmpty() {
 		s.logger.Warn("deck is empty, cannot turn over bean")
 		return nil
@@ -433,6 +434,18 @@ func (s *Session) HandleTurnOverBean() error {
 		zap.String("card_type2", string(cards[1].Name)),
 	)
 
+	return nil
+}
+
+// HandleTurnOverBean handles turning over a bean from the center deck
+func (s *Session) HandleTurnOverBean() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.turnOverBean(); err != nil {
+		return err
+	}
+
 	return s.persistState()
 }
 
@@ -440,14 +453,55 @@ func (s *Session) HandleNextPhase() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// RULES: In plantHand phase validate that
+	// 1. Current player must plant at least 1 bean
+	if s.state.Phase == PhaseTypePlantHand {
+		currentPlayerID := s.state.TurnOrder[s.state.CurrentTurn]
+		currentPlayer, ok := s.state.GetPlayer(currentPlayerID)
+		if !ok {
+			s.logger.Error("current player not found",
+				zap.String("player_id", currentPlayerID),
+			)
+			return nil
+		}
+
+		if currentPlayer.BeansPlantedTurn < 1 {
+			s.logger.Warn("cannot change phase, player must plant at least 1 bean",
+				zap.String("player_id", currentPlayerID),
+				zap.Int("beans_planted", currentPlayer.BeansPlantedTurn),
+			)
+			return nil
+		}
+
+		// Reset beans planted counter when leaving plantHand phase
+		currentPlayer.BeansPlantedTurn = 0
+		s.logger.Info("reset beans planted counter for player",
+			zap.String("player_id", currentPlayerID),
+		)
+	}
+	// RULES: turnTrade phase
+	// 1. Beans in the middle should be planted or traded
+	// TODO: 2. Beans traded should be planted
+	if s.state.Phase == PhaseTypeTurnTrade {
+		if len(s.state.CenterCards) != 0 {
+			s.logger.Warn("cannot change phase, there are still cards in the center",
+				zap.Int("center_cards_number", len(s.state.CenterCards)),
+			)
+			return nil
+		}
+	}
+
 	s.state.NextPhase()
 
 	s.logger.Info("next phase triggered",
 		zap.String("phase", string(s.state.GetPhase())))
 
 	if s.state.GetPhase() == PhaseTypeTurnTrade {
-		// Deadlock
-		s.HandleTurnOverBean()
+		// Call internal method since we already hold the lock
+		if err := s.turnOverBean(); err != nil {
+			s.logger.Error("failed to turn over bean during phase change", zap.Error(err))
+			// Continue with persist even if turnover fails
+		}
 	}
 
 	return s.persistState()
