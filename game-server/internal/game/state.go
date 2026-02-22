@@ -19,7 +19,7 @@ type State struct {
 	RoomID      string
 	Phase       PhaseType
 	Players     map[string]*Player
-	CenterDeck  []*Card
+	CenterDeck  *Deck
 	CenterCards []*Card
 	TurnOrder   []string
 	CurrentTurn int
@@ -32,11 +32,13 @@ type State struct {
 // NewState creates a new game state
 func NewState(roomID string) *State {
 	return &State{
-		RoomID:    roomID,
-		Phase:     "waiting",
-		Players:   make(map[string]*Player),
-		Data:      make(map[string]interface{}),
-		UpdatedAt: time.Now(),
+		RoomID:      roomID,
+		Phase:       "waiting",
+		Players:     make(map[string]*Player),
+		CenterCards: make([]*Card, 0),
+		CenterDeck:  nil,
+		Data:        make(map[string]interface{}),
+		UpdatedAt:   time.Now(),
 	}
 }
 

@@ -142,7 +142,14 @@ export default function Board({
         {/* Center cards */}
         <div className="flex gap-4">
           {centerCards.map((card, index) => {
-            return <Card key={index} card={card} />;
+            return (
+              <Card
+                key={index}
+                card={card}
+                isSelected={selectedCard?.cardId === card.cardId}
+                onClick={() => handleCardClick(card)}
+              />
+            );
           })}
         </div>
       </div>

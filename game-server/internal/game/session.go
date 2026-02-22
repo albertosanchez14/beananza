@@ -13,22 +13,18 @@ import (
 
 // Session manages a game session for a specific room
 type Session struct {
-	state       *State
-	deck        *Deck
-	centerCards []*Card // Cards in the center for trading
-	repo        *storage.Repository
-	logger      *zap.Logger
-	mu          sync.RWMutex
+	state  *State
+	repo   *storage.Repository
+	logger *zap.Logger
+	mu     sync.RWMutex
 }
 
 // NewSession creates a new game session
 func NewSession(roomID string, repo *storage.Repository, logger *zap.Logger) *Session {
 	return &Session{
-		state:       NewState(roomID),
-		deck:        nil,
-		centerCards: make([]*Card, 0),
-		repo:        repo,
-		logger:      logger.With(zap.String("room_id", roomID)),
+		state:  NewState(roomID),
+		repo:   repo,
+		logger: logger.With(zap.String("room_id", roomID)),
 	}
 }
 
@@ -50,7 +46,7 @@ func (s *Session) GetFullSnapshot() map[string]interface{} {
 		"players":      s.state.Players,
 		"turn_order":   s.state.TurnOrder,
 		"current_turn": s.state.CurrentTurn,
-		"center_cards": s.centerCards,
+		"center_cards": s.state.CenterCards,
 		"started_at":   s.state.StartedAt,
 		"ended_at":     s.state.EndedAt,
 		"updated_at":   s.state.UpdatedAt,
@@ -58,8 +54,8 @@ func (s *Session) GetFullSnapshot() map[string]interface{} {
 	}
 
 	// Include deck size but not the actual deck contents (to prevent cheating)
-	if s.deck != nil {
-		snapshot["deck_size"] = s.deck.Size()
+	if s.state.CenterDeck != nil {
+		snapshot["deck_size"] = s.state.CenterDeck.Size()
 	} else {
 		snapshot["deck_size"] = 0
 	}
@@ -82,7 +78,7 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]interface{} {
 		"player":       playerData,
 		"turn_order":   s.state.TurnOrder,
 		"current_turn": s.state.CurrentTurn,
-		"center_cards": s.centerCards,
+		"center_cards": s.state.CenterCards,
 		"started_at":   s.state.StartedAt,
 		"ended_at":     s.state.EndedAt,
 		"updated_at":   s.state.UpdatedAt,
@@ -90,8 +86,8 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]interface{} {
 	}
 
 	// Include deck size but not the actual deck contents (to prevent cheating)
-	if s.deck != nil {
-		snapshot["deck_size"] = s.deck.Size()
+	if s.state.CenterDeck != nil {
+		snapshot["deck_size"] = s.state.CenterDeck.Size()
 	} else {
 		snapshot["deck_size"] = 0
 	}
@@ -159,8 +155,8 @@ func (s *Session) HandlePlayerLeave(playerID string) error {
 
 // startGame transitions the game to playing phase
 func (s *Session) startGame() {
-	s.deck = NewDeck()
-	s.deck.Shuffle()
+	s.state.CenterDeck = NewDeck()
+	s.state.CenterDeck.Shuffle()
 
 	// Create random turn order from players
 	s.state.TurnOrder = make([]string, 0, len(s.state.Players))
@@ -173,7 +169,7 @@ func (s *Session) startGame() {
 
 	// Deal cards to players (5 cards each in standard Bohnanza)
 	for playerID, player := range s.state.Players {
-		player.Hand = s.deck.Draw(5)
+		player.Hand = s.state.CenterDeck.Draw(5)
 		s.logger.Info("dealt cards to player",
 			zap.String("player_id", playerID),
 			zap.Int("cards_dealt", len(player.Hand)),
@@ -186,8 +182,8 @@ func (s *Session) startGame() {
 
 	s.logger.Info("game started",
 		zap.Int("player_count", s.state.PlayerCount()),
-		zap.Int("deck_size", s.deck.Size()),
-		zap.Int("center_cards", len(s.centerCards)),
+		zap.Int("deck_size", s.state.CenterDeck.Size()),
+		zap.Int("center_cards", len(s.state.CenterCards)),
 		zap.String("player_turn_id", playerTurn),
 	)
 }
@@ -240,37 +236,73 @@ func (s *Session) HandlePlantBean(playerID string, cardID string, fieldID string
 		return nil
 	}
 
-	// Needs to be in phase - plantBean or turnTrade
-	if s.state.Phase != PhaseTypePlantHand {
-		s.logger.Warn("action not valid in phase plantBean or turnTrade")
-		return nil
-	}
-
-	// Check if player has already planted max 2 cards this turn
-	if player.BeansPlantedTurn >= 2 {
-		s.logger.Warn("player has already planted max 2 beans this turn",
+	// Validate that it's the player's turn
+	currentPlayerID := s.state.TurnOrder[s.state.CurrentTurn]
+	if playerID != currentPlayerID {
+		s.logger.Warn("not player's turn",
 			zap.String("player_id", playerID),
-			zap.Int("beans_planted", player.BeansPlantedTurn),
+			zap.String("current_player_id", currentPlayerID),
 		)
 		return nil
 	}
 
-	// Find card in player's hand
-	var cardToPlant *Card
-	cardIndex := -1
-	for i, card := range player.Hand {
-		if card.ID == cardID {
-			cardToPlant = card
-			cardIndex = i
-			break
+	// Phase validation - allow planting in plantHand or turnTrade
+	if s.state.Phase != PhaseTypePlantHand && s.state.Phase != PhaseTypeTurnTrade {
+		s.logger.Warn("action not valid in current phase",
+			zap.String("current_phase", string(s.state.Phase)),
+		)
+		return nil
+	}
+
+	// Card limit enforcement - only in plantHand phase
+	if s.state.Phase == PhaseTypePlantHand {
+		if player.BeansPlantedTurn >= 2 {
+			s.logger.Warn("player has already planted max 2 beans this turn",
+				zap.String("player_id", playerID),
+				zap.Int("beans_planted", player.BeansPlantedTurn),
+			)
+			return nil
 		}
 	}
-	if cardToPlant == nil {
-		s.logger.Warn("card not found in player's hand",
-			zap.String("player_id", playerID),
-			zap.String("card_id", cardID),
-		)
-		return nil
+
+	var cardToPlant *Card
+	cardIndex := -1
+	isFromCenter := false
+
+	// Try to find card in appropriate location based on phase
+	if s.state.Phase == PhaseTypePlantHand {
+		// In plantHand phase, only check player's hand
+		for i, card := range player.Hand {
+			if card.ID == cardID {
+				cardToPlant = card
+				cardIndex = i
+				break
+			}
+		}
+		if cardToPlant == nil {
+			s.logger.Warn("card not found in player's hand",
+				zap.String("player_id", playerID),
+				zap.String("card_id", cardID),
+			)
+			return nil
+		}
+	} else if s.state.Phase == PhaseTypeTurnTrade {
+		// In turnTrade phase, only check center cards
+		for i, card := range s.state.CenterCards {
+			if card.ID == cardID {
+				cardToPlant = card
+				cardIndex = i
+				isFromCenter = true
+				break
+			}
+		}
+		if cardToPlant == nil {
+			s.logger.Warn("card not found in center",
+				zap.String("player_id", playerID),
+				zap.String("card_id", cardID),
+			)
+			return nil
+		}
 	}
 
 	// Only plant a bean if there are slots free or
@@ -298,15 +330,29 @@ func (s *Session) HandlePlantBean(playerID string, cardID string, fieldID string
 		}
 	}
 
-	player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
+	if isFromCenter {
+		// Remove from center
+		s.state.CenterCards = append(s.state.CenterCards[:cardIndex], s.state.CenterCards[cardIndex+1:]...)
+		s.logger.Info("removed card from center",
+			zap.String("card_id", cardID),
+			zap.Int("remaining_center_cards", len(s.state.CenterCards)),
+		)
+	} else {
+		// Remove from hand
+		player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
+	}
 
-	player.BeansPlantedTurn++
+	// Only increment beans planted counter in plantHand phase
+	if s.state.Phase == PhaseTypePlantHand {
+		player.BeansPlantedTurn++
+	}
 	//TODO: If reached 2 beans planted go to the next turn
 
 	s.logger.Info("bean planted",
 		zap.String("player_id", playerID),
 		zap.String("card_id", cardID),
 		zap.String("card_type", string(cardToPlant.Name)),
+		zap.String("source", map[bool]string{true: "center", false: "hand"}[isFromCenter]),
 		zap.Int("beans_planted_turn", player.BeansPlantedTurn),
 	)
 
@@ -412,7 +458,7 @@ func (s *Session) HandleHarvestField(playerID, fieldID string) error {
 
 // turnOverBean performs the turn over bean logic without acquiring locks
 func (s *Session) turnOverBean() error {
-	if s.deck == nil || s.deck.IsEmpty() {
+	if s.state.CenterDeck == nil || s.state.CenterDeck.IsEmpty() {
 		s.logger.Warn("deck is empty, cannot turn over bean")
 		return nil
 	}
@@ -424,8 +470,8 @@ func (s *Session) turnOverBean() error {
 	}
 
 	// Draw 2 cards from deck and add to center
-	cards := s.deck.Draw(2)
-	s.centerCards = cards
+	cards := s.state.CenterDeck.Draw(2)
+	s.state.CenterCards = cards
 
 	s.logger.Info("beans turned over",
 		zap.String("card_id1", cards[0].ID),
@@ -453,7 +499,7 @@ func (s *Session) HandleNextPhase() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// RULES: In plantHand phase validate that
+	// RULE: In plantHand phase validate that
 	// 1. Current player must plant at least 1 bean
 	if s.state.Phase == PhaseTypePlantHand {
 		currentPlayerID := s.state.TurnOrder[s.state.CurrentTurn]
@@ -479,7 +525,7 @@ func (s *Session) HandleNextPhase() error {
 			zap.String("player_id", currentPlayerID),
 		)
 	}
-	// RULES: turnTrade phase
+	// RULE: turnTrade phase
 	// 1. Beans in the middle should be planted or traded
 	// TODO: 2. Beans traded should be planted
 	if s.state.Phase == PhaseTypeTurnTrade {
