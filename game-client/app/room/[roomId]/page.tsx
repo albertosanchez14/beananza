@@ -78,15 +78,9 @@ export default function Page() {
   }, [isConnected, roomId, playerId, sendJoin]);
 
   // Action handler functions
-  const handlePlantBean = (
-    cardId: string,
-    fieldId: string,
-    slotIndex: number,
-  ) => {
-    console.log(
-      `Planting bean: cardId=${cardId}, fieldId=${fieldId}, slotIndex=${slotIndex}`,
-    );
-    plantBean(roomId, playerId, cardId, `${fieldId}-slot-${slotIndex}`);
+  const handlePlantBean = (cardId: string, slotId: string) => {
+    console.log(`Planting bean: cardId=${cardId}, slotId=${slotId}`);
+    plantBean(roomId, playerId, cardId, slotId);
   };
 
   const handleTradeBean = (cardId: string, toPlayerId: string) => {
@@ -94,9 +88,9 @@ export default function Page() {
     tradeBean(roomId, playerId, toPlayerId, cardId);
   };
 
-  const handleHarvestField = (fieldId: string, slotIndex: number) => {
-    console.log(`Harvesting field: fieldId=${fieldId}, slotIndex=${slotIndex}`);
-    harvestField(roomId, playerId, `${fieldId}-slot-${slotIndex}`);
+  const handleHarvestField = (slotId: string) => {
+    console.log(`Harvesting slot: slotId=${slotId}`);
+    harvestField(roomId, playerId, slotId);
   };
 
   const handleTurnOverBean = () => {

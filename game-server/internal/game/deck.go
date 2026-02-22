@@ -19,14 +19,14 @@ func NewDeck() *Deck {
 		count     int
 		exchanges map[int]int
 	}{
-		{CardTypeJudicultor, 6, map[int]int{4: 1, 5: 2, 6: 3, 7: 4}},
-		{CardTypeColora, 8, map[int]int{4: 1, 5: 2, 6: 3, 7: 4}},
-		{CardTypeRocky, 10, map[int]int{4: 1, 5: 2, 6: 3, 8: 4}},
-		{CardTypeHippy, 12, map[int]int{5: 1, 6: 2, 7: 3, 8: 4}},
-		{CardTypePocha, 14, map[int]int{5: 1, 6: 2, 7: 3, 9: 4}},
-		{CardTypeApestosa, 16, map[int]int{5: 1, 7: 2, 8: 3, 9: 4}},
-		{CardTypeBoom, 18, map[int]int{6: 1, 7: 2, 8: 3, 9: 4}},
-		{CardTypeBill, 20, map[int]int{6: 1, 8: 2, 9: 3, 10: 4}},
+		{CardTypeJudicultor, 6, map[int]int{1: 1, 2: 2, 3: 3, 4: 4}},
+		{CardTypeColora, 8, map[int]int{1: 1, 2: 2, 6: 3, 4: 4}},
+		{CardTypeRocky, 10, map[int]int{1: 1, 2: 2, 6: 3, 4: 4}},
+		{CardTypeHippy, 12, map[int]int{1: 1, 2: 2, 7: 3, 4: 4}},
+		{CardTypePocha, 14, map[int]int{1: 1, 2: 2, 7: 3, 4: 4}},
+		{CardTypeApestosa, 16, map[int]int{1: 1, 2: 2, 3: 3, 4: 4}},
+		{CardTypeBoom, 18, map[int]int{1: 1, 2: 2, 3: 3, 4: 4}},
+		{CardTypeBill, 20, map[int]int{1: 1, 2: 2, 3: 3, 4: 4}},
 	}
 
 	cardID := 1
@@ -99,4 +99,23 @@ func (d *Deck) Peek() *Card {
 // generateCardID generates a unique card ID
 func generateCardID(id int) string {
 	return "card-" + string(rune('0'+id/10)) + string(rune('0'+id%10))
+}
+
+// GetExchangeRates returns the money exchange rates for a given card type
+func GetExchangeRates(cardType CardType) map[int]int {
+	exchangeRates := map[CardType]map[int]int{
+		CardTypeJudicultor: {1: 1, 2: 2, 3: 3, 4: 4},
+		CardTypeColora:     {1: 1, 2: 2, 3: 3, 4: 4},
+		CardTypeRocky:      {1: 1, 2: 2, 3: 3, 4: 4},
+		CardTypeHippy:      {1: 1, 2: 2, 3: 3, 4: 4},
+		CardTypePocha:      {1: 1, 2: 2, 3: 3, 4: 4},
+		CardTypeApestosa:   {1: 1, 2: 2, 3: 3, 4: 4},
+		CardTypeBoom:       {1: 1, 2: 2, 3: 3, 4: 4},
+		CardTypeBill:       {1: 1, 2: 2, 3: 3, 4: 4},
+	}
+
+	if rates, ok := exchangeRates[cardType]; ok {
+		return rates
+	}
+	return map[int]int{}
 }

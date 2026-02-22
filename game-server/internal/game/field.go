@@ -1,78 +1,75 @@
 package game
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type Slot struct {
-	SlotID     string   `json:"slotId"`
+	SlotId     string   `json:"slotId"`
 	CardType   CardType `json:"cardName"`
 	CardNumber int      `json:"cardQuantity"`
 }
 
 type Field struct {
-	FieldID  string  `json:"fieldID"`
-	Slots    []*Slot `json:"slots"`
-	MaxSlots int     `json:"maxSlots"`
-	MinSlots int     `json:"minSlots"`
+	FieldId     string  `json:"fieldID"`
+	Slots       []*Slot `json:"slots"`
+	SlotsNumber int     `json:"slotsNumber"`
 }
 
-func NewField(fieldID string, maxSlots int) *Field {
+func NewField(fieldId string, slotsNumber int) *Field {
+	slots := make([]*Slot, 0, slotsNumber)
+	for i := range slotsNumber {
+		slots = append(slots, &Slot{
+			SlotId:     generateSlotID(fieldId, i),
+			CardType:   "",
+			CardNumber: 0,
+		})
+	}
 	return &Field{
-		FieldID:  fieldID,
-		Slots:    make([]*Slot, 0, maxSlots),
-		MaxSlots: maxSlots,
+		FieldId:     fieldId,
+		Slots:       slots,
+		SlotsNumber: slotsNumber,
 	}
 }
 
-func (f *Field) GetSlot(index int) (*Slot, bool) {
-	if index < 0 || index >= len(f.Slots) {
-		return nil, false
+func (f *Field) GetSlotFromId(slotId string) (*Slot, error) {
+	for _, slot := range f.Slots {
+		if slot.SlotId == slotId {
+			return slot, nil
+		}
 	}
-	return f.Slots[index], true
+	return nil, errors.New("slot not found with id: " + slotId)
 }
 
-func (f *Field) AddCardToSlot(index int) bool {
-	if slot, ok := f.GetSlot(index); ok {
-		slot.CardNumber++
-		return true
+// AddToSlot adds a card to a slot by its ID
+// If the slot doesn't exist, it returns an error
+func (f *Field) AddToSlot(slotId string, cardType CardType, quantity int) error {
+	slot, err := f.GetSlotFromId(slotId)
+	if err != nil {
+		return err
 	}
-	return false
+
+	if slot.CardType == "" {
+		slot.CardType = cardType
+	} else if slot.CardType != cardType {
+		return errors.New("card type mismatch: slot has " + string(slot.CardType) + ", trying to add " + string(cardType))
+	}
+
+	slot.CardNumber += quantity
+	return nil
 }
 
-// AddSlot adds a new slot to the field if there's space
-func (f *Field) AddSlot(cardType CardType) bool {
-	if len(f.Slots) >= f.MaxSlots {
-		return false // field is full
+// RemoveFromSlot removes the content of a slot by its ID from the field
+func (f *Field) RemoveFromSlot(slotId string) error {
+	slot, err := f.GetSlotFromId(slotId)
+	if err != nil {
+		return err
 	}
 
-	slotID := generateSlotID(f.FieldID, len(f.Slots))
-	slot := &Slot{
-		SlotID:     slotID,
-		CardType:   cardType,
-		CardNumber: 1,
-	}
-
-	f.Slots = append(f.Slots, slot)
-	return true
-}
-
-// RemoveSlot removes a slot from the field at the given index
-func (f *Field) RemoveSlot(index int) bool {
-	if index < 0 || index >= len(f.Slots) {
-		return false
-	}
-
-	// Remove the slot by re-slicing
-	f.Slots = append(f.Slots[:index], f.Slots[index+1:]...)
-	return true
-}
-
-func (f *Field) SellSlot(index int) bool {
-	if slot, ok := f.GetSlot(index); ok {
-		slot.CardNumber = 0
-		// TODO: Logic for coins
-		return true
-	}
-	return false
+	slot.CardNumber = 0
+	slot.CardType = ""
+	return nil
 }
 
 func (f *Field) IsEmpty() bool {
@@ -80,11 +77,7 @@ func (f *Field) IsEmpty() bool {
 }
 
 func (f *Field) IsFull() bool {
-	return len(f.Slots) >= f.MaxSlots
-}
-
-func (f *Field) SlotCount() int {
-	return len(f.Slots)
+	return len(f.Slots) >= f.SlotsNumber
 }
 
 func generateSlotID(fieldID string, slotIndex int) string {

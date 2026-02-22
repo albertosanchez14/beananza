@@ -10,9 +10,9 @@ type BoardProp = {
   myField: FieldType;
   players: ExternalPlayer[];
   centerCards: CardType[];
-  onPlantBean: (cardId: string, fieldId: string, slotIndex: number) => void;
+  onPlantBean: (cardId: string, slotId: string) => void;
   onTradeBean: (cardId: string, toPlayerId: string) => void;
-  onHarvestField: (fieldId: string, slotIndex: number) => void;
+  onHarvestField: (slotId: string) => void;
   onTurnOverBean: () => void;
 };
 
@@ -59,20 +59,20 @@ export default function Board({
     }
   };
 
-  const handleFieldSlotClick = (slotIndex: number) => {
+  const handleFieldSlotClick = (slotId: string, slotIndex: number) => {
     const slot = myField.slots[slotIndex];
 
     if (selectedCard) {
       // If a card is selected and clicking an empty slot, plant the bean
       // or same bean
-      if (!slot || slot.cardName === selectedCard.cardName) {
-        onPlantBean(selectedCard.cardId, myField.fieldId, slotIndex);
+      if (!slot || !slot.cardName || slot.cardName === selectedCard.cardName) {
+        onPlantBean(selectedCard.cardId, slotId);
         setSelectedCard(null);
       }
     } else {
       // If no card is selected and clicking a filled slot, harvest it
-      if (slot) {
-        onHarvestField(myField.fieldId, slotIndex);
+      if (slot && slot.cardName && slot.cardQuantity > 0) {
+        onHarvestField(slot.slotId);
       }
     }
   };

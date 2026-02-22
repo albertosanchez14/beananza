@@ -94,18 +94,6 @@ func (s *State) GetPhase() PhaseType {
 	return s.Phase
 }
 
-// NextPhase changes to the next phase in order
-func (s *State) NextPhase() {
-	for i, phase := range gamePhases {
-		if s.Phase == phase {
-			if i < len(gamePhases)-1 {
-				s.Phase = gamePhases[i+1]
-			}
-			return
-		}
-	}
-}
-
 // SetData sets a value in the game data
 func (s *State) SetData(key string, value interface{}) {
 	s.Data[key] = value
@@ -166,4 +154,237 @@ func (s *State) Clone() *State {
 	}
 
 	return clone
+}
+
+// TODO: return errors in logger and show them at the session.go handle-action
+// TODO: only plant in order
+func (s *State) PlantBean(playerID string, cardID string, slotId string) error {
+	player, ok := s.GetPlayer(playerID)
+	if !ok {
+		//s.logger.Warn("player not found", zap.String("player_id", playerID))
+		return nil
+	}
+
+	// Validate that it's the player's turn
+	currentPlayerID := s.TurnOrder[s.CurrentTurn]
+	if playerID != currentPlayerID {
+		// s.logger.Warn("not player's turn",
+		// 	zap.String("player_id", playerID),
+		// 	zap.String("current_player_id", currentPlayerID),
+		// )
+		return nil
+	}
+
+	// Phase validation - allow planting in plantHand or turnTrade
+	if s.Phase != PhaseTypePlantHand && s.Phase != PhaseTypeTurnTrade {
+		// s.logger.Warn("action not valid in current phase",
+		// 	zap.String("current_phase", string(s.state.Phase)),
+		// )
+		return nil
+	}
+
+	// RULE: In plantHand phase validate that
+	// 1. Current player must plant at most 2 beans,
+	// then it goes to the next phase
+	if s.Phase == PhaseTypePlantHand && player.BeansPlantedTurn >= 2 {
+		// s.logger.Warn("player has already planted max 2 beans this turn",
+		// 	zap.String("player_id", playerID),
+		// 	zap.Int("beans_planted", player.BeansPlantedTurn),
+		// )
+		return nil
+	}
+
+	var cardToPlant *Card
+	cardIndex := -1
+	isFromCenter := false
+
+	// Try to find card in appropriate location based on phase
+	if s.Phase == PhaseTypePlantHand {
+		// In plantHand phase, only check player's hand
+		for i, card := range player.Hand {
+			if card.ID == cardID {
+				cardToPlant = card
+				cardIndex = i
+				break
+			}
+		}
+		if cardToPlant == nil {
+			// s.logger.Warn("card not found in player's hand",
+			// 	zap.String("player_id", playerID),
+			// 	zap.String("card_id", cardID),
+			// )
+			return nil
+		}
+	} else if s.Phase == PhaseTypeTurnTrade {
+		// In turnTrade phase, only check center cards
+		for i, card := range s.CenterCards {
+			if card.ID == cardID {
+				cardToPlant = card
+				cardIndex = i
+				isFromCenter = true
+				break
+			}
+		}
+		if cardToPlant == nil {
+			// s.logger.Warn("card not found in center",
+			// 	zap.String("player_id", playerID),
+			// 	zap.String("card_id", cardID),
+			// )
+			return nil
+		}
+	}
+
+	// Plant the bean in the specified slot
+	if err := player.Field.AddToSlot(slotId, cardToPlant.Name, 1); err != nil {
+		// s.logger.Warn("failed to add card to slot",
+		// 	zap.String("player_id", playerID),
+		// 	zap.String("slot_id", slotId),
+		// 	zap.Error(err),
+		// )
+		return err
+	}
+
+	if isFromCenter {
+		// Remove from center
+		s.CenterCards = append(s.CenterCards[:cardIndex], s.CenterCards[cardIndex+1:]...)
+		// s.logger.Info("removed card from center",
+		// 	zap.String("card_id", cardID),
+		// 	zap.Int("remaining_center_cards", len(s.state.CenterCards)),
+		// )
+	} else {
+		// Remove from hand
+		player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
+	}
+
+	// Only increment beans planted counter in plantHand phase
+	if s.Phase == PhaseTypePlantHand {
+		player.BeansPlantedTurn++
+	}
+
+	// RULE: In plantHand phase validate that
+	// 1. Current player must plant at most 2 beans,
+	// then it goes to the next phase
+	if player.BeansPlantedTurn >= 2 {
+		s.NextPhase()
+	}
+
+	return nil
+}
+
+// turnOverBean performs the turn over bean logic without acquiring locks
+func (s *State) TurnOverBean() error {
+	if s.CenterDeck == nil || s.CenterDeck.IsEmpty() {
+		// s.logger.Warn("deck is empty, cannot turn over bean")
+		return nil
+	}
+
+	// Needs to be in phase - turnTrade
+	if s.Phase != PhaseTypeTurnTrade {
+		// s.logger.Error("action not valid in phase turnTrade")
+		return nil
+	}
+
+	// Draw 2 cards from deck and add to center
+	cards := s.CenterDeck.Draw(2)
+	s.CenterCards = cards
+
+	// s.logger.Info("beans turned over",
+	// 	zap.String("card_id1", cards[0].ID),
+	// 	zap.String("card_id2", cards[1].ID),
+	// 	zap.String("card_type1", string(cards[0].Name)),
+	// 	zap.String("card_type2", string(cards[1].Name)),
+	// )
+
+	return nil
+}
+
+func (s *State) HarvestField(playerId string, slotId string) error {
+	player, ok := s.GetPlayer(playerId)
+	if !ok {
+		// s.logger.Warn("player not found", zap.String("player_id", playerID))
+		return nil
+	}
+
+	if player.Field.IsEmpty() {
+		// s.logger.Warn("field is empty, nothing to harvest",
+		// 	zap.String("player_id", playerID),
+		// )
+		return nil
+	}
+
+	slot, err := player.Field.GetSlotFromId(slotId)
+	if err != nil {
+		return err
+	}
+
+	// Calculate coins earned based on the number of cards
+	coinsEarned := 0
+	if slot.CardType != "" && slot.CardNumber > 0 {
+		exchangeRates := GetExchangeRates(slot.CardType)
+		for numCards, coins := range exchangeRates {
+			if slot.CardNumber >= numCards && coins > coinsEarned {
+				coinsEarned = coins
+			}
+		}
+	}
+
+	player.Coins += coinsEarned
+	player.Field.RemoveFromSlot(slotId)
+
+	return nil
+}
+
+func (s *State) NextPhase() error {
+	// RULE: In plantHand phase validate that
+	// 1. Current player must plant at least 1 bean
+	if s.Phase == PhaseTypePlantHand {
+		currentPlayerID := s.TurnOrder[s.CurrentTurn]
+		currentPlayer, ok := s.GetPlayer(currentPlayerID)
+		if !ok {
+			// s.logger.Error("current player not found",
+			// 	zap.String("player_id", currentPlayerID),
+			// )
+			return nil
+		}
+
+		if currentPlayer.BeansPlantedTurn < 1 {
+			// s.logger.Warn("cannot change phase, player must plant at least 1 bean",
+			// 	zap.String("player_id", currentPlayerID),
+			// 	zap.Int("beans_planted", currentPlayer.BeansPlantedTurn),
+			// )
+			return nil
+		}
+
+		// Reset beans planted counter when leaving plantHand phase
+		currentPlayer.BeansPlantedTurn = 0
+		// s.logger.Info("reset beans planted counter for player",
+		// 	zap.String("player_id", currentPlayerID),
+		// )
+	}
+	// RULE: turnTrade phase
+	// 1. Beans in the middle should be planted or traded
+	// TODO: 2. Beans traded should be planted
+	if s.Phase == PhaseTypeTurnTrade {
+		if len(s.CenterCards) != 0 {
+			// s.logger.Warn("cannot change phase, there are still cards in the center",
+			// 	zap.Int("center_cards_number", len(s.state.CenterCards)),
+			// )
+			return nil
+		}
+	}
+
+	s.Phase.NextPhase()
+
+	// s.logger.Info("next phase triggered",
+	// 	zap.String("phase", string(s.state.GetPhase())))
+
+	if s.GetPhase() == PhaseTypeTurnTrade {
+		// Call internal method since we already hold the lock
+		if err := s.TurnOverBean(); err != nil {
+			// s.logger.Error("failed to turn over bean during phase change", zap.Error(err))
+			// Continue with persist even if turnover fails
+		}
+	}
+
+	return nil
 }

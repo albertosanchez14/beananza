@@ -13,3 +13,15 @@ const (
 )
 
 var gamePhases = []PhaseType{PhaseTypePlantHand, PhaseTypeTurnTrade, PhaseTypePlantTrade}
+
+// NextPhase changes to the next phase in order
+func (p *PhaseType) NextPhase() {
+	for i, phase := range gamePhases {
+		if *p == phase {
+			if i < len(gamePhases)-1 {
+				*p = gamePhases[i+1]
+			}
+			return
+		}
+	}
+}

@@ -191,11 +191,11 @@ export function useActions({
       roomId: string,
       playerId: string,
       cardId: string,
-      fieldId: string,
+      slotId: string,
     ): boolean => {
       if (!isConnectionReady()) return false;
 
-      const payload = { type: "plantBean", playerId, cardId, fieldId };
+      const payload = { type: "plantBean", playerId, cardId, slotId };
       const message = createMessage("action", roomId, payload);
       sendJsonMessage(message);
       return true;
@@ -221,10 +221,10 @@ export function useActions({
   );
 
   const harvestField = useCallback(
-    (roomId: string, playerId: string, fieldId: string): boolean => {
+    (roomId: string, playerId: string, slotId: string): boolean => {
       if (!isConnectionReady()) return false;
 
-      const payload = { type: "harvestField", playerId, fieldId };
+      const payload = { type: "harvestField", playerId, slotId };
       const message = createMessage("action", roomId, payload);
       sendJsonMessage(message);
       return true;

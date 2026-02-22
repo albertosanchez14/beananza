@@ -305,15 +305,15 @@ func (c *Client) handleAction(msg *protocol.Message) {
 
 func (c *Client) handlePlantBean(session interface{}, payload map[string]interface{}) {
 	cardID, _ := payload["cardId"].(string)
-	fieldID, _ := payload["fieldId"].(string)
+	slotId, _ := payload["slotId"].(string)
 
-	if cardID == "" || fieldID == "" {
-		c.sendError("invalid_params", "Missing cardId or fieldId")
+	if cardID == "" || slotId == "" {
+		c.sendError("invalid_params", "Missing cardId or slotId")
 		return
 	}
 
 	if s, ok := session.(*game.Session); ok {
-		if err := s.HandlePlantBean(c.PlayerID, cardID, fieldID); err != nil {
+		if err := s.HandlePlantBean(c.PlayerID, cardID, slotId); err != nil {
 			c.sendError("plant_failed", "Failed to plant bean")
 		}
 	}
@@ -336,15 +336,15 @@ func (c *Client) handleTradeBean(session interface{}, payload map[string]interfa
 }
 
 func (c *Client) handleHarvestField(session interface{}, payload map[string]interface{}) {
-	fieldID, _ := payload["fieldId"].(string)
+	slotId, _ := payload["slotId"].(string)
 
-	if fieldID == "" {
-		c.sendError("invalid_params", "Missing fieldId")
+	if slotId == "" {
+		c.sendError("invalid_params", "Missing slotId")
 		return
 	}
 
 	if s, ok := session.(*game.Session); ok {
-		if err := s.HandleHarvestField(c.PlayerID, fieldID); err != nil {
+		if err := s.HandleHarvestField(c.PlayerID, slotId); err != nil {
 			c.sendError("harvest_failed", "Failed to harvest field")
 		}
 	}
