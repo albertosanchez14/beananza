@@ -39,11 +39,11 @@ func (r *Room) Join(client *Client) {
 	joinMsg, err := protocol.NewMessage(
 		protocol.MessageTypeBroadcast,
 		r.ID,
-		client.PlayerID,
+		client.PlayerId,
 		protocol.BroadcastPayload{
 			Event: "player_joined",
 			Data: map[string]interface{}{
-				"player_id":   client.PlayerID,
+				"player_id":   client.PlayerId,
 				"player_name": client.PlayerName,
 			},
 		},
@@ -73,11 +73,11 @@ func (r *Room) Leave(client *Client) {
 	leaveMsg, err := protocol.NewMessage(
 		protocol.MessageTypeBroadcast,
 		r.ID,
-		client.PlayerID,
+		client.PlayerId,
 		protocol.BroadcastPayload{
 			Event: "player_left",
 			Data: map[string]interface{}{
-				"player_id":   client.PlayerID,
+				"player_id":   client.PlayerId,
 				"player_name": client.PlayerName,
 			},
 		},

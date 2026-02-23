@@ -17,6 +17,8 @@ export type FieldType = {
 export type ExternalPlayer = {
   playerId: string;
   playerName: string;
-  playerCards: number;
+  playerStatus: string;
+  playerCoins: number;
+  playerHandSize: number;
   playerField: FieldType;
 };

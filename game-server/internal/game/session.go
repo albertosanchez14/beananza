@@ -64,6 +64,7 @@ func (s *Session) GetFullSnapshot() map[string]interface{} {
 }
 
 // GetPlayerSnapshot returns a complete snapshot of the session for a player
+// and what that player can see
 func (s *Session) GetPlayerSnapshot(playerId string) map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -85,12 +86,30 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]interface{} {
 		"data":         s.state.Data,
 	}
 
-	// Include deck size but not the actual deck contents (to prevent cheating)
+	// Include deck size but not the actual deck contents
 	if s.state.CenterDeck != nil {
 		snapshot["deck_size"] = s.state.CenterDeck.Size()
 	} else {
 		snapshot["deck_size"] = 0
 	}
+
+	// Public data includes all player info except the actual hand cards (only hand size)
+	externalPlayers := make([]map[string]interface{}, 0)
+	for _, player := range s.state.Players {
+		if player.ID == playerId {
+			continue
+		}
+		externalPlayerData := map[string]interface{}{
+			"playerId":       player.ID,
+			"playerName":     player.Name,
+			"playerStatus":   player.Status,
+			"playerCoins":    player.Coins,
+			"playerHandSize": len(player.Hand),
+			"playerField":    player.Field,
+		}
+		externalPlayers = append(externalPlayers, externalPlayerData)
+	}
+	snapshot["external_players"] = externalPlayers
 
 	return snapshot
 }
@@ -258,51 +277,18 @@ func (s *Session) HandleTurnOverBean() error {
 }
 
 // HandleTradeBean handles trading a bean card between players
-func (s *Session) HandleTradeBean(fromPlayerID, toPlayerID, cardID string) error {
+func (s *Session) HandleTradeBean(fromPlayerID string, toPlayerID string, cardsReceived []string, cardsGiven []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fromPlayer, ok := s.state.GetPlayer(fromPlayerID)
-	if !ok {
-		s.logger.Warn("from player not found", zap.String("player_id", fromPlayerID))
-		return nil
+	if err := s.state.TradeBeans(fromPlayerID, toPlayerID, cardsReceived, cardsGiven); err != nil {
+		return err
 	}
-
-	toPlayer, ok := s.state.GetPlayer(toPlayerID)
-	if !ok {
-		s.logger.Warn("to player not found", zap.String("player_id", toPlayerID))
-		return nil
-	}
-
-	// Find card in from player's hand
-	var cardToTrade *Card
-	cardIndex := -1
-	for i, card := range fromPlayer.Hand {
-		if card.ID == cardID {
-			cardToTrade = card
-			cardIndex = i
-			break
-		}
-	}
-
-	if cardToTrade == nil {
-		s.logger.Warn("card not found in player's hand",
-			zap.String("player_id", fromPlayerID),
-			zap.String("card_id", cardID),
-		)
-		return nil
-	}
-
-	// Remove from source player's hand
-	fromPlayer.Hand = append(fromPlayer.Hand[:cardIndex], fromPlayer.Hand[cardIndex+1:]...)
-
-	// Add to target player's hand
-	toPlayer.Hand = append(toPlayer.Hand, cardToTrade)
 
 	s.logger.Info("bean traded",
 		zap.String("from_player_id", fromPlayerID),
 		zap.String("to_player_id", toPlayerID),
-		zap.String("card_id", cardID),
+		// zap.String("card_id", cardID),
 	)
 
 	return s.persistState()

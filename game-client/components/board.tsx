@@ -1,8 +1,7 @@
-"use client";
-
 import { useState } from "react";
 import Card from "@/components/card";
 import Field from "@/components/field";
+import Player from "@/components/player";
 import { CardType, ExternalPlayer, FieldType } from "@/schemas/types";
 
 type BoardProp = {
@@ -10,6 +9,7 @@ type BoardProp = {
   myField: FieldType;
   players: ExternalPlayer[];
   centerCards: CardType[];
+  currentTurnPlayerId?: string;
   onPlantBean: (cardId: string, slotId: string) => void;
   onTradeBean: (cardId: string, toPlayerId: string) => void;
   onHarvestField: (slotId: string) => void;
@@ -21,6 +21,7 @@ export default function Board({
   myField,
   players,
   centerCards,
+  currentTurnPlayerId,
   onPlantBean,
   onTradeBean,
   onHarvestField,
@@ -29,19 +30,22 @@ export default function Board({
   const [selectedCard, setSelectedCard] = useState<CardType | null>(null);
 
   // Calculate positions for players around the table
+  // Players are distributed in a circle at equal distance from center
   const getPlayerPosition = (index: number, total: number) => {
-    const startAngle = 180;
-    const endAngle = 0;
+    // Distribute players evenly around the top half of the circle (180 degrees)
+    const startAngle = 180; // Left side
+    const endAngle = 0;     // Right side
     const angleRange = startAngle - endAngle;
 
-    const angle = startAngle - (angleRange / (total - 1)) * index;
+    // Calculate angle for this player
+    const angle = startAngle - (angleRange / (total > 1 ? total - 1 : 1)) * index;
     const angleRad = (angle * Math.PI) / 180;
 
-    const radiusX = 45;
-    const radiusY = 40;
+    // Use same radius for both x and y to create a perfect circle
+    const radius = 42; // Distance from center (in %)
 
-    const x = 50 + radiusX * Math.cos(angleRad);
-    const y = 50 - radiusY * Math.sin(angleRad);
+    const x = 50 + radius * Math.cos(angleRad);
+    const y = 50 - radius * Math.sin(angleRad);
 
     return {
       left: `${x}%`,
@@ -111,20 +115,13 @@ export default function Board({
               key={player.playerId}
               className="absolute"
               style={position}
-              onClick={() => handlePlayerClick(player.playerId)}
             >
-              <div
-                className={`flex flex-col items-center gap-2 transition-all duration-200
-                  ${selectedCard ? "cursor-pointer hover:ring-4 hover:ring-blue-400 rounded-lg" : ""}
-                `}
-              >
-                <div className="bg-gray-200 dark:bg-gray-800 rounded-lg px-4 py-2">
-                  <p className="text-sm font-semibold">{player.playerName}</p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
-                    {player.playerCards} cards
-                  </p>
-                </div>
-              </div>
+              <Player
+                player={player}
+                onClick={handlePlayerClick}
+                isClickable={!!selectedCard}
+                isCurrentTurn={player.playerId === currentTurnPlayerId}
+              />
             </div>
           );
         })}

@@ -46,7 +46,7 @@ type Client struct {
 	logger *zap.Logger
 
 	// Player information
-	PlayerID   string
+	PlayerId   string
 	PlayerName string
 
 	// Context for cancellation
@@ -100,8 +100,8 @@ func (c *Client) ReadPump() {
 		}
 
 		// Set player ID from message if not already set
-		if c.PlayerID == "" && msg.PlayerID != "" {
-			c.PlayerID = msg.PlayerID
+		if c.PlayerId == "" && msg.PlayerID != "" {
+			c.PlayerId = msg.PlayerID
 		}
 
 		// Handle the message
@@ -186,8 +186,8 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 	}
 
 	c.PlayerName = payload.PlayerName
-	if c.PlayerID == "" {
-		c.PlayerID = c.ID // Use client ID as player ID if not set
+	if c.PlayerId == "" {
+		c.PlayerId = c.ID // Use client ID as player ID if not set
 	}
 
 	// Join the room
@@ -197,7 +197,7 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 
 	// Add player to game session
 	session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
-	if err := session.HandlePlayerJoin(c.PlayerID, c.PlayerName); err != nil {
+	if err := session.HandlePlayerJoin(c.PlayerId, c.PlayerName); err != nil {
 		c.logger.Error("failed to add player to game session", zap.Error(err))
 	}
 
@@ -210,7 +210,7 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 	if c.hub.repo != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		c.hub.repo.AddPlayerToRoom(ctx, msg.RoomID, c.PlayerID)
+		c.hub.repo.AddPlayerToRoom(ctx, msg.RoomID, c.PlayerId)
 	}
 
 	// Send current game state to the joining client
@@ -224,7 +224,7 @@ func (c *Client) handleLeave(msg *protocol.Message) {
 
 	// Remove player from game session
 	if session, ok := c.hub.gameManager.GetSession(c.room.ID); ok {
-		if err := session.HandlePlayerLeave(c.PlayerID); err != nil {
+		if err := session.HandlePlayerLeave(c.PlayerId); err != nil {
 			c.logger.Error("failed to remove player from game session", zap.Error(err))
 		}
 	}
@@ -239,7 +239,7 @@ func (c *Client) handleLeave(msg *protocol.Message) {
 	if c.hub.repo != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		c.hub.repo.RemovePlayerFromRoom(ctx, c.room.ID, c.PlayerID)
+		c.hub.repo.RemovePlayerFromRoom(ctx, c.room.ID, c.PlayerId)
 	}
 
 	c.room = nil
@@ -313,23 +313,24 @@ func (c *Client) handlePlantBean(session interface{}, payload map[string]interfa
 	}
 
 	if s, ok := session.(*game.Session); ok {
-		if err := s.HandlePlantBean(c.PlayerID, cardID, slotId); err != nil {
+		if err := s.HandlePlantBean(c.PlayerId, cardID, slotId); err != nil {
 			c.sendError("plant_failed", "Failed to plant bean")
 		}
 	}
 }
 
 func (c *Client) handleTradeBean(session interface{}, payload map[string]interface{}) {
-	cardID, _ := payload["cardId"].(string)
-	toPlayerID, _ := payload["toPlayerId"].(string)
+	cardsReceived, _ := payload["cardsReceived"].([]string)
+	cardsGiven, _ := payload["cardsGiven"].([]string)
+	toPlayerId, _ := payload["toPlayerId"].(string)
 
-	if cardID == "" || toPlayerID == "" {
+	if toPlayerId == "" {
 		c.sendError("invalid_params", "Missing cardId or toPlayerId")
 		return
 	}
 
 	if s, ok := session.(*game.Session); ok {
-		if err := s.HandleTradeBean(c.PlayerID, toPlayerID, cardID); err != nil {
+		if err := s.HandleTradeBean(c.PlayerId, toPlayerId, cardsReceived, cardsGiven); err != nil {
 			c.sendError("trade_failed", "Failed to trade bean")
 		}
 	}
@@ -344,7 +345,7 @@ func (c *Client) handleHarvestField(session interface{}, payload map[string]inte
 	}
 
 	if s, ok := session.(*game.Session); ok {
-		if err := s.HandleHarvestField(c.PlayerID, slotId); err != nil {
+		if err := s.HandleHarvestField(c.PlayerId, slotId); err != nil {
 			c.sendError("harvest_failed", "Failed to harvest field")
 		}
 	}
@@ -370,7 +371,7 @@ func (c *Client) sendError(code, message string) {
 	errorMsg, err := protocol.NewMessage(
 		protocol.MessageTypeError,
 		"",
-		c.PlayerID,
+		c.PlayerId,
 		protocol.ErrorPayload{
 			Code:    code,
 			Message: message,
@@ -407,7 +408,7 @@ func (c *Client) sendGameState(roomID string, session interface{}) {
 	stateMsg, err := protocol.NewMessage(
 		protocol.MessageTypeState,
 		roomID,
-		c.PlayerID,
+		c.PlayerId,
 		stateData,
 	)
 	if err != nil {
@@ -443,7 +444,7 @@ func (c *Client) handlePlayerState(msg *protocol.Message) {
 	stateMsg, err := protocol.NewMessage(
 		protocol.MessageTypePlayerState,
 		msg.RoomID,
-		c.PlayerID,
+		c.PlayerId,
 		stateData,
 	)
 	if err != nil {

@@ -1,6 +1,7 @@
 package game
 
 import (
+	"slices"
 	"time"
 )
 
@@ -43,13 +44,13 @@ func NewState(roomID string) *State {
 }
 
 // AddPlayer adds a player to the game state
-func (s *State) AddPlayer(playerID, playerName string) *Player {
-	fieldID := "field-" + playerID
+func (s *State) AddPlayer(playerId, playerName string) *Player {
+	fieldID := "field-" + playerId
 	// TODO: Change the number of fields depending on players
 	field := NewField(fieldID, 2)
 
 	player := &Player{
-		ID:               playerID,
+		ID:               playerId,
 		Name:             playerName,
 		Status:           "active",
 		Coins:            0,
@@ -59,21 +60,21 @@ func (s *State) AddPlayer(playerID, playerName string) *Player {
 		JoinedAt:         time.Now(),
 	}
 
-	s.Players[playerID] = player
+	s.Players[playerId] = player
 	s.UpdatedAt = time.Now()
 
 	return player
 }
 
 // RemovePlayer removes a player from the game state
-func (s *State) RemovePlayer(playerID string) {
-	delete(s.Players, playerID)
+func (s *State) RemovePlayer(playerId string) {
+	delete(s.Players, playerId)
 	s.UpdatedAt = time.Now()
 }
 
 // GetPlayer retrieves a player by ID
-func (s *State) GetPlayer(playerID string) (*Player, bool) {
-	player, ok := s.Players[playerID]
+func (s *State) GetPlayer(playerId string) (*Player, bool) {
+	player, ok := s.Players[playerId]
 	return player, ok
 }
 
@@ -330,6 +331,106 @@ func (s *State) HarvestField(playerId string, slotId string) error {
 
 	player.Coins += coinsEarned
 	player.Field.RemoveFromSlot(slotId)
+
+	return nil
+}
+
+func (s *State) TradeBeans(fromPlayerID string, toPlayerID string, cardsReceived []string, cardsGiven []string) error {
+	fromPlayer, ok := s.GetPlayer(fromPlayerID)
+	if !ok {
+		// s.logger.Warn("from player not found", zap.String("player_id", fromPlayerID))
+		return nil
+	}
+
+	toPlayer, ok := s.GetPlayer(toPlayerID)
+	if !ok {
+		// s.logger.Warn("to player not found", zap.String("player_id", toPlayerID))
+		return nil
+	}
+
+	// Find and collect cards that fromPlayer is giving away
+	cardsToGive := make([]*Card, 0, len(cardsGiven))
+	cardsToGiveIndices := make([]int, 0, len(cardsGiven))
+
+	for _, cardID := range cardsGiven {
+		if cardID == "" {
+			continue
+		}
+		found := false
+		for i, card := range fromPlayer.Hand {
+			if card.ID == cardID {
+				cardsToGive = append(cardsToGive, card)
+				cardsToGiveIndices = append(cardsToGiveIndices, i)
+				found = true
+				break
+			}
+		}
+		if !found {
+			// s.logger.Warn("card to give not found in fromPlayer's hand",
+			// 	zap.String("player_id", fromPlayerID),
+			// 	zap.String("card_id", cardID),
+			// )
+			return nil
+		}
+	}
+
+	// Find and collect cards that fromPlayer is receiving
+	cardsToReceive := make([]*Card, 0, len(cardsReceived))
+	cardsToReceiveIndices := make([]int, 0, len(cardsReceived))
+
+	for _, cardID := range cardsReceived {
+		if cardID == "" {
+			continue
+		}
+		found := false
+		for i, card := range toPlayer.Hand {
+			if card.ID == cardID {
+				cardsToReceive = append(cardsToReceive, card)
+				cardsToReceiveIndices = append(cardsToReceiveIndices, i)
+				found = true
+				break
+			}
+		}
+		if !found {
+			// s.logger.Warn("card to receive not found in toPlayer's hand",
+			// 	zap.String("player_id", toPlayerID),
+			// 	zap.String("card_id", cardID),
+			// )
+			return nil
+		}
+	}
+
+	// Transfer cards from fromPlayer to toPlayer
+	// Build new hand for fromPlayer excluding cards being given away
+	if len(cardsToGive) > 0 {
+		newFromPlayerHand := make([]*Card, 0, len(fromPlayer.Hand)-len(cardsToGive))
+		for i, card := range fromPlayer.Hand {
+			shouldRemove := slices.Contains(cardsToGiveIndices, i)
+			if !shouldRemove {
+				newFromPlayerHand = append(newFromPlayerHand, card)
+			}
+		}
+		fromPlayer.Hand = newFromPlayerHand
+
+		// Add cards to toPlayer's hand
+		toPlayer.Hand = append(toPlayer.Hand, cardsToGive...)
+	}
+
+	// Transfer cards from toPlayer to fromPlayer
+	// Build new hand for toPlayer excluding cards being given away
+	if len(cardsToReceive) > 0 {
+		newToPlayerHand := make([]*Card, 0, len(toPlayer.Hand)-len(cardsToReceive))
+		for i, card := range toPlayer.Hand {
+			shouldRemove := slices.Contains(cardsToReceiveIndices, i)
+			if !shouldRemove {
+				newToPlayerHand = append(newToPlayerHand, card)
+			}
+		}
+		toPlayer.Hand = newToPlayerHand
+
+		// Add cards to fromPlayer's hand
+		fromPlayer.Hand = append(fromPlayer.Hand, cardsToReceive...)
+	}
 
 	return nil
 }

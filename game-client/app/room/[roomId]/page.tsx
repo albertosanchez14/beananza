@@ -5,7 +5,6 @@ import { useActions } from "@/hooks/useActions";
 
 import { CardType, ExternalPlayer, FieldType } from "@/schemas/types";
 import Board from "@/components/board";
-import { playersData } from "@/data/sample";
 
 export default function Page() {
   const params = useParams();
@@ -41,6 +40,7 @@ export default function Page() {
         const payload = message.payload as {
           player: { hand: CardType[]; field: FieldType };
           center_cards: CardType[];
+          external_players: ExternalPlayer[];
           turn_order: string[];
           current_turn: number;
           phase: string;
@@ -51,6 +51,7 @@ export default function Page() {
           slots: payload.player.field.slots || [],
         });
         setCenterCards(payload.center_cards);
+        setPlayers(payload.external_players);
         const playerTurnId = payload.turn_order[payload.current_turn];
         setPlayerTurn(playerTurnId);
         setPhase(payload.phase);
@@ -65,7 +66,7 @@ export default function Page() {
   const [myHand, setMyHand] = useState<CardType[]>([]);
   const [myField, setMyField] = useState<FieldType>({ fieldId: "", slots: [] });
   const [centerCards, setCenterCards] = useState<CardType[]>([]);
-  const [players, setPlayers] = useState<ExternalPlayer[]>(playersData);
+  const [players, setPlayers] = useState<ExternalPlayer[]>([]);
   const [playerTurn, setPlayerTurn] = useState<string>("");
   const [gamePhase, setPhase] = useState<string>("");
 
@@ -123,6 +124,7 @@ export default function Page() {
           myField={myField}
           players={players}
           centerCards={centerCards}
+          currentTurnPlayerId={playerTurn}
           onPlantBean={handlePlantBean}
           onTradeBean={handleTradeBean}
           onHarvestField={handleHarvestField}
