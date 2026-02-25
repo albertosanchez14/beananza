@@ -11,29 +11,14 @@ import (
 
 // Hub maintains the set of active clients and broadcasts messages to clients
 type Hub struct {
-	// Registered clients
-	clients map[*Client]bool
-
-	// Active rooms
-	rooms map[string]*Room
-
-	// Game manager for game sessions
+	clients     map[*Client]bool
+	rooms       map[string]*Room
 	gameManager *game.Manager
-
-	// Register requests from clients
-	register chan *Client
-
-	// Unregister requests from clients
-	unregister chan *Client
-
-	// Mutex for thread-safe operations
-	mu sync.RWMutex
-
-	// Logger
-	logger *zap.Logger
-
-	// Repository for persistence
-	repo *storage.Repository
+	register    chan *Client
+	unregister  chan *Client
+	mu          sync.RWMutex
+	logger      *zap.Logger
+	repo        *storage.Repository
 }
 
 // NewHub creates a new Hub

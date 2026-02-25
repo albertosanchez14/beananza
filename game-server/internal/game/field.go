@@ -1,7 +1,6 @@
 package game
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -9,6 +8,7 @@ type Slot struct {
 	SlotId     string   `json:"slotId"`
 	CardType   CardType `json:"cardName"`
 	CardNumber int      `json:"cardQuantity"`
+	CardIds    []string `json:"cardIds"`
 }
 
 type Field struct {
@@ -39,12 +39,12 @@ func (f *Field) GetSlotFromId(slotId string) (*Slot, error) {
 			return slot, nil
 		}
 	}
-	return nil, errors.New("slot not found with id: " + slotId)
+	return nil, NewSlotNotFoundError(slotId)
 }
 
 // AddToSlot adds a card to a slot by its ID
 // If the slot doesn't exist, it returns an error
-func (f *Field) AddToSlot(slotId string, cardType CardType, quantity int) error {
+func (f *Field) AddToSlot(slotId string, cardType CardType, cardId string) error {
 	slot, err := f.GetSlotFromId(slotId)
 	if err != nil {
 		return err
@@ -53,10 +53,12 @@ func (f *Field) AddToSlot(slotId string, cardType CardType, quantity int) error 
 	if slot.CardType == "" {
 		slot.CardType = cardType
 	} else if slot.CardType != cardType {
-		return errors.New("card type mismatch: slot has " + string(slot.CardType) + ", trying to add " + string(cardType))
+		return NewCardTypeMismatchError(slot.CardType, cardType)
 	}
 
-	slot.CardNumber += quantity
+	slot.CardIds = append(slot.CardIds, cardId)
+	slot.CardNumber += 1
+
 	return nil
 }
 

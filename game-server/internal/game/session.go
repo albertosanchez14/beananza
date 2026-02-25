@@ -50,14 +50,20 @@ func (s *Session) GetFullSnapshot() map[string]interface{} {
 		"started_at":   s.state.StartedAt,
 		"ended_at":     s.state.EndedAt,
 		"updated_at":   s.state.UpdatedAt,
-		"data":         s.state.Data,
 	}
 
 	// Include deck size but not the actual deck contents (to prevent cheating)
-	if s.state.CenterDeck != nil {
-		snapshot["deck_size"] = s.state.CenterDeck.Size()
+	if s.state.DrawPile != nil {
+		snapshot["deck_size"] = s.state.DrawPile.Size()
 	} else {
 		snapshot["deck_size"] = 0
+	}
+
+	// Include discard pile size
+	if s.state.DiscardPile != nil {
+		snapshot["discard_pile_size"] = s.state.DiscardPile.Size()
+	} else {
+		snapshot["discard_pile_size"] = 0
 	}
 
 	return snapshot
@@ -83,14 +89,20 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]interface{} {
 		"started_at":   s.state.StartedAt,
 		"ended_at":     s.state.EndedAt,
 		"updated_at":   s.state.UpdatedAt,
-		"data":         s.state.Data,
 	}
 
 	// Include deck size but not the actual deck contents
-	if s.state.CenterDeck != nil {
-		snapshot["deck_size"] = s.state.CenterDeck.Size()
+	if s.state.DrawPile != nil {
+		snapshot["deck_size"] = s.state.DrawPile.Size()
 	} else {
 		snapshot["deck_size"] = 0
+	}
+
+	// Include discard pile size
+	if s.state.DiscardPile != nil {
+		snapshot["discard_pile_size"] = s.state.DiscardPile.Size()
+	} else {
+		snapshot["discard_pile_size"] = 0
 	}
 
 	// Public data includes all player info except the actual hand cards (only hand size)
@@ -114,34 +126,45 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]interface{} {
 	return snapshot
 }
 
+// logAndReturnError logs errors with appropriate level and context, then returns the error
+func (s *Session) logAndReturnError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// Check if it's a GameError (expected game rule violations)
+	if gameErr, ok := err.(*GameError); ok {
+		s.logger.Warn("game action failed",
+			zap.String("action", action),
+			zap.String("error_code", gameErr.Code),
+			zap.String("error_message", gameErr.Message),
+			zap.Any("details", gameErr.Details),
+		)
+	} else {
+		// Unexpected errors (system errors, database errors, etc.)
+		s.logger.Error("action failed unexpectedly",
+			zap.String("action", action),
+			zap.Error(err),
+		)
+	}
+
+	return err
+}
+
 // HandlePlayerJoin handles a player joining the game
 func (s *Session) HandlePlayerJoin(playerID, playerName string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	player := s.state.AddPlayer(playerID, playerName)
+	s.state.AddPlayer(playerID, playerName)
+
 	s.logger.Info("player joined game",
 		zap.String("player_id", playerID),
 		zap.String("player_name", playerName),
 		zap.Int("player_count", s.state.PlayerCount()),
 	)
 
-	// Persist to Redis
-	if s.repo != nil {
-		ctx := context.Background()
-		if err := s.repo.SaveGameState(ctx, s.state.RoomID, s.state); err != nil {
-			s.logger.Error("failed to save game state", zap.Error(err))
-			return err
-		}
-	}
-
-	if s.state.Phase == "waiting" && s.state.PlayerCount() >= 2 {
-		s.startGame()
-	}
-
-	_ = player // Use player if needed for additional logic
-
-	return nil
+	return s.persistState()
 }
 
 // HandlePlayerLeave handles a player leaving the game
@@ -155,27 +178,19 @@ func (s *Session) HandlePlayerLeave(playerID string) error {
 		zap.Int("player_count", s.state.PlayerCount()),
 	)
 
-	// Persist to Redis
-	if s.repo != nil {
-		ctx := context.Background()
-		if err := s.repo.SaveGameState(ctx, s.state.RoomID, s.state); err != nil {
-			s.logger.Error("failed to save game state", zap.Error(err))
-			return err
-		}
-	}
-
-	// End game if not enough players
-	if s.state.Phase == "playing" && s.state.PlayerCount() < 2 {
+	// End game if not enough players during active game
+	if s.state.PlayerCount() < MIN_NUMBER_PLAYERS {
 		s.endGame()
 	}
 
-	return nil
+	return s.persistState()
 }
 
 // startGame transitions the game to playing phase
 func (s *Session) startGame() {
-	s.state.CenterDeck = NewDeck()
-	s.state.CenterDeck.Shuffle()
+	s.state.DrawPile = NewDeck()
+	s.state.DrawPile.Shuffle()
+	s.state.DiscardPile = &Deck{Cards: make([]*Card, 0)}
 
 	// Create random turn order from players
 	s.state.TurnOrder = make([]string, 0, len(s.state.Players))
@@ -188,7 +203,7 @@ func (s *Session) startGame() {
 
 	// Deal cards to players (5 cards each in standard Bohnanza)
 	for playerID, player := range s.state.Players {
-		player.Hand = s.state.CenterDeck.Draw(5)
+		player.Hand = s.state.DrawPile.Draw(5)
 		s.logger.Info("dealt cards to player",
 			zap.String("player_id", playerID),
 			zap.Int("cards_dealt", len(player.Hand)),
@@ -201,7 +216,7 @@ func (s *Session) startGame() {
 
 	s.logger.Info("game started",
 		zap.Int("player_count", s.state.PlayerCount()),
-		zap.Int("deck_size", s.state.CenterDeck.Size()),
+		zap.Int("deck_size", s.state.DrawPile.Size()),
 		zap.Int("center_cards", len(s.state.CenterCards)),
 		zap.String("player_turn_id", playerTurn),
 	)
@@ -250,28 +265,27 @@ func (s *Session) HandlePlantBean(playerID string, cardID string, slotId string)
 	defer s.mu.Unlock()
 
 	if err := s.state.PlantBean(playerID, cardID, slotId); err != nil {
-		return err
+		return s.logAndReturnError("plant_bean", err)
 	}
 
 	s.logger.Info("bean planted",
 		zap.String("player_id", playerID),
 		zap.String("card_id", cardID),
-		// zap.String("card_type", string(cardToPlant.Name)),
-		// zap.String("source", map[bool]string{true: "center", false: "hand"}[isFromCenter]),
-		// zap.Int("beans_planted_turn", player.BeansPlantedTurn),
 	)
 
 	return s.persistState()
 }
 
 // HandleTurnOverBean handles turning over a bean from the center deck
-func (s *Session) HandleTurnOverBean() error {
+func (s *Session) HandleTurnOverBean(playerId string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.state.TurnOverBean(); err != nil {
-		return err
+	if err := s.state.TurnOverBean(playerId); err != nil {
+		return s.logAndReturnError("turn_over_bean", err)
 	}
+
+	s.logger.Info("beans turned over")
 
 	return s.persistState()
 }
@@ -282,13 +296,12 @@ func (s *Session) HandleTradeBean(fromPlayerID string, toPlayerID string, cardsR
 	defer s.mu.Unlock()
 
 	if err := s.state.TradeBeans(fromPlayerID, toPlayerID, cardsReceived, cardsGiven); err != nil {
-		return err
+		return s.logAndReturnError("trade_bean", err)
 	}
 
 	s.logger.Info("bean traded",
 		zap.String("from_player_id", fromPlayerID),
 		zap.String("to_player_id", toPlayerID),
-		// zap.String("card_id", cardID),
 	)
 
 	return s.persistState()
@@ -300,26 +313,48 @@ func (s *Session) HandleHarvestField(playerID, slotId string) error {
 	defer s.mu.Unlock()
 
 	if err := s.state.HarvestField(playerID, slotId); err != nil {
-		return err
+		return s.logAndReturnError("harvest_field", err)
 	}
 
 	s.logger.Info("field harvested",
 		zap.String("player_id", playerID),
-		// zap.String("card_type", string(slot.CardType)),
-		// zap.Int("cards_harvested", slot.CardNumber),
-		// zap.Int("coins_earned", coinsEarned),
+		zap.String("slot_id", slotId),
 	)
 
 	return s.persistState()
 }
 
-func (s *Session) HandleNextPhase() error {
+// HandleDrawCards handles drawing a card from the middle
+func (s *Session) HandleDrawCards(playerId string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.state.NextPhase(); err != nil {
-		return err
+	// RULE: Can only draw 3 cards from the deck when ending the turn
+	cardsToDraw := 3
+	if err := s.state.DrawCards(playerId, cardsToDraw); err != nil {
+		return s.logAndReturnError("draw_cards", err)
 	}
+
+	s.logger.Info("cards drawn",
+		zap.String("player_id", playerId),
+		zap.Int("cards_drawn", cardsToDraw),
+	)
+
+	return s.persistState()
+}
+
+// HandleNextPhase handles transitioning to the next game phase
+func (s *Session) HandleNextPhase(playerId string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.state.NextPhase(playerId); err != nil {
+		return s.logAndReturnError("next_phase", err)
+	}
+
+	s.logger.Info("phase transitioned",
+		zap.String("new_phase", string(s.state.Phase)),
+	)
 
 	return s.persistState()
 }

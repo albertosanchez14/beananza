@@ -27,31 +27,16 @@ const (
 
 // Client represents a WebSocket client connection
 type Client struct {
-	// Unique identifier for this client
-	ID string
-
-	// The WebSocket connection
-	conn *websocket.Conn
-
-	// Hub that manages this client
-	hub *Hub
-
-	// Room the client is currently in
-	room *Room
-
-	// Buffered channel of outbound messages
-	send chan []byte
-
-	// Logger for this client
-	logger *zap.Logger
-
-	// Player information
+	ID         string
+	conn       *websocket.Conn
+	hub        *Hub
+	room       *Room
+	send       chan []byte
 	PlayerId   string
 	PlayerName string
-
-	// Context for cancellation
-	ctx    context.Context
-	cancel context.CancelFunc
+	logger     *zap.Logger
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 func NewClient(id string, conn *websocket.Conn, hub *Hub, logger *zap.Logger) *Client {
@@ -134,7 +119,7 @@ func (c *Client) WritePump() {
 
 			// Add queued messages to the current WebSocket message
 			n := len(c.send)
-			for i := 0; i < n; i++ {
+			for range n {
 				w.Write([]byte{'\n'})
 				w.Write(<-c.send)
 			}
@@ -168,6 +153,7 @@ func (c *Client) handleMessage(msg *protocol.Message) {
 		c.handleLeave(msg)
 	case protocol.MessageTypeAction:
 		c.handleAction(msg)
+		c.handlePlayerState(msg)
 	case protocol.MessageTypeState:
 		session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
 		c.sendGameState(msg.RoomID, session)
@@ -190,12 +176,10 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 		c.PlayerId = c.ID // Use client ID as player ID if not set
 	}
 
-	// Join the room
 	room := c.hub.GetOrCreateRoom(msg.RoomID)
 	room.Join(c)
 	c.room = room
 
-	// Add player to game session
 	session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
 	if err := session.HandlePlayerJoin(c.PlayerId, c.PlayerName); err != nil {
 		c.logger.Error("failed to add player to game session", zap.Error(err))
@@ -207,14 +191,11 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 	)
 
 	// Persist to Redis
-	if c.hub.repo != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		c.hub.repo.AddPlayerToRoom(ctx, msg.RoomID, c.PlayerId)
-	}
-
-	// Send current game state to the joining client
-	c.sendGameState(msg.RoomID, session)
+	// if c.hub.repo != nil {
+	// 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// 	defer cancel()
+	// 	c.hub.repo.AddPlayerToRoom(ctx, msg.RoomID, c.PlayerId)
+	// }
 }
 
 func (c *Client) handleLeave(msg *protocol.Message) {
@@ -281,6 +262,8 @@ func (c *Client) handleAction(msg *protocol.Message) {
 		c.handleHarvestField(session, payload)
 	case "turnOverBean":
 		c.handleTurnOverBean(session, payload)
+	case "drawCards":
+		c.handleDrawCards(session, payload)
 	case "nextPhase":
 		c.handleNextPhase(session, payload)
 	default:
@@ -303,7 +286,7 @@ func (c *Client) handleAction(msg *protocol.Message) {
 	}
 }
 
-func (c *Client) handlePlantBean(session interface{}, payload map[string]interface{}) {
+func (c *Client) handlePlantBean(session interface{}, payload map[string]any) {
 	cardID, _ := payload["cardId"].(string)
 	slotId, _ := payload["slotId"].(string)
 
@@ -314,12 +297,17 @@ func (c *Client) handlePlantBean(session interface{}, payload map[string]interfa
 
 	if s, ok := session.(*game.Session); ok {
 		if err := s.HandlePlantBean(c.PlayerId, cardID, slotId); err != nil {
-			c.sendError("plant_failed", "Failed to plant bean")
+			// Check if it's a GameError to send structured error
+			if gameErr, ok := err.(*game.GameError); ok {
+				c.sendError(gameErr.Code, gameErr.Message)
+			} else {
+				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+			}
 		}
 	}
 }
 
-func (c *Client) handleTradeBean(session interface{}, payload map[string]interface{}) {
+func (c *Client) handleTradeBean(session interface{}, payload map[string]any) {
 	cardsReceived, _ := payload["cardsReceived"].([]string)
 	cardsGiven, _ := payload["cardsGiven"].([]string)
 	toPlayerId, _ := payload["toPlayerId"].(string)
@@ -331,12 +319,17 @@ func (c *Client) handleTradeBean(session interface{}, payload map[string]interfa
 
 	if s, ok := session.(*game.Session); ok {
 		if err := s.HandleTradeBean(c.PlayerId, toPlayerId, cardsReceived, cardsGiven); err != nil {
-			c.sendError("trade_failed", "Failed to trade bean")
+			// Check if it's a GameError to send structured error
+			if gameErr, ok := err.(*game.GameError); ok {
+				c.sendError(gameErr.Code, gameErr.Message)
+			} else {
+				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+			}
 		}
 	}
 }
 
-func (c *Client) handleHarvestField(session interface{}, payload map[string]interface{}) {
+func (c *Client) handleHarvestField(session interface{}, payload map[string]any) {
 	slotId, _ := payload["slotId"].(string)
 
 	if slotId == "" {
@@ -346,23 +339,50 @@ func (c *Client) handleHarvestField(session interface{}, payload map[string]inte
 
 	if s, ok := session.(*game.Session); ok {
 		if err := s.HandleHarvestField(c.PlayerId, slotId); err != nil {
-			c.sendError("harvest_failed", "Failed to harvest field")
+			// Check if it's a GameError to send structured error
+			if gameErr, ok := err.(*game.GameError); ok {
+				c.sendError(gameErr.Code, gameErr.Message)
+			} else {
+				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+			}
 		}
 	}
 }
 
-func (c *Client) handleTurnOverBean(session interface{}, payload map[string]interface{}) {
+func (c *Client) handleTurnOverBean(session interface{}, payload map[string]any) {
 	if s, ok := session.(*game.Session); ok {
-		if err := s.HandleTurnOverBean(); err != nil {
-			c.sendError("turnover_failed", "Failed to turn over bean")
+		if err := s.HandleTurnOverBean(c.PlayerId); err != nil {
+			// Check if it's a GameError to send structured error
+			if gameErr, ok := err.(*game.GameError); ok {
+				c.sendError(gameErr.Code, gameErr.Message)
+			} else {
+				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+			}
 		}
 	}
 }
 
-func (c *Client) handleNextPhase(session interface{}, payload map[string]interface{}) {
+func (c *Client) handleDrawCards(session interface{}, payload map[string]any) {
 	if s, ok := session.(*game.Session); ok {
-		if err := s.HandleNextPhase(); err != nil {
-			c.sendError("next_phase", "Failed to go to the next phase")
+		if err := s.HandleDrawCards(c.PlayerId); err != nil {
+			// Check if it's a GameError to send structured error
+			if gameErr, ok := err.(*game.GameError); ok {
+				c.sendError(gameErr.Code, gameErr.Message)
+			} else {
+				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+			}
+		}
+	}
+}
+
+func (c *Client) handleNextPhase(session interface{}, payload map[string]any) {
+	if s, ok := session.(*game.Session); ok {
+		if err := s.HandleNextPhase(c.PlayerId); err != nil {
+			if gameErr, ok := err.(*game.GameError); ok {
+				c.sendError(gameErr.Code, gameErr.Message)
+			} else {
+				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+			}
 		}
 	}
 }

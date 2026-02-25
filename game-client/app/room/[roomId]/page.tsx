@@ -1,13 +1,15 @@
 "use client";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useActions } from "@/hooks/useActions";
+import { useActions, BroadcastPayload } from "@/hooks/useActions";
 
-import { CardType, ExternalPlayer, FieldType } from "@/schemas/types";
+import { CardType, ExternalPlayer, FieldType, Player } from "@/schemas/types";
 import Board from "@/components/board";
+import WaitingRoom from "@/components/waiting-room";
 
 export default function Page() {
   const params = useParams();
+  const router = useRouter();
   const roomId = params.roomId as string;
   // TODO: create a custom hook to track the playerid
   const [playerId, setPlayerId] = useState("");
@@ -23,38 +25,77 @@ export default function Page() {
   const WS_URL = "ws://localhost:8080/ws";
   const {
     sendJoin,
+    sendLeave,
     isConnected,
     plantBean,
     tradeBean,
     harvestField,
     turnOverBean,
+    drawCards,
+    setReady,
     myState,
     nextPhase,
   } = useActions({
     wsUrl: WS_URL,
     playerId,
     onMessage: (message) => {
-      // TODO: Update players state based on broadcast messages
       console.log("Room received message:", message);
-      if (message.type === "myState") {
-        const payload = message.payload as {
-          player: { hand: CardType[]; field: FieldType };
-          center_cards: CardType[];
-          external_players: ExternalPlayer[];
-          turn_order: string[];
-          current_turn: number;
-          phase: string;
-        };
-        setMyHand(payload.player.hand);
-        setMyField({
-          ...payload.player.field,
-          slots: payload.player.field.slots || [],
-        });
-        setCenterCards(payload.center_cards);
-        setPlayers(payload.external_players);
-        const playerTurnId = payload.turn_order[payload.current_turn];
-        setPlayerTurn(playerTurnId);
+
+      // Handle broadcast events
+      if (message.type === "broadcast") {
+        const broadcastPayload = message.payload as unknown as BroadcastPayload;
+
+        switch (broadcastPayload.event) {
+          case "player_joined": {
+            console.log("Player joined:", broadcastPayload.data);
+            myState(roomId);
+            break;
+          }
+          case "player_left": {
+            console.log("Player left:", broadcastPayload.data);
+            myState(roomId);
+            break;
+          }
+          case "player_ready_changed": {
+            console.log("Player ready changed:", broadcastPayload.data);
+            myState(roomId);
+            break;
+          }
+        }
+      }
+
+      // Handle state updates
+      if (message.type === "myState" || message.type === "state") {
+        const payload = message.payload as any;
         setPhase(payload.phase);
+
+        if (payload.phase === "waiting") {
+          // Waiting room mode
+          setAllPlayers(payload.players || []);
+          setMinPlayers(payload.min_players || 3);
+          setMaxPlayers(payload.max_players || 5);
+          setCanStart(payload.can_start || false);
+
+          // Find current player's ready state
+          const me = payload.players?.find((p: Player) => p.id === playerId);
+          setMyReadyState(me?.ready || false);
+        } else {
+          // Game mode
+          if (payload.player) {
+            setMyHand(payload.player.hand || []);
+            setMyField({
+              ...payload.player.field,
+              slots: payload.player.field?.slots || [],
+            });
+          }
+          setCenterCards(payload.center_cards || []);
+          setPlayers(payload.external_players || []);
+
+          if (payload.turn_order && payload.turn_order.length > 0) {
+            const playerTurnId = payload.turn_order[payload.current_turn || 0];
+            setPlayerTurn(playerTurnId);
+          }
+        }
       }
     },
     onError: (error) => {
@@ -62,7 +103,14 @@ export default function Page() {
     },
   });
 
-  // TODO: Get from the server
+  // Waiting room state
+  const [allPlayers, setAllPlayers] = useState<Player[]>([]);
+  const [minPlayers, setMinPlayers] = useState(3);
+  const [maxPlayers, setMaxPlayers] = useState(5);
+  const [canStart, setCanStart] = useState(false);
+  const [myReadyState, setMyReadyState] = useState(false);
+
+  // Game state
   const [myHand, setMyHand] = useState<CardType[]>([]);
   const [myField, setMyField] = useState<FieldType>({ fieldId: "", slots: [] });
   const [centerCards, setCenterCards] = useState<CardType[]>([]);
@@ -80,23 +128,23 @@ export default function Page() {
 
   // Action handler functions
   const handlePlantBean = (cardId: string, slotId: string) => {
-    console.log(`Planting bean: cardId=${cardId}, slotId=${slotId}`);
     plantBean(roomId, playerId, cardId, slotId);
   };
 
   const handleTradeBean = (cardId: string, toPlayerId: string) => {
-    console.log(`Trading bean: cardId=${cardId}, toPlayerId=${toPlayerId}`);
     tradeBean(roomId, playerId, toPlayerId, cardId);
   };
 
   const handleHarvestField = (slotId: string) => {
-    console.log(`Harvesting slot: slotId=${slotId}`);
     harvestField(roomId, playerId, slotId);
   };
 
   const handleTurnOverBean = () => {
-    console.log("Turning over bean from center deck");
     turnOverBean(roomId);
+  };
+
+  const handleDrawCards = () => {
+    drawCards(roomId);
   };
 
   const handleGetStatus = () => {
@@ -105,6 +153,15 @@ export default function Page() {
 
   const handleNextPhase = () => {
     nextPhase(roomId);
+  };
+
+  const handleSetReady = (ready: boolean) => {
+    setReady(roomId, ready);
+  };
+
+  const handleLeaveRoom = () => {
+    sendLeave(roomId);
+    router.push("/");
   };
 
   // Wait for playerId to be generated to avoid hydration mismatch
@@ -116,20 +173,40 @@ export default function Page() {
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
       <main className="relative flex min-h-screen w-full max-w-3xl flex-col items-center py-5 px-5 bg-white dark:bg-black">
         <h1 className="text-2xl font-bold mb-8">Room {roomId}</h1>
-        <span>Player: {playerId}</span>
-        <span>Player Turn: {playerTurn}</span>
-        <span>Game Phase: {gamePhase}</span>
-        <Board
-          myHand={myHand}
-          myField={myField}
-          players={players}
-          centerCards={centerCards}
-          currentTurnPlayerId={playerTurn}
-          onPlantBean={handlePlantBean}
-          onTradeBean={handleTradeBean}
-          onHarvestField={handleHarvestField}
-          onTurnOverBean={handleTurnOverBean}
-        />
+
+        {gamePhase === "waiting" ? (
+          <WaitingRoom
+            roomId={roomId}
+            players={allPlayers}
+            currentPlayerId={playerId}
+            minPlayers={minPlayers}
+            maxPlayers={maxPlayers}
+            canStart={canStart}
+            myReadyState={myReadyState}
+            onSetReady={handleSetReady}
+            onLeaveRoom={handleLeaveRoom}
+          />
+        ) : (
+          <>
+            <span>Player: {playerId}</span>
+            <span>Player Turn: {playerTurn}</span>
+            <span>Game Phase: {gamePhase}</span>
+            <Board
+              myHand={myHand}
+              myField={myField}
+              players={players}
+              centerCards={centerCards}
+              currentTurnPlayerId={playerTurn}
+              gamePhase={gamePhase}
+              onPlantBean={handlePlantBean}
+              onTradeBean={handleTradeBean}
+              onHarvestField={handleHarvestField}
+              onTurnOverBean={handleTurnOverBean}
+              onDrawCards={handleDrawCards}
+            />
+          </>
+        )}
+
         <div className="flex gap-4 pt-2">
           <button onClick={handleGetStatus}>Get Status</button>
           <button onClick={handleNextPhase}>Next Phase</button>

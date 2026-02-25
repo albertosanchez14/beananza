@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+const (
+	MAX_NUMBER_PLAYERS = 5
+	MIN_NUMBER_PLAYERS = 3
+)
+
 type Player struct {
 	ID               string    `json:"id"`
 	Name             string    `json:"name"`
@@ -20,14 +25,17 @@ type State struct {
 	RoomID      string
 	Phase       PhaseType
 	Players     map[string]*Player
-	CenterDeck  *Deck
+	DrawPile    *Deck
+	DiscardPile *Deck
 	CenterCards []*Card
 	TurnOrder   []string
 	CurrentTurn int
-	Data        map[string]interface{} // TODO: Remove?
-	StartedAt   time.Time
-	EndedAt     time.Time
-	UpdatedAt   time.Time
+	// Internal state
+	CardsTurned bool
+	// ==============
+	StartedAt time.Time
+	EndedAt   time.Time
+	UpdatedAt time.Time
 }
 
 // NewState creates a new game state
@@ -37,8 +45,8 @@ func NewState(roomID string) *State {
 		Phase:       "waiting",
 		Players:     make(map[string]*Player),
 		CenterCards: make([]*Card, 0),
-		CenterDeck:  nil,
-		Data:        make(map[string]interface{}),
+		DrawPile:    nil,
+		DiscardPile: nil,
 		UpdatedAt:   time.Now(),
 	}
 }
@@ -95,37 +103,31 @@ func (s *State) GetPhase() PhaseType {
 	return s.Phase
 }
 
-// SetData sets a value in the game data
-func (s *State) SetData(key string, value interface{}) {
-	s.Data[key] = value
-	s.UpdatedAt = time.Now()
-}
-
-// GetData retrieves a value from the game data
-func (s *State) GetData(key string) (interface{}, bool) {
-	value, ok := s.Data[key]
-	return value, ok
-}
-
 // PlayerCount returns the number of players
 func (s *State) PlayerCount() int {
 	return len(s.Players)
 }
 
 // UpdatePlayerStatus updates a player's status
-func (s *State) UpdatePlayerStatus(playerID, status string) {
-	if player, ok := s.Players[playerID]; ok {
-		player.Status = status
-		s.UpdatedAt = time.Now()
+func (s *State) UpdatePlayerStatus(playerID, status string) error {
+	player, ok := s.Players[playerID]
+	if !ok {
+		return NewPlayerNotFoundError(playerID)
 	}
+	player.Status = status
+	s.UpdatedAt = time.Now()
+	return nil
 }
 
 // UpdatePlayerScore updates a player's score
-func (s *State) UpdatePlayerCoins(playerID string, score int) {
-	if player, ok := s.Players[playerID]; ok {
-		player.Coins = score
-		s.UpdatedAt = time.Now()
+func (s *State) UpdatePlayerCoins(playerID string, score int) error {
+	player, ok := s.Players[playerID]
+	if !ok {
+		return NewPlayerNotFoundError(playerID)
 	}
+	player.Coins = score
+	s.UpdatedAt = time.Now()
+	return nil
 }
 
 // Clone creates a deep copy of the state for safe reading
@@ -136,7 +138,6 @@ func (s *State) Clone() *State {
 		Players:     make(map[string]*Player),
 		TurnOrder:   make([]string, len(s.TurnOrder)),
 		CurrentTurn: s.CurrentTurn,
-		Data:        make(map[string]interface{}),
 		StartedAt:   s.StartedAt,
 		EndedAt:     s.EndedAt,
 		UpdatedAt:   s.UpdatedAt,
@@ -150,49 +151,26 @@ func (s *State) Clone() *State {
 	// Clone turn order (shallow copy of pointers is fine since we cloned the players)
 	copy(clone.TurnOrder, s.TurnOrder)
 
-	for key, value := range s.Data {
-		clone.Data[key] = value
-	}
-
 	return clone
 }
 
 // TODO: return errors in logger and show them at the session.go handle-action
 // TODO: only plant in order
-func (s *State) PlantBean(playerID string, cardID string, slotId string) error {
-	player, ok := s.GetPlayer(playerID)
-	if !ok {
-		//s.logger.Warn("player not found", zap.String("player_id", playerID))
-		return nil
+func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
+	player, err := s.isPlayerTurn(playerId)
+	if err != nil {
+		return err
 	}
 
-	// Validate that it's the player's turn
-	currentPlayerID := s.TurnOrder[s.CurrentTurn]
-	if playerID != currentPlayerID {
-		// s.logger.Warn("not player's turn",
-		// 	zap.String("player_id", playerID),
-		// 	zap.String("current_player_id", currentPlayerID),
-		// )
-		return nil
-	}
-
-	// Phase validation - allow planting in plantHand or turnTrade
 	if s.Phase != PhaseTypePlantHand && s.Phase != PhaseTypeTurnTrade {
-		// s.logger.Warn("action not valid in current phase",
-		// 	zap.String("current_phase", string(s.state.Phase)),
-		// )
-		return nil
+		return NewInvalidPhaseError(s.Phase)
 	}
 
 	// RULE: In plantHand phase validate that
 	// 1. Current player must plant at most 2 beans,
 	// then it goes to the next phase
 	if s.Phase == PhaseTypePlantHand && player.BeansPlantedTurn >= 2 {
-		// s.logger.Warn("player has already planted max 2 beans this turn",
-		// 	zap.String("player_id", playerID),
-		// 	zap.Int("beans_planted", player.BeansPlantedTurn),
-		// )
-		return nil
+		return NewMaxBeansPlantedError(playerId, player.BeansPlantedTurn)
 	}
 
 	var cardToPlant *Card
@@ -201,25 +179,19 @@ func (s *State) PlantBean(playerID string, cardID string, slotId string) error {
 
 	// Try to find card in appropriate location based on phase
 	if s.Phase == PhaseTypePlantHand {
-		// In plantHand phase, only check player's hand
 		for i, card := range player.Hand {
-			if card.ID == cardID {
+			if card.ID == cardId {
 				cardToPlant = card
 				cardIndex = i
 				break
 			}
 		}
 		if cardToPlant == nil {
-			// s.logger.Warn("card not found in player's hand",
-			// 	zap.String("player_id", playerID),
-			// 	zap.String("card_id", cardID),
-			// )
-			return nil
+			return NewCardNotInHandError(playerId, cardId)
 		}
 	} else if s.Phase == PhaseTypeTurnTrade {
-		// In turnTrade phase, only check center cards
 		for i, card := range s.CenterCards {
-			if card.ID == cardID {
+			if card.ID == cardId {
 				cardToPlant = card
 				cardIndex = i
 				isFromCenter = true
@@ -227,33 +199,17 @@ func (s *State) PlantBean(playerID string, cardID string, slotId string) error {
 			}
 		}
 		if cardToPlant == nil {
-			// s.logger.Warn("card not found in center",
-			// 	zap.String("player_id", playerID),
-			// 	zap.String("card_id", cardID),
-			// )
-			return nil
+			return NewCardNotInCenterError(cardId)
 		}
 	}
 
-	// Plant the bean in the specified slot
-	if err := player.Field.AddToSlot(slotId, cardToPlant.Name, 1); err != nil {
-		// s.logger.Warn("failed to add card to slot",
-		// 	zap.String("player_id", playerID),
-		// 	zap.String("slot_id", slotId),
-		// 	zap.Error(err),
-		// )
+	if err := player.Field.AddToSlot(slotId, cardToPlant.Name, cardId); err != nil {
 		return err
 	}
 
 	if isFromCenter {
-		// Remove from center
 		s.CenterCards = append(s.CenterCards[:cardIndex], s.CenterCards[cardIndex+1:]...)
-		// s.logger.Info("removed card from center",
-		// 	zap.String("card_id", cardID),
-		// 	zap.Int("remaining_center_cards", len(s.state.CenterCards)),
-		// )
 	} else {
-		// Remove from hand
 		player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
 	}
 
@@ -266,35 +222,37 @@ func (s *State) PlantBean(playerID string, cardID string, slotId string) error {
 	// 1. Current player must plant at most 2 beans,
 	// then it goes to the next phase
 	if player.BeansPlantedTurn >= 2 {
-		s.NextPhase()
+		s.NextPhase(playerId)
 	}
 
 	return nil
 }
 
 // turnOverBean performs the turn over bean logic without acquiring locks
-func (s *State) TurnOverBean() error {
-	if s.CenterDeck == nil || s.CenterDeck.IsEmpty() {
-		// s.logger.Warn("deck is empty, cannot turn over bean")
-		return nil
+func (s *State) TurnOverBean(playerId string) error {
+	_, err := s.isPlayerTurn(playerId)
+	if err != nil {
+		return err
 	}
 
-	// Needs to be in phase - turnTrade
-	if s.Phase != PhaseTypeTurnTrade {
-		// s.logger.Error("action not valid in phase turnTrade")
-		return nil
+	if s.DrawPile == nil || s.DrawPile.IsEmpty() {
+		return NewDeckEmptyError()
 	}
 
-	// Draw 2 cards from deck and add to center
-	cards := s.CenterDeck.Draw(2)
+	if s.CardsTurned {
+		return NewInvalidActionError("cards already drawn")
+	}
+
+	if s.Phase == PhaseTypePlantHand {
+		s.NextPhase(playerId)
+	} else if s.Phase != PhaseTypeTurnTrade {
+		return NewInvalidPhaseError(s.Phase)
+	}
+
+	// RULE: Can only draw 2 cards from deck and add to center
+	cards := s.DrawPile.Draw(2)
 	s.CenterCards = cards
-
-	// s.logger.Info("beans turned over",
-	// 	zap.String("card_id1", cards[0].ID),
-	// 	zap.String("card_id2", cards[1].ID),
-	// 	zap.String("card_type1", string(cards[0].Name)),
-	// 	zap.String("card_type2", string(cards[1].Name)),
-	// )
+	s.CardsTurned = true
 
 	return nil
 }
@@ -302,15 +260,11 @@ func (s *State) TurnOverBean() error {
 func (s *State) HarvestField(playerId string, slotId string) error {
 	player, ok := s.GetPlayer(playerId)
 	if !ok {
-		// s.logger.Warn("player not found", zap.String("player_id", playerID))
-		return nil
+		return NewPlayerNotFoundError(playerId)
 	}
 
 	if player.Field.IsEmpty() {
-		// s.logger.Warn("field is empty, nothing to harvest",
-		// 	zap.String("player_id", playerID),
-		// )
-		return nil
+		return NewFieldEmptyError(playerId)
 	}
 
 	slot, err := player.Field.GetSlotFromId(slotId)
@@ -329,23 +283,34 @@ func (s *State) HarvestField(playerId string, slotId string) error {
 		}
 	}
 
+	// Add the corresponding cards to the DiscardPile
+	// Those are the ones that are not coins (cardsHarvested - coinsEarned)
+	cardsToDiscard := slot.CardNumber - coinsEarned
+	if cardsToDiscard > 0 && slot.CardType != "" {
+		if s.DiscardPile == nil {
+			s.DiscardPile = &Deck{Cards: make([]*Card, 0)}
+		}
+
+		discardedCards := CreateCards(slot.CardType, cardsToDiscard, slot.CardIds)
+		s.DiscardPile.AddCards(discardedCards)
+	}
+
 	player.Coins += coinsEarned
 	player.Field.RemoveFromSlot(slotId)
 
 	return nil
 }
 
+// TODO: Review this method
 func (s *State) TradeBeans(fromPlayerID string, toPlayerID string, cardsReceived []string, cardsGiven []string) error {
 	fromPlayer, ok := s.GetPlayer(fromPlayerID)
 	if !ok {
-		// s.logger.Warn("from player not found", zap.String("player_id", fromPlayerID))
-		return nil
+		return NewPlayerNotFoundError(fromPlayerID)
 	}
 
 	toPlayer, ok := s.GetPlayer(toPlayerID)
 	if !ok {
-		// s.logger.Warn("to player not found", zap.String("player_id", toPlayerID))
-		return nil
+		return NewPlayerNotFoundError(toPlayerID)
 	}
 
 	// Find and collect cards that fromPlayer is giving away
@@ -366,11 +331,7 @@ func (s *State) TradeBeans(fromPlayerID string, toPlayerID string, cardsReceived
 			}
 		}
 		if !found {
-			// s.logger.Warn("card to give not found in fromPlayer's hand",
-			// 	zap.String("player_id", fromPlayerID),
-			// 	zap.String("card_id", cardID),
-			// )
-			return nil
+			return NewCardNotInHandError(fromPlayerID, cardID)
 		}
 	}
 
@@ -392,11 +353,7 @@ func (s *State) TradeBeans(fromPlayerID string, toPlayerID string, cardsReceived
 			}
 		}
 		if !found {
-			// s.logger.Warn("card to receive not found in toPlayer's hand",
-			// 	zap.String("player_id", toPlayerID),
-			// 	zap.String("card_id", cardID),
-			// )
-			return nil
+			return NewCardNotInHandError(toPlayerID, cardID)
 		}
 	}
 
@@ -435,57 +392,96 @@ func (s *State) TradeBeans(fromPlayerID string, toPlayerID string, cardsReceived
 	return nil
 }
 
-func (s *State) NextPhase() error {
-	// RULE: In plantHand phase validate that
-	// 1. Current player must plant at least 1 bean
-	if s.Phase == PhaseTypePlantHand {
+func (s *State) DrawCards(playerId string, cardsToDraw int) error {
+	player, ok := s.GetPlayer(playerId)
+	if !ok {
+		return NewPlayerNotFoundError(playerId)
+	}
+
+	drawnCards := s.DrawPile.Draw(cardsToDraw)
+
+	if len(drawnCards) < cardsToDraw {
+		s.ReShuffle()
+		remainingNeeded := cardsToDraw - len(drawnCards)
+		additionalCards := s.DrawPile.Draw(remainingNeeded)
+		drawnCards = append(drawnCards, additionalCards...)
+	}
+
+	player.Hand = append(player.Hand, drawnCards...)
+
+	// RULE: When drawing cards from the DrawPile
+	// the turn ends
+	s.NextPhase(playerId)
+
+	return nil
+}
+
+func (s *State) NextPhase(playerId string) error {
+	switch s.Phase {
+	case PhaseTypePlantHand:
+		// RULE: In plantHand phase validate that
+		// 1. Current player must plant at least 1 bean
 		currentPlayerID := s.TurnOrder[s.CurrentTurn]
 		currentPlayer, ok := s.GetPlayer(currentPlayerID)
 		if !ok {
-			// s.logger.Error("current player not found",
-			// 	zap.String("player_id", currentPlayerID),
-			// )
-			return nil
+			return NewPlayerNotFoundError(currentPlayerID)
 		}
-
 		if currentPlayer.BeansPlantedTurn < 1 {
-			// s.logger.Warn("cannot change phase, player must plant at least 1 bean",
-			// 	zap.String("player_id", currentPlayerID),
-			// 	zap.Int("beans_planted", currentPlayer.BeansPlantedTurn),
-			// )
-			return nil
+			return NewMinBeansRequiredError(currentPlayerID, currentPlayer.BeansPlantedTurn)
 		}
-
-		// Reset beans planted counter when leaving plantHand phase
 		currentPlayer.BeansPlantedTurn = 0
-		// s.logger.Info("reset beans planted counter for player",
-		// 	zap.String("player_id", currentPlayerID),
-		// )
-	}
-	// RULE: turnTrade phase
-	// 1. Beans in the middle should be planted or traded
-	// TODO: 2. Beans traded should be planted
-	if s.Phase == PhaseTypeTurnTrade {
+	case PhaseTypeTurnTrade:
+		// RULE: turnTrade phase
+		// 1. Beans in the middle should be planted or traded
+		// TODO: 2. Beans traded should be planted
 		if len(s.CenterCards) != 0 {
-			// s.logger.Warn("cannot change phase, there are still cards in the center",
-			// 	zap.Int("center_cards_number", len(s.state.CenterCards)),
-			// )
-			return nil
+			return NewCenterCardsRemainingError(len(s.CenterCards))
 		}
+		s.CardsTurned = false
+	case PhaseTypeDrawCards:
+		// RULE: When drawing cards from the DrawPile
+		// the turn ends
+		s.nextTurn()
+		return nil
 	}
 
 	s.Phase.NextPhase()
 
-	// s.logger.Info("next phase triggered",
-	// 	zap.String("phase", string(s.state.GetPhase())))
+	return nil
+}
 
-	if s.GetPhase() == PhaseTypeTurnTrade {
-		// Call internal method since we already hold the lock
-		if err := s.TurnOverBean(); err != nil {
-			// s.logger.Error("failed to turn over bean during phase change", zap.Error(err))
-			// Continue with persist even if turnover fails
-		}
+func (s *State) ReShuffle() error {
+	if !s.DrawPile.IsEmpty() || s.DiscardPile.IsEmpty() {
+		return nil
 	}
 
+	s.DiscardPile.Shuffle()
+	s.DrawPile.AddCards(s.DiscardPile.Cards)
+	s.DiscardPile = &Deck{Cards: make([]*Card, 0)}
+
 	return nil
+}
+
+func (s *State) nextTurn() error {
+	if s.CurrentTurn == len(s.TurnOrder)-1 {
+		s.CurrentTurn = 0
+	} else {
+		s.CurrentTurn += 1
+	}
+	s.Phase.ResetPhase()
+	return nil
+}
+
+func (s *State) isPlayerTurn(playerId string) (*Player, error) {
+	player, ok := s.GetPlayer(playerId)
+	if !ok {
+		return nil, NewPlayerNotFoundError(playerId)
+	}
+
+	currentPlayerID := s.TurnOrder[s.CurrentTurn]
+	if playerId != currentPlayerID {
+		return nil, NewNotPlayerTurnError(playerId, currentPlayerID)
+	}
+
+	return player, nil
 }

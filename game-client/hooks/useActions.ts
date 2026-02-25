@@ -7,7 +7,8 @@ export type MessageType =
   | "action"
   | "error"
   | "state"
-  | "myState";
+  | "myState"
+  | "broadcast";
 
 export interface WebSocketMessage {
   type: MessageType;
@@ -24,6 +25,11 @@ export interface JoinPayload extends Record<string, unknown> {
 
 export interface LeavePayload extends Record<string, unknown> {
   reason?: string;
+}
+
+export interface BroadcastPayload {
+  event: "player_joined" | "player_left" | "player_ready_changed";
+  data: Record<string, unknown>;
 }
 
 export interface ErrorPayload {
@@ -66,26 +72,14 @@ export interface UseActionsReturn {
   ) => boolean;
   harvestField: (roomId: string, playerId: string, fieldId: string) => boolean;
   turnOverBean: (roomId: string) => boolean;
+  drawCards: (roomId: string) => boolean;
+  setReady: (roomId: string, ready: boolean) => boolean;
   myState: (roomId: string) => boolean;
   nextPhase: (roomId: string) => boolean;
 }
 
 /**
  * Custom hook to manage WebSocket actions for the card game
- *
- * @example
- * const { sendJoin, sendMove, isConnected } = useActions({
- *   wsUrl: 'ws://localhost:8080/ws',
- *   playerId: 'player-123',
- *   onMessage: (msg) => console.log('Received:', msg),
- *   onError: (err) => console.error('Error:', err)
- * });
- *
- * // Join a room
- * sendJoin('room-456', { player_name: 'John' });
- *
- * // Make a move
- * sendMove('room-456', { action: 'play_card', data: { card_id: 'ace-spades' } });
  */
 export function useActions({
   wsUrl,
@@ -244,6 +238,18 @@ export function useActions({
     [isConnectionReady, createMessage, sendJsonMessage],
   );
 
+  const drawCards = useCallback(
+    (roomId: string): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload = { type: "drawCards" };
+      const message = createMessage("action", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
+
   const myState = useCallback(
     (roomId: string): boolean => {
       if (!isConnectionReady()) return false;
@@ -268,6 +274,18 @@ export function useActions({
     [isConnectionReady, createMessage, sendJsonMessage],
   );
 
+  const setReady = useCallback(
+    (roomId: string, ready: boolean): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload = { type: "setReady", ready };
+      const message = createMessage("action", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
+
   return {
     readyState,
     isConnected: readyState === ReadyState.OPEN,
@@ -285,6 +303,8 @@ export function useActions({
     tradeBean,
     harvestField,
     turnOverBean,
+    drawCards,
+    setReady,
 
     myState,
     nextPhase,

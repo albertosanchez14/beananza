@@ -6,13 +6,12 @@ const (
 	PhaseTypePlantHand  PhaseType = "plantHand"
 	PhaseTypeTurnTrade  PhaseType = "turnTrade"
 	PhaseTypePlantTrade PhaseType = "plantTrade"
-	PhaseTypeWithdraw   PhaseType = "withdraw"
+	PhaseTypeDrawCards  PhaseType = "drawCards"
 	PhaseTypeWaiting    PhaseType = "waiting"
-	PhaseTypePlaying    PhaseType = "playing"
 	PhaseTypeFinished   PhaseType = "finished"
 )
 
-var gamePhases = []PhaseType{PhaseTypePlantHand, PhaseTypeTurnTrade, PhaseTypePlantTrade}
+var gamePhases = []PhaseType{PhaseTypePlantHand, PhaseTypeTurnTrade, PhaseTypePlantTrade, PhaseTypeDrawCards}
 
 // NextPhase changes to the next phase in order
 func (p *PhaseType) NextPhase() {
@@ -24,4 +23,9 @@ func (p *PhaseType) NextPhase() {
 			return
 		}
 	}
+}
+
+// ResetPhase changes to the first phase
+func (p *PhaseType) ResetPhase() {
+	*p = gamePhases[0]
 }

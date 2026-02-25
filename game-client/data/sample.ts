@@ -26,6 +26,7 @@ export const playersData: ExternalPlayer[] = [
     playerStatus: "active",
     playerCoins: 5,
     playerHandSize: 4,
+    playerReady: false,
     playerField: {
       fieldId: "field-player-1234",
       slots: [
@@ -40,6 +41,7 @@ export const playersData: ExternalPlayer[] = [
     playerStatus: "active",
     playerCoins: 3,
     playerHandSize: 3,
+    playerReady: false,
     playerField: {
       fieldId: "field-player-3212",
       slots: [
@@ -54,6 +56,7 @@ export const playersData: ExternalPlayer[] = [
     playerStatus: "active",
     playerCoins: 7,
     playerHandSize: 5,
+    playerReady: false,
     playerField: {
       fieldId: "field-player-2984",
       slots: [
@@ -68,6 +71,7 @@ export const playersData: ExternalPlayer[] = [
     playerStatus: "active",
     playerCoins: 2,
     playerHandSize: 4,
+    playerReady: false,
     playerField: {
       fieldId: "field-player-1221",
       slots: [

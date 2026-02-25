@@ -16,7 +16,6 @@ type Room struct {
 	logger  *zap.Logger
 }
 
-// NewRoom creates a new room
 func NewRoom(id string, logger *zap.Logger) *Room {
 	return &Room{
 		ID:      id,
@@ -42,9 +41,10 @@ func (r *Room) Join(client *Client) {
 		client.PlayerId,
 		protocol.BroadcastPayload{
 			Event: "player_joined",
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"player_id":   client.PlayerId,
 				"player_name": client.PlayerName,
+				"ready":       false,
 			},
 		},
 	)

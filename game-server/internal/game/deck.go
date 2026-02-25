@@ -96,6 +96,11 @@ func (d *Deck) Peek() *Card {
 	return d.Cards[0]
 }
 
+// AddCards adds cards to the deck
+func (d *Deck) AddCards(cards []*Card) {
+	d.Cards = append(d.Cards, cards...)
+}
+
 // generateCardID generates a unique card ID
 func generateCardID(id int) string {
 	return "card-" + string(rune('0'+id/10)) + string(rune('0'+id%10))
@@ -118,4 +123,26 @@ func GetExchangeRates(cardType CardType) map[int]int {
 		return rates
 	}
 	return map[int]int{}
+}
+
+// CreateCards creates card instances for a given card type and count
+// Used when adding cards to discard pile from harvested fields
+func CreateCards(cardType CardType, count int, cardIds []string) []*Card {
+	if count <= 0 {
+		return []*Card{}
+	}
+
+	cards := make([]*Card, count)
+	exchangeRates := GetExchangeRates(cardType)
+
+	for i := range count {
+		cards[i] = &Card{
+			ID:            cardIds[i],
+			Name:          cardType,
+			NumCards:      "",
+			MoneyExchange: exchangeRates,
+		}
+	}
+
+	return cards
 }

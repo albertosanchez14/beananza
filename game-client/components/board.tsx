@@ -10,10 +10,12 @@ type BoardProp = {
   players: ExternalPlayer[];
   centerCards: CardType[];
   currentTurnPlayerId?: string;
+  gamePhase?: string;
   onPlantBean: (cardId: string, slotId: string) => void;
   onTradeBean: (cardId: string, toPlayerId: string) => void;
   onHarvestField: (slotId: string) => void;
   onTurnOverBean: () => void;
+  onDrawCards: () => void;
 };
 
 export default function Board({
@@ -22,10 +24,12 @@ export default function Board({
   players,
   centerCards,
   currentTurnPlayerId,
+  gamePhase,
   onPlantBean,
   onTradeBean,
   onHarvestField,
   onTurnOverBean,
+  onDrawCards,
 }: BoardProp) {
   const [selectedCard, setSelectedCard] = useState<CardType | null>(null);
 
@@ -34,11 +38,12 @@ export default function Board({
   const getPlayerPosition = (index: number, total: number) => {
     // Distribute players evenly around the top half of the circle (180 degrees)
     const startAngle = 180; // Left side
-    const endAngle = 0;     // Right side
+    const endAngle = 0; // Right side
     const angleRange = startAngle - endAngle;
 
     // Calculate angle for this player
-    const angle = startAngle - (angleRange / (total > 1 ? total - 1 : 1)) * index;
+    const angle =
+      startAngle - (angleRange / (total > 1 ? total - 1 : 1)) * index;
     const angleRad = (angle * Math.PI) / 180;
 
     // Use same radius for both x and y to create a perfect circle
@@ -89,7 +94,11 @@ export default function Board({
   };
 
   const handleCenterDeckClick = () => {
-    onTurnOverBean();
+    if (gamePhase === "drawCards") {
+      onDrawCards();
+    } else {
+      onTurnOverBean();
+    }
   };
 
   return (
@@ -111,11 +120,7 @@ export default function Board({
         {players.map((player, index) => {
           const position = getPlayerPosition(index, players.length);
           return (
-            <div
-              key={player.playerId}
-              className="absolute"
-              style={position}
-            >
+            <div key={player.playerId} className="absolute" style={position}>
               <Player
                 player={player}
                 onClick={handlePlayerClick}
