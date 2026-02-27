@@ -9,7 +9,8 @@ import (
 	"github.com/yourusername/game-server/internal/storage"
 )
 
-// Hub maintains the set of active clients and broadcasts messages to clients
+// Hub maintains the set of active clients, rooms and
+// broadcasts messages to clients
 type Hub struct {
 	clients     map[*Client]bool
 	rooms       map[string]*Room
@@ -51,7 +52,6 @@ func (h *Hub) Run() {
 		case client := <-h.unregister:
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
-				// Remove from room if present
 				if client.room != nil {
 					client.room.Leave(client)
 				}
@@ -66,7 +66,6 @@ func (h *Hub) Run() {
 			}
 			h.mu.Unlock()
 
-			// Clean up empty rooms
 			h.cleanupEmptyRooms()
 		}
 	}

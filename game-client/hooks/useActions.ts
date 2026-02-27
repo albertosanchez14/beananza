@@ -4,10 +4,12 @@ import useWebSocket, { ReadyState } from "react-use-websocket";
 export type MessageType =
   | "join"
   | "leave"
+  | "ready"
   | "action"
   | "error"
   | "state"
   | "myState"
+  | "waitingLobbyState"
   | "broadcast";
 
 export interface WebSocketMessage {
@@ -28,7 +30,7 @@ export interface LeavePayload extends Record<string, unknown> {
 }
 
 export interface BroadcastPayload {
-  event: "player_joined" | "player_left" | "player_ready_changed";
+  event: "player_joined" | "player_left" | "player_ready" | "game_started";
   data: Record<string, unknown>;
 }
 
@@ -278,8 +280,8 @@ export function useActions({
     (roomId: string, ready: boolean): boolean => {
       if (!isConnectionReady()) return false;
 
-      const payload = { type: "setReady", ready };
-      const message = createMessage("action", roomId, payload);
+      const payload = { ready };
+      const message = createMessage("ready", roomId, payload);
       sendJsonMessage(message);
       return true;
     },

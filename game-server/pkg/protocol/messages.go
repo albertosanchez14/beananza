@@ -10,11 +10,13 @@ type MessageType string
 const (
 	MessageTypeJoin        MessageType = "join"
 	MessageTypeLeave       MessageType = "leave"
+	MessageTypeReady       MessageType = "ready"
 	MessageTypeAction      MessageType = "action"
 	MessageTypeError       MessageType = "error"
 	MessageTypeBroadcast   MessageType = "broadcast"
 	MessageTypeState       MessageType = "state"
 	MessageTypePlayerState MessageType = "myState"
+	WaitingLobbyState      MessageType = "waitingLobbyState"
 )
 
 type Message struct {
@@ -32,6 +34,10 @@ type JoinPayload struct {
 
 type LeavePayload struct {
 	Reason string `json:"reason,omitempty"`
+}
+
+type ReadyPayload struct {
+	Ready bool `json:"ready"`
 }
 
 type ActionPayload struct {

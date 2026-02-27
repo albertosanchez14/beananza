@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	MAX_NUMBER_PLAYERS = 5
-	MIN_NUMBER_PLAYERS = 3
+	MAX_NUMBER_PLAYERS = 3
+	MIN_NUMBER_PLAYERS = 2
 )
 
 type Player struct {
@@ -31,7 +31,8 @@ type State struct {
 	TurnOrder   []string
 	CurrentTurn int
 	// Internal state
-	CardsTurned bool
+	CardsTurned  bool
+	CardsDrawned bool
 	// ==============
 	StartedAt time.Time
 	EndedAt   time.Time
@@ -408,6 +409,7 @@ func (s *State) DrawCards(playerId string, cardsToDraw int) error {
 	}
 
 	player.Hand = append(player.Hand, drawnCards...)
+	s.CardsDrawned = true
 
 	// RULE: When drawing cards from the DrawPile
 	// the turn ends
@@ -439,8 +441,12 @@ func (s *State) NextPhase(playerId string) error {
 		}
 		s.CardsTurned = false
 	case PhaseTypeDrawCards:
+		if !s.CardsDrawned {
+			return NewNotDrawnedCardsError()
+		}
 		// RULE: When drawing cards from the DrawPile
 		// the turn ends
+		s.CardsDrawned = false
 		s.nextTurn()
 		return nil
 	}

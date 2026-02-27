@@ -52,19 +52,12 @@ func run() error {
 	}
 	defer repo.Close()
 
-	// Create hub
 	hub := websocket.NewHub(log, repo)
-
-	// Start hub in background
 	go hub.Run()
 
 	// Create and start HTTP server
 	srv := server.New(cfg, hub, repo, log)
-
-	// Channel to listen for errors coming from the listener
 	serverErrors := make(chan error, 1)
-
-	// Start the server
 	go func() {
 		serverErrors <- srv.Start()
 	}()
@@ -73,7 +66,6 @@ func run() error {
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
 
-	// Blocking main and waiting for shutdown
 	select {
 	case err := <-serverErrors:
 		return fmt.Errorf("server error: %w", err)

@@ -13,18 +13,22 @@ import (
 
 // Session manages a game session for a specific room
 type Session struct {
-	state  *State
-	repo   *storage.Repository
-	logger *zap.Logger
-	mu     sync.RWMutex
+	gameState    *State
+	waitingLobby *WaitingLobby
+	state        string // waiting, playing, pause
+	repo         *storage.Repository
+	logger       *zap.Logger
+	mu           sync.RWMutex
 }
 
 // NewSession creates a new game session
 func NewSession(roomID string, repo *storage.Repository, logger *zap.Logger) *Session {
 	return &Session{
-		state:  NewState(roomID),
-		repo:   repo,
-		logger: logger.With(zap.String("room_id", roomID)),
+		gameState:    NewState(roomID),
+		waitingLobby: NewWaitingLobby(roomID),
+		state:        "waiting",
+		repo:         repo,
+		logger:       logger.With(zap.String("room_id", roomID)),
 	}
 }
 
@@ -32,36 +36,36 @@ func NewSession(roomID string, repo *storage.Repository, logger *zap.Logger) *Se
 func (s *Session) GetState() *State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.state.Clone()
+	return s.gameState.Clone()
 }
 
 // GetFullSnapshot returns a complete snapshot of the session including all game data
-func (s *Session) GetFullSnapshot() map[string]interface{} {
+func (s *Session) GetFullSnapshot() map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	snapshot := map[string]interface{}{
-		"room_id":      s.state.RoomID,
-		"phase":        s.state.Phase,
-		"players":      s.state.Players,
-		"turn_order":   s.state.TurnOrder,
-		"current_turn": s.state.CurrentTurn,
-		"center_cards": s.state.CenterCards,
-		"started_at":   s.state.StartedAt,
-		"ended_at":     s.state.EndedAt,
-		"updated_at":   s.state.UpdatedAt,
+	snapshot := map[string]any{
+		"room_id":      s.gameState.RoomID,
+		"phase":        s.gameState.Phase,
+		"players":      s.gameState.Players,
+		"turn_order":   s.gameState.TurnOrder,
+		"current_turn": s.gameState.CurrentTurn,
+		"center_cards": s.gameState.CenterCards,
+		"started_at":   s.gameState.StartedAt,
+		"ended_at":     s.gameState.EndedAt,
+		"updated_at":   s.gameState.UpdatedAt,
 	}
 
 	// Include deck size but not the actual deck contents (to prevent cheating)
-	if s.state.DrawPile != nil {
-		snapshot["deck_size"] = s.state.DrawPile.Size()
+	if s.gameState.DrawPile != nil {
+		snapshot["deck_size"] = s.gameState.DrawPile.Size()
 	} else {
 		snapshot["deck_size"] = 0
 	}
 
 	// Include discard pile size
-	if s.state.DiscardPile != nil {
-		snapshot["discard_pile_size"] = s.state.DiscardPile.Size()
+	if s.gameState.DiscardPile != nil {
+		snapshot["discard_pile_size"] = s.gameState.DiscardPile.Size()
 	} else {
 		snapshot["discard_pile_size"] = 0
 	}
@@ -71,47 +75,47 @@ func (s *Session) GetFullSnapshot() map[string]interface{} {
 
 // GetPlayerSnapshot returns a complete snapshot of the session for a player
 // and what that player can see
-func (s *Session) GetPlayerSnapshot(playerId string) map[string]interface{} {
+func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	playerData, ok := s.state.GetPlayer(playerId)
+	playerData, ok := s.gameState.GetPlayer(playerId)
 	if !ok {
 	}
 
-	snapshot := map[string]interface{}{
-		"room_id":      s.state.RoomID,
-		"phase":        s.state.Phase,
+	snapshot := map[string]any{
+		"room_id":      s.gameState.RoomID,
+		"phase":        s.gameState.Phase,
 		"player":       playerData,
-		"turn_order":   s.state.TurnOrder,
-		"current_turn": s.state.CurrentTurn,
-		"center_cards": s.state.CenterCards,
-		"started_at":   s.state.StartedAt,
-		"ended_at":     s.state.EndedAt,
-		"updated_at":   s.state.UpdatedAt,
+		"turn_order":   s.gameState.TurnOrder,
+		"current_turn": s.gameState.CurrentTurn,
+		"center_cards": s.gameState.CenterCards,
+		"started_at":   s.gameState.StartedAt,
+		"ended_at":     s.gameState.EndedAt,
+		"updated_at":   s.gameState.UpdatedAt,
 	}
 
 	// Include deck size but not the actual deck contents
-	if s.state.DrawPile != nil {
-		snapshot["deck_size"] = s.state.DrawPile.Size()
+	if s.gameState.DrawPile != nil {
+		snapshot["deck_size"] = s.gameState.DrawPile.Size()
 	} else {
 		snapshot["deck_size"] = 0
 	}
 
 	// Include discard pile size
-	if s.state.DiscardPile != nil {
-		snapshot["discard_pile_size"] = s.state.DiscardPile.Size()
+	if s.gameState.DiscardPile != nil {
+		snapshot["discard_pile_size"] = s.gameState.DiscardPile.Size()
 	} else {
 		snapshot["discard_pile_size"] = 0
 	}
 
 	// Public data includes all player info except the actual hand cards (only hand size)
-	externalPlayers := make([]map[string]interface{}, 0)
-	for _, player := range s.state.Players {
+	externalPlayers := make([]map[string]any, 0)
+	for _, player := range s.gameState.Players {
 		if player.ID == playerId {
 			continue
 		}
-		externalPlayerData := map[string]interface{}{
+		externalPlayerData := map[string]any{
 			"playerId":       player.ID,
 			"playerName":     player.Name,
 			"playerStatus":   player.Status,
@@ -122,6 +126,23 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]interface{} {
 		externalPlayers = append(externalPlayers, externalPlayerData)
 	}
 	snapshot["external_players"] = externalPlayers
+
+	return snapshot
+}
+
+func (s *Session) GetWaitingLobbySnapshot() map[string]any {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	canStart, _ := s.waitingLobby.CanStartGame()
+
+	snapshot := map[string]any{
+		"players":     s.waitingLobby.Players,
+		"max_players": s.waitingLobby.MaxPlayers,
+		"min_players": s.waitingLobby.MinPlayers,
+		"can_start":   canStart,
+		"updated_at":  s.waitingLobby.UpdatedAt,
+	}
 
 	return snapshot
 }
@@ -156,12 +177,13 @@ func (s *Session) HandlePlayerJoin(playerID, playerName string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.state.AddPlayer(playerID, playerName)
+	// s.gameState.AddPlayer(playerID, playerName)
+	s.waitingLobby.AddPlayer(playerID, playerName)
 
 	s.logger.Info("player joined game",
 		zap.String("player_id", playerID),
 		zap.String("player_name", playerName),
-		zap.Int("player_count", s.state.PlayerCount()),
+		zap.Int("player_count", s.gameState.PlayerCount()),
 	)
 
 	return s.persistState()
@@ -172,52 +194,90 @@ func (s *Session) HandlePlayerLeave(playerID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.state.RemovePlayer(playerID)
+	s.gameState.RemovePlayer(playerID)
 	s.logger.Info("player left game",
 		zap.String("player_id", playerID),
-		zap.Int("player_count", s.state.PlayerCount()),
+		zap.Int("player_count", s.gameState.PlayerCount()),
 	)
 
-	// End game if not enough players during active game
-	if s.state.PlayerCount() < MIN_NUMBER_PLAYERS {
+	// End game if not enough players during an active game (not during waiting phase)
+	if s.gameState.Phase != PhaseTypeWaiting && s.gameState.PlayerCount() < MIN_NUMBER_PLAYERS {
 		s.endGame()
 	}
 
 	return s.persistState()
 }
 
-// startGame transitions the game to playing phase
-func (s *Session) startGame() {
-	s.state.DrawPile = NewDeck()
-	s.state.DrawPile.Shuffle()
-	s.state.DiscardPile = &Deck{Cards: make([]*Card, 0)}
+// HandlePlayerReady sets a player's ready state during the waiting phase
+func (s *Session) HandlePlayerReady(playerID string, ready bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	// Create random turn order from players
-	s.state.TurnOrder = make([]string, 0, len(s.state.Players))
-	for _, player := range s.state.Players {
-		s.state.TurnOrder = append(s.state.TurnOrder, player.ID)
+	if err := s.waitingLobby.SetPlayerReady(playerID, ready); err != nil {
+		return s.logAndReturnError("player_ready", err)
 	}
 
-	// Shuffle the turn order randomly
+	s.logger.Info("player ready state changed",
+		zap.String("player_id", playerID),
+		zap.Bool("ready", ready),
+	)
+
+	return s.persistState()
+}
+
+// HandleStartGame checks if all conditions are met and starts the game
+func (s *Session) HandleStartGame() (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if canStart, err := s.waitingLobby.CanStartGame(); !canStart {
+		return false, s.logAndReturnError("start_game", err)
+	}
+
+	for _, player := range s.waitingLobby.Players {
+		s.gameState.AddPlayer(player.ID, player.Name)
+	}
+	s.startGame()
+
+	s.logger.Info("game started from waiting room",
+		zap.Int("player_count", s.gameState.PlayerCount()),
+	)
+
+	s.persistState()
+
+	return true, nil
+}
+
+// startGame transitions the game to playing phase
+func (s *Session) startGame() {
+	s.gameState.DrawPile = NewDeck()
+	s.gameState.DrawPile.Shuffle()
+	s.gameState.DiscardPile = &Deck{Cards: make([]*Card, 0)}
+
+	s.gameState.TurnOrder = make([]string, 0, len(s.gameState.Players))
+	for _, player := range s.gameState.Players {
+		s.gameState.TurnOrder = append(s.gameState.TurnOrder, player.ID)
+	}
+
 	s.shuffleTurnOrder()
 
 	// Deal cards to players (5 cards each in standard Bohnanza)
-	for playerID, player := range s.state.Players {
-		player.Hand = s.state.DrawPile.Draw(5)
+	for playerID, player := range s.gameState.Players {
+		player.Hand = s.gameState.DrawPile.Draw(5)
 		s.logger.Info("dealt cards to player",
 			zap.String("player_id", playerID),
 			zap.Int("cards_dealt", len(player.Hand)),
 		)
 	}
 
-	s.state.SetPhase("plantHand")
-	s.state.CurrentTurn = 0
-	playerTurn := s.state.TurnOrder[s.state.CurrentTurn]
+	s.gameState.SetPhase("plantHand")
+	s.gameState.CurrentTurn = 0
+	playerTurn := s.gameState.TurnOrder[s.gameState.CurrentTurn]
 
 	s.logger.Info("game started",
-		zap.Int("player_count", s.state.PlayerCount()),
-		zap.Int("deck_size", s.state.DrawPile.Size()),
-		zap.Int("center_cards", len(s.state.CenterCards)),
+		zap.Int("player_count", s.gameState.PlayerCount()),
+		zap.Int("deck_size", s.gameState.DrawPile.Size()),
+		zap.Int("center_cards", len(s.gameState.CenterCards)),
 		zap.String("player_turn_id", playerTurn),
 	)
 }
@@ -225,14 +285,14 @@ func (s *Session) startGame() {
 // shuffleTurnOrder randomizes the turn order
 func (s *Session) shuffleTurnOrder() {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	r.Shuffle(len(s.state.TurnOrder), func(i, j int) {
-		s.state.TurnOrder[i], s.state.TurnOrder[j] = s.state.TurnOrder[j], s.state.TurnOrder[i]
+	r.Shuffle(len(s.gameState.TurnOrder), func(i, j int) {
+		s.gameState.TurnOrder[i], s.gameState.TurnOrder[j] = s.gameState.TurnOrder[j], s.gameState.TurnOrder[i]
 	})
 }
 
 // endGame transitions the game to finished phase
 func (s *Session) endGame() {
-	s.state.SetPhase("finished")
+	s.gameState.SetPhase("finished")
 	s.logger.Info("game ended")
 }
 
@@ -246,14 +306,14 @@ func (s *Session) LoadFromStorage(ctx context.Context) error {
 	defer s.mu.Unlock()
 
 	var state State
-	if err := s.repo.GetGameState(ctx, s.state.RoomID, &state); err != nil {
+	if err := s.repo.GetGameState(ctx, s.gameState.RoomID, &state); err != nil {
 		return err
 	}
 
-	s.state = &state
+	s.gameState = &state
 	s.logger.Info("game state loaded from storage",
-		zap.Int("player_count", s.state.PlayerCount()),
-		zap.String("phase", string(s.state.Phase)),
+		zap.Int("player_count", s.gameState.PlayerCount()),
+		zap.String("phase", string(s.gameState.Phase)),
 	)
 
 	return nil
@@ -264,7 +324,7 @@ func (s *Session) HandlePlantBean(playerID string, cardID string, slotId string)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.state.PlantBean(playerID, cardID, slotId); err != nil {
+	if err := s.gameState.PlantBean(playerID, cardID, slotId); err != nil {
 		return s.logAndReturnError("plant_bean", err)
 	}
 
@@ -281,7 +341,7 @@ func (s *Session) HandleTurnOverBean(playerId string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.state.TurnOverBean(playerId); err != nil {
+	if err := s.gameState.TurnOverBean(playerId); err != nil {
 		return s.logAndReturnError("turn_over_bean", err)
 	}
 
@@ -295,7 +355,7 @@ func (s *Session) HandleTradeBean(fromPlayerID string, toPlayerID string, cardsR
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.state.TradeBeans(fromPlayerID, toPlayerID, cardsReceived, cardsGiven); err != nil {
+	if err := s.gameState.TradeBeans(fromPlayerID, toPlayerID, cardsReceived, cardsGiven); err != nil {
 		return s.logAndReturnError("trade_bean", err)
 	}
 
@@ -312,7 +372,7 @@ func (s *Session) HandleHarvestField(playerID, slotId string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.state.HarvestField(playerID, slotId); err != nil {
+	if err := s.gameState.HarvestField(playerID, slotId); err != nil {
 		return s.logAndReturnError("harvest_field", err)
 	}
 
@@ -331,7 +391,7 @@ func (s *Session) HandleDrawCards(playerId string) error {
 
 	// RULE: Can only draw 3 cards from the deck when ending the turn
 	cardsToDraw := 3
-	if err := s.state.DrawCards(playerId, cardsToDraw); err != nil {
+	if err := s.gameState.DrawCards(playerId, cardsToDraw); err != nil {
 		return s.logAndReturnError("draw_cards", err)
 	}
 
@@ -348,12 +408,12 @@ func (s *Session) HandleNextPhase(playerId string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.state.NextPhase(playerId); err != nil {
+	if err := s.gameState.NextPhase(playerId); err != nil {
 		return s.logAndReturnError("next_phase", err)
 	}
 
 	s.logger.Info("phase transitioned",
-		zap.String("new_phase", string(s.state.Phase)),
+		zap.String("new_phase", string(s.gameState.Phase)),
 	)
 
 	return s.persistState()
@@ -363,7 +423,7 @@ func (s *Session) HandleNextPhase(playerId string) error {
 func (s *Session) persistState() error {
 	if s.repo != nil {
 		ctx := context.Background()
-		if err := s.repo.SaveGameState(ctx, s.state.RoomID, s.state); err != nil {
+		if err := s.repo.SaveGameState(ctx, s.gameState.RoomID, s.gameState); err != nil {
 			s.logger.Error("failed to save game state", zap.Error(err))
 			return err
 		}

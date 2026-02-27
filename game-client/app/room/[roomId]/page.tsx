@@ -3,7 +3,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useActions, BroadcastPayload } from "@/hooks/useActions";
 
-import { CardType, ExternalPlayer, FieldType, Player } from "@/schemas/types";
+import { CardType, ExternalPlayer, FieldType, Player, WaitingPlayer } from "@/schemas/types";
 import Board from "@/components/board";
 import WaitingRoom from "@/components/waiting-room";
 
@@ -56,8 +56,15 @@ export default function Page() {
             myState(roomId);
             break;
           }
-          case "player_ready_changed": {
+          case "player_ready": {
             console.log("Player ready changed:", broadcastPayload.data);
+            myState(roomId);
+            break;
+          }
+          case "game_started": {
+            console.log("Game started!");
+            // Server sends myState automatically, but request it
+            // as a fallback to ensure we transition to game phase
             myState(roomId);
             break;
           }
@@ -69,33 +76,33 @@ export default function Page() {
         const payload = message.payload as any;
         setPhase(payload.phase);
 
-        if (payload.phase === "waiting") {
-          // Waiting room mode
-          setAllPlayers(payload.players || []);
-          setMinPlayers(payload.min_players || 3);
-          setMaxPlayers(payload.max_players || 5);
-          setCanStart(payload.can_start || false);
-
-          // Find current player's ready state
-          const me = payload.players?.find((p: Player) => p.id === playerId);
-          setMyReadyState(me?.ready || false);
-        } else {
-          // Game mode
-          if (payload.player) {
-            setMyHand(payload.player.hand || []);
-            setMyField({
-              ...payload.player.field,
-              slots: payload.player.field?.slots || [],
-            });
-          }
-          setCenterCards(payload.center_cards || []);
-          setPlayers(payload.external_players || []);
-
-          if (payload.turn_order && payload.turn_order.length > 0) {
-            const playerTurnId = payload.turn_order[payload.current_turn || 0];
-            setPlayerTurn(playerTurnId);
-          }
+        // Game mode
+        if (payload.player) {
+          setMyHand(payload.player.hand || []);
+          setMyField({
+            ...payload.player.field,
+            slots: payload.player.field?.slots || [],
+          });
         }
+        setCenterCards(payload.center_cards || []);
+        setPlayers(payload.external_players || []);
+
+        if (payload.turn_order && payload.turn_order.length > 0) {
+          const playerTurnId = payload.turn_order[payload.current_turn || 0];
+          setPlayerTurn(playerTurnId);
+        }
+      } else if (message.type === "waitingLobbyState") {
+        setPhase("waiting");
+        const payload = message.payload as any;
+        const waitingPlayers: Record<string, WaitingPlayer> =
+          payload.players || {};
+        setAllPlayers(waitingPlayers);
+        setMinPlayers(payload.min_players || 3);
+        setMaxPlayers(payload.max_players || 5);
+        setCanStart(payload.can_start || false);
+
+        const me = waitingPlayers[playerId];
+        setMyReadyState(me?.ready || false);
       }
     },
     onError: (error) => {
@@ -104,7 +111,7 @@ export default function Page() {
   });
 
   // Waiting room state
-  const [allPlayers, setAllPlayers] = useState<Player[]>([]);
+  const [allPlayers, setAllPlayers] = useState<Record<string, WaitingPlayer>>({});
   const [minPlayers, setMinPlayers] = useState(3);
   const [maxPlayers, setMaxPlayers] = useState(5);
   const [canStart, setCanStart] = useState(false);

@@ -12,16 +12,9 @@ import (
 )
 
 const (
-	// Time allowed to write a message to the peer
-	writeWait = 10 * time.Second
-
-	// Time allowed to read the next pong message from the peer
-	pongWait = 60 * time.Second
-
-	// Send pings to peer with this period (must be less than pongWait)
-	pingPeriod = (pongWait * 9) / 10
-
-	// Maximum message size allowed from peer
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = (pongWait * 9) / 10
 	maxMessageSize = 8192
 )
 
@@ -89,7 +82,6 @@ func (c *Client) ReadPump() {
 			c.PlayerId = msg.PlayerID
 		}
 
-		// Handle the message
 		c.handleMessage(msg)
 	}
 }
@@ -111,21 +103,17 @@ func (c *Client) WritePump() {
 				return
 			}
 
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
-			w.Write(message)
 
-			// Add queued messages to the current WebSocket message
+			// Send queued messages as individual WebSocket frames
 			n := len(c.send)
 			for range n {
-				w.Write([]byte{'\n'})
-				w.Write(<-c.send)
-			}
-
-			if err := w.Close(); err != nil {
-				return
+				c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+				if err := c.conn.WriteMessage(websocket.TextMessage, <-c.send); err != nil {
+					return
+				}
 			}
 
 		case <-ticker.C:
@@ -146,16 +134,18 @@ func (c *Client) handleMessage(msg *protocol.Message) {
 		zap.String("room_id", msg.RoomID),
 	)
 
+	session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
+
 	switch msg.Type {
 	case protocol.MessageTypeJoin:
 		c.handleJoin(msg)
 	case protocol.MessageTypeLeave:
 		c.handleLeave(msg)
+	case protocol.MessageTypeReady:
+		c.handleReady(msg)
 	case protocol.MessageTypeAction:
 		c.handleAction(msg)
-		c.handlePlayerState(msg)
 	case protocol.MessageTypeState:
-		session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
 		c.sendGameState(msg.RoomID, session)
 	case protocol.MessageTypePlayerState:
 		c.handlePlayerState(msg)
@@ -171,6 +161,7 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 		return
 	}
 
+	// TODO: PlayerId should be obtained by auth
 	c.PlayerName = payload.PlayerName
 	if c.PlayerId == "" {
 		c.PlayerId = c.ID // Use client ID as player ID if not set
@@ -189,6 +180,20 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 		zap.String("room_id", msg.RoomID),
 		zap.String("player_name", payload.PlayerName),
 	)
+
+	waitingLobbyData := session.GetWaitingLobbySnapshot()
+	waitingLobbyStateMsg, err := protocol.NewMessage(
+		protocol.WaitingLobbyState,
+		c.room.ID,
+		c.PlayerId,
+		waitingLobbyData,
+	)
+	if err != nil {
+		c.logger.Error("failed to create join broadcast", zap.Error(err))
+		return
+	}
+
+	c.room.Broadcast(waitingLobbyStateMsg, c)
 
 	// Persist to Redis
 	// if c.hub.repo != nil {
@@ -232,27 +237,24 @@ func (c *Client) handleAction(msg *protocol.Message) {
 		return
 	}
 
-	var payload map[string]interface{}
+	var payload map[string]any
 	if err := msg.ParsePayload(&payload); err != nil {
 		c.sendError("invalid_payload", "Invalid action payload")
 		return
 	}
 
-	// Get action type
 	actionType, ok := payload["type"].(string)
 	if !ok {
 		c.sendError("invalid_action", "Action type missing")
 		return
 	}
 
-	// Get game session
 	session, ok := c.hub.gameManager.GetSession(c.room.ID)
 	if !ok {
 		c.sendError("session_not_found", "Game session not found")
 		return
 	}
 
-	// Handle different action types
 	switch actionType {
 	case "plantBean":
 		c.handlePlantBean(session, payload)
@@ -261,23 +263,17 @@ func (c *Client) handleAction(msg *protocol.Message) {
 	case "harvestField":
 		c.handleHarvestField(session, payload)
 	case "turnOverBean":
-		c.handleTurnOverBean(session, payload)
+		c.handleTurnOverBean(session)
 	case "drawCards":
-		c.handleDrawCards(session, payload)
+		c.handleDrawCards(session)
 	case "nextPhase":
-		c.handleNextPhase(session, payload)
+		c.handleNextPhase(session)
 	default:
 		c.sendError("unknown_action", "Unknown action type")
 		return
 	}
 
-	c.logger.Debug("player action",
-		zap.String("room_id", c.room.ID),
-		zap.String("action", actionType),
-	)
-
-	// Broadcast action to all clients in room
-	c.room.Broadcast(msg, c)
+	c.sendPlayerSnapshotToAll(session)
 
 	if c.hub.repo != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -349,10 +345,9 @@ func (c *Client) handleHarvestField(session interface{}, payload map[string]any)
 	}
 }
 
-func (c *Client) handleTurnOverBean(session interface{}, payload map[string]any) {
+func (c *Client) handleTurnOverBean(session interface{}) {
 	if s, ok := session.(*game.Session); ok {
 		if err := s.HandleTurnOverBean(c.PlayerId); err != nil {
-			// Check if it's a GameError to send structured error
 			if gameErr, ok := err.(*game.GameError); ok {
 				c.sendError(gameErr.Code, gameErr.Message)
 			} else {
@@ -362,10 +357,9 @@ func (c *Client) handleTurnOverBean(session interface{}, payload map[string]any)
 	}
 }
 
-func (c *Client) handleDrawCards(session interface{}, payload map[string]any) {
+func (c *Client) handleDrawCards(session interface{}) {
 	if s, ok := session.(*game.Session); ok {
 		if err := s.HandleDrawCards(c.PlayerId); err != nil {
-			// Check if it's a GameError to send structured error
 			if gameErr, ok := err.(*game.GameError); ok {
 				c.sendError(gameErr.Code, gameErr.Message)
 			} else {
@@ -375,7 +369,7 @@ func (c *Client) handleDrawCards(session interface{}, payload map[string]any) {
 	}
 }
 
-func (c *Client) handleNextPhase(session interface{}, payload map[string]any) {
+func (c *Client) handleNextPhase(session interface{}) {
 	if s, ok := session.(*game.Session); ok {
 		if err := s.HandleNextPhase(c.PlayerId); err != nil {
 			if gameErr, ok := err.(*game.GameError); ok {
@@ -384,6 +378,75 @@ func (c *Client) handleNextPhase(session interface{}, payload map[string]any) {
 				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
 			}
 		}
+	}
+}
+
+func (c *Client) handleReady(msg *protocol.Message) {
+	if c.room == nil {
+		c.sendError("not_in_room", "You must join a room first")
+		return
+	}
+
+	var payload protocol.ReadyPayload
+	if err := msg.ParsePayload(&payload); err != nil {
+		c.sendError("invalid_payload", "Invalid ready payload")
+		return
+	}
+
+	session, ok := c.hub.gameManager.GetSession(c.room.ID)
+	if !ok {
+		c.sendError("session_not_found", "Game session not found")
+		return
+	}
+
+	if err := session.HandlePlayerReady(c.PlayerId, payload.Ready); err != nil {
+		if gameErr, ok := err.(*game.GameError); ok {
+			c.sendError(gameErr.Code, gameErr.Message)
+		} else {
+			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+		}
+		return
+	}
+
+	waitingLobbyData := session.GetWaitingLobbySnapshot()
+	waitingLobbyStateMsg, err := protocol.NewMessage(
+		protocol.WaitingLobbyState,
+		c.room.ID,
+		c.PlayerId,
+		waitingLobbyData,
+	)
+	if err != nil {
+		c.logger.Error("failed to create join broadcast", zap.Error(err))
+		return
+	}
+
+	c.room.Broadcast(waitingLobbyStateMsg, c)
+
+	// Check if the game can auto-start now that ready state changed
+	started, err := session.HandleStartGame()
+	if err != nil {
+		c.logger.Debug("game cannot start yet", zap.Error(err))
+		return
+	}
+
+	if started {
+		// Broadcast "game_started" event to all clients in the room
+		gameStartedMsg, err := protocol.NewMessage(
+			protocol.MessageTypeBroadcast,
+			c.room.ID,
+			c.PlayerId,
+			protocol.BroadcastPayload{
+				Event: "game_started",
+				Data:  map[string]any{},
+			},
+		)
+		if err != nil {
+			c.logger.Error("failed to create game_started broadcast", zap.Error(err))
+			return
+		}
+		c.room.Broadcast(gameStartedMsg, c)
+
+		c.sendPlayerSnapshotToAll(session)
 	}
 }
 
@@ -483,6 +546,35 @@ func (c *Client) handlePlayerState(msg *protocol.Message) {
 		c.logger.Debug("sent game state to client", zap.String("room_id", c.room.ID))
 	default:
 		c.logger.Warn("send channel full, dropping state message")
+	}
+}
+
+// sendPlayerSnapshotToAll sends each client in the room their personalized player snapshot
+func (c *Client) sendPlayerSnapshotToAll(session *game.Session) {
+	for _, client := range c.room.GetClients() {
+		playerSnapshot := session.GetPlayerSnapshot(client.PlayerId)
+
+		stateMsg, err := protocol.NewMessage(
+			protocol.MessageTypePlayerState,
+			c.room.ID,
+			client.PlayerId,
+			playerSnapshot,
+		)
+		if err != nil {
+			c.logger.Error("failed to create player state message",
+				zap.Error(err),
+				zap.String("target_player", client.PlayerId),
+			)
+			continue
+		}
+
+		data, err := stateMsg.ToJSON()
+		if err != nil {
+			c.logger.Error("failed to marshal player state message", zap.Error(err))
+			continue
+		}
+
+		client.Send(data)
 	}
 }
 

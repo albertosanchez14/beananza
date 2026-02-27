@@ -10,7 +10,7 @@ import (
 
 // Manager manages all game sessions across different rooms
 type Manager struct {
-	sessions map[string]*Session // roomID -> Session
+	sessions map[string]*Session
 	repo     *storage.Repository
 	logger   *zap.Logger
 	mu       sync.RWMutex

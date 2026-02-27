@@ -24,6 +24,13 @@ export type ExternalPlayer = {
   playerField: FieldType;
 };
 
+export type WaitingPlayer = {
+  id: string;
+  name: string;
+  ready: boolean;
+  joined_at: string;
+};
+
 export type Player = {
   id: string;
   name: string;
