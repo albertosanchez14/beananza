@@ -6,6 +6,7 @@ import { CardType, ExternalPlayer, FieldType } from "@/schemas/types";
 
 type BoardProp = {
   myHand: CardType[];
+  myPickedCards: CardType[];
   myField: FieldType;
   players: ExternalPlayer[];
   centerCards: CardType[];
@@ -20,6 +21,7 @@ type BoardProp = {
 
 export default function Board({
   myHand,
+  myPickedCards,
   myField,
   players,
   centerCards,
@@ -59,7 +61,9 @@ export default function Board({
     };
   };
 
-  const handleCardClick = (card: CardType) => {
+  const handleCardClick = (card: CardType, source: "hand" | "picked" = "hand") => {
+    // During plantTrade phase, only picked cards are selectable
+    if (gamePhase === "plantTrade" && source === "hand") return;
     // Toggle selection: if clicking the same card, deselect
     if (selectedCard?.cardId === card.cardId) {
       setSelectedCard(null);
@@ -110,7 +114,9 @@ export default function Board({
             Selected: <span className="font-bold">{selectedCard.cardName}</span>
           </p>
           <p className="text-xs text-blue-600 dark:text-blue-300">
-            Click a field to plant or a player to trade
+            {gamePhase === "plantTrade"
+              ? "Click a field slot to plant"
+              : "Click a field to plant or a player to trade"}
           </p>
         </div>
       )}
@@ -126,6 +132,7 @@ export default function Board({
                 onClick={handlePlayerClick}
                 isClickable={!!selectedCard}
                 isCurrentTurn={player.playerId === currentTurnPlayerId}
+                gamePhase={gamePhase}
               />
             </div>
           );
@@ -164,16 +171,35 @@ export default function Board({
         />
       </div>
 
+      {/* Picked cards zone — shown whenever there are traded cards */}
+      {myPickedCards.length > 0 && (
+        <div className="mb-2 w-full">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1 text-center">
+            Traded cards{gamePhase === "plantTrade" ? " — must plant before advancing" : ""}
+          </p>
+          <div className="flex justify-center gap-4 rounded-xl px-4 py-3 border-2 border-amber-400 bg-amber-50 dark:bg-amber-950">
+            {myPickedCards.map((card, index) => (
+              <Card
+                key={index}
+                card={card}
+                isSelected={selectedCard?.cardId === card.cardId}
+                onClick={() => handleCardClick(card, "picked")}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Main player at the bottom */}
       <div className="w-full mt-auto mx-auto">
-        <div className="flex justify-center gap-4">
+        <div className={`flex justify-center gap-4 ${gamePhase === "plantTrade" ? "opacity-40 pointer-events-none" : ""}`}>
           {myHand.map((card, index) => {
             return (
               <Card
                 key={index}
                 card={card}
                 isSelected={selectedCard?.cardId === card.cardId}
-                onClick={() => handleCardClick(card)}
+                onClick={() => handleCardClick(card, "hand")}
               />
             );
           })}

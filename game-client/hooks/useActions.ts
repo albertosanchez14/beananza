@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
+import { OfferCard } from "@/schemas/types";
 
 export type MessageType =
   | "join"
@@ -78,6 +79,23 @@ export interface UseActionsReturn {
   setReady: (roomId: string, ready: boolean) => boolean;
   myState: (roomId: string) => boolean;
   nextPhase: (roomId: string) => boolean;
+  createOffer: (
+    roomId: string,
+    cardsOffered: OfferCard[],
+    cardsRequested: OfferCard[],
+    targetPlayerId?: string,
+  ) => boolean;
+  counterOffer: (
+    roomId: string,
+    parentOfferId: string,
+    cardsOffered: OfferCard[],
+    cardsRequested: OfferCard[],
+  ) => boolean;
+  respondOffer: (
+    roomId: string,
+    offerId: string,
+    action: "accept" | "reject" | "cancel",
+  ) => boolean;
 }
 
 /**
@@ -288,6 +306,72 @@ export function useActions({
     [isConnectionReady, createMessage, sendJsonMessage],
   );
 
+  const createOffer = useCallback(
+    (
+      roomId: string,
+      cardsOffered: OfferCard[],
+      cardsRequested: OfferCard[],
+      targetPlayerId?: string,
+    ): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload: Record<string, unknown> = {
+        type: "createOffer",
+        cards_offered: cardsOffered,
+        cards_requested: cardsRequested,
+      };
+      if (targetPlayerId) {
+        payload.target_player_id = targetPlayerId;
+      }
+      const message = createMessage("action", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
+
+  const counterOffer = useCallback(
+    (
+      roomId: string,
+      parentOfferId: string,
+      cardsOffered: OfferCard[],
+      cardsRequested: OfferCard[],
+    ): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload = {
+        type: "counterOffer",
+        parent_offer_id: parentOfferId,
+        cards_offered: cardsOffered,
+        cards_requested: cardsRequested,
+      };
+      const message = createMessage("action", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
+
+  const respondOffer = useCallback(
+    (
+      roomId: string,
+      offerId: string,
+      action: "accept" | "reject" | "cancel",
+    ): boolean => {
+      if (!isConnectionReady()) return false;
+
+      const payload = {
+        type: "respondOffer",
+        offer_id: offerId,
+        action,
+      };
+      const message = createMessage("action", roomId, payload);
+      sendJsonMessage(message);
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
+
   return {
     readyState,
     isConnected: readyState === ReadyState.OPEN,
@@ -310,5 +394,9 @@ export function useActions({
 
     myState,
     nextPhase,
+
+    createOffer,
+    counterOffer,
+    respondOffer,
   };
 }

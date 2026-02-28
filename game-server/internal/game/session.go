@@ -51,6 +51,7 @@ func (s *Session) GetFullSnapshot() map[string]any {
 		"turn_order":   s.gameState.TurnOrder,
 		"current_turn": s.gameState.CurrentTurn,
 		"center_cards": s.gameState.CenterCards,
+		"offers":       s.gameState.Offers,
 		"started_at":   s.gameState.StartedAt,
 		"ended_at":     s.gameState.EndedAt,
 		"updated_at":   s.gameState.UpdatedAt,
@@ -90,6 +91,7 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 		"turn_order":   s.gameState.TurnOrder,
 		"current_turn": s.gameState.CurrentTurn,
 		"center_cards": s.gameState.CenterCards,
+		"offers":       s.gameState.Offers,
 		"started_at":   s.gameState.StartedAt,
 		"ended_at":     s.gameState.EndedAt,
 		"updated_at":   s.gameState.UpdatedAt,
@@ -109,19 +111,29 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 		snapshot["discard_pile_size"] = 0
 	}
 
-	// Public data includes all player info except the actual hand cards (only hand size)
-	externalPlayers := make([]map[string]any, 0)
-	for _, player := range s.gameState.Players {
-		if player.ID == playerId {
+	// Public data includes all player info except the actual hand cards (only hand size).
+	// Players are ordered according to TurnOrder to ensure a consistent order across snapshots.
+	capacity := len(s.gameState.Players) - 1
+	if capacity < 0 {
+		capacity = 0
+	}
+	externalPlayers := make([]map[string]any, 0, capacity)
+	for _, id := range s.gameState.TurnOrder {
+		if id == playerId {
+			continue
+		}
+		player, ok := s.gameState.Players[id]
+		if !ok {
 			continue
 		}
 		externalPlayerData := map[string]any{
-			"playerId":       player.ID,
-			"playerName":     player.Name,
-			"playerStatus":   player.Status,
-			"playerCoins":    player.Coins,
-			"playerHandSize": len(player.Hand),
-			"playerField":    player.Field,
+			"playerId":               player.ID,
+			"playerName":             player.Name,
+			"playerStatus":           player.Status,
+			"playerCoins":            player.Coins,
+			"playerHandSize":         len(player.Hand),
+			"playerPickedCardsCount": len(player.PickedCards),
+			"playerField":            player.Field,
 		}
 		externalPlayers = append(externalPlayers, externalPlayerData)
 	}
@@ -429,4 +441,73 @@ func (s *Session) persistState() error {
 		}
 	}
 	return nil
+}
+
+// HandleCreateOffer handles a player creating a new root offer.
+func (s *Session) HandleCreateOffer(creatorID, targetID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	offer, err := s.gameState.CreateOffer(creatorID, targetID, cardsOffered, cardsRequested)
+	if err != nil {
+		return nil, s.logAndReturnError("create_offer", err)
+	}
+
+	s.logger.Info("offer created",
+		zap.String("offer_id", offer.ID),
+		zap.String("creator_id", creatorID),
+		zap.String("target_id", targetID),
+	)
+
+	return offer, s.persistState()
+}
+
+// HandleCounterOffer handles a player creating a counteroffer against an existing offer.
+func (s *Session) HandleCounterOffer(parentOfferID, creatorID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	offer, err := s.gameState.CounterOffer(parentOfferID, creatorID, cardsOffered, cardsRequested)
+	if err != nil {
+		return nil, s.logAndReturnError("counter_offer", err)
+	}
+
+	s.logger.Info("counteroffer created",
+		zap.String("offer_id", offer.ID),
+		zap.String("parent_offer_id", parentOfferID),
+		zap.String("creator_id", creatorID),
+	)
+
+	return offer, s.persistState()
+}
+
+// HandleRespondOffer handles a player accepting, rejecting, or cancelling an offer.
+// action must be one of "accept", "reject", "cancel".
+func (s *Session) HandleRespondOffer(offerID, playerID, action string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var err error
+	switch action {
+	case "accept":
+		err = s.gameState.AcceptOffer(offerID, playerID)
+	case "reject":
+		err = s.gameState.RejectOffer(offerID, playerID)
+	case "cancel":
+		err = s.gameState.CancelOffer(offerID, playerID)
+	default:
+		return NewInvalidActionError("action must be one of: accept, reject, cancel")
+	}
+
+	if err != nil {
+		return s.logAndReturnError("respond_offer", err)
+	}
+
+	s.logger.Info("offer responded",
+		zap.String("offer_id", offerID),
+		zap.String("player_id", playerID),
+		zap.String("action", action),
+	)
+
+	return s.persistState()
 }

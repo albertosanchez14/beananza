@@ -38,6 +38,7 @@ const (
 	ErrCodeNotEnoughPlayers   = "NOT_ENOUGH_PLAYERS"
 	ErrCodeNotAllPlayersReady = "NOT_ALL_PLAYERS_READY"
 	ErrCodeWaitingLobbyFull   = "WAITING_ROOM_FULL"
+	ErrCodeOfferNotFound      = "OFFER_NOT_FOUND"
 )
 
 // Constructor functions for common errors
@@ -237,6 +238,17 @@ func NewWaitingLobbyFullError() *GameError {
 		Message: "waiting room is full",
 		Details: map[string]any{
 			"max_number_players": MAX_NUMBER_PLAYERS,
+		},
+	}
+}
+
+// NewOfferNotFoundError creates an error when an offer is not found
+func NewOfferNotFoundError(offerID string) *GameError {
+	return &GameError{
+		Code:    ErrCodeOfferNotFound,
+		Message: "offer not found",
+		Details: map[string]any{
+			"offer_id": offerID,
 		},
 	}
 }

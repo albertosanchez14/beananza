@@ -6,6 +6,7 @@ type PlayerProps = {
   onClick?: (playerId: string) => void;
   isClickable?: boolean;
   isCurrentTurn?: boolean;
+  gamePhase?: string;
 };
 
 export default function Player({
@@ -13,6 +14,7 @@ export default function Player({
   onClick,
   isClickable = false,
   isCurrentTurn = false,
+  gamePhase,
 }: PlayerProps) {
   const handleClick = () => {
     if (isClickable && onClick) {
@@ -44,6 +46,12 @@ export default function Player({
             <span>💰</span>
             <span>{player.playerCoins}</span>
           </div>
+          {gamePhase === "plantTrade" && (player.playerPickedCardsCount ?? 0) > 0 && (
+            <div className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-semibold">
+              <span>🌱</span>
+              <span>{player.playerPickedCardsCount}</span>
+            </div>
+          )}
         </div>
 
         {/* Status indicator */}

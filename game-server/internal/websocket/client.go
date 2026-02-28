@@ -268,6 +268,12 @@ func (c *Client) handleAction(msg *protocol.Message) {
 		c.handleDrawCards(session)
 	case "nextPhase":
 		c.handleNextPhase(session)
+	case "createOffer":
+		c.handleCreateOffer(session, payload)
+	case "counterOffer":
+		c.handleCounterOffer(session, payload)
+	case "respondOffer":
+		c.handleRespondOffer(session, payload)
 	default:
 		c.sendError("unknown_action", "Unknown action type")
 		return
@@ -293,7 +299,6 @@ func (c *Client) handlePlantBean(session interface{}, payload map[string]any) {
 
 	if s, ok := session.(*game.Session); ok {
 		if err := s.HandlePlantBean(c.PlayerId, cardID, slotId); err != nil {
-			// Check if it's a GameError to send structured error
 			if gameErr, ok := err.(*game.GameError); ok {
 				c.sendError(gameErr.Code, gameErr.Message)
 			} else {
@@ -304,25 +309,140 @@ func (c *Client) handlePlantBean(session interface{}, payload map[string]any) {
 }
 
 func (c *Client) handleTradeBean(session interface{}, payload map[string]any) {
-	cardsReceived, _ := payload["cardsReceived"].([]string)
-	cardsGiven, _ := payload["cardsGiven"].([]string)
-	toPlayerId, _ := payload["toPlayerId"].(string)
-
-	if toPlayerId == "" {
-		c.sendError("invalid_params", "Missing cardId or toPlayerId")
+	s, ok := session.(*game.Session)
+	if !ok {
+		c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
 		return
 	}
 
-	if s, ok := session.(*game.Session); ok {
-		if err := s.HandleTradeBean(c.PlayerId, toPlayerId, cardsReceived, cardsGiven); err != nil {
-			// Check if it's a GameError to send structured error
-			if gameErr, ok := err.(*game.GameError); ok {
-				c.sendError(gameErr.Code, gameErr.Message)
-			} else {
-				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-			}
+	fromPlayerID, _ := payload["fromPlayerId"].(string)
+	toPlayerID, _ := payload["toPlayerId"].(string)
+
+	// cardsGiven and cardsReceived are sent as []interface{} from JSON
+	cardsGivenRaw, _ := payload["cardsGiven"].([]interface{})
+	cardsReceivedRaw, _ := payload["cardsReceived"].([]interface{})
+
+	cardsGiven := make([]string, 0, len(cardsGivenRaw))
+	for _, v := range cardsGivenRaw {
+		if id, ok := v.(string); ok {
+			cardsGiven = append(cardsGiven, id)
 		}
 	}
+
+	cardsReceived := make([]string, 0, len(cardsReceivedRaw))
+	for _, v := range cardsReceivedRaw {
+		if id, ok := v.(string); ok {
+			cardsReceived = append(cardsReceived, id)
+		}
+	}
+
+	if fromPlayerID == "" || toPlayerID == "" {
+		c.sendError("invalid_params", "Missing fromPlayerId or toPlayerId")
+		return
+	}
+
+	if err := s.HandleTradeBean(fromPlayerID, toPlayerID, cardsReceived, cardsGiven); err != nil {
+		if gameErr, ok := err.(*game.GameError); ok {
+			c.sendError(gameErr.Code, gameErr.Message)
+		} else {
+			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+		}
+	}
+}
+
+// handleCreateOffer handles the "createOffer" action payload.
+func (c *Client) handleCreateOffer(session interface{}, payload map[string]any) {
+	s, ok := session.(*game.Session)
+	if !ok {
+		c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+		return
+	}
+
+	targetID, _ := payload["target_player_id"].(string)
+	cardsOffered := parseOfferCards(payload["cards_offered"])
+	cardsRequested := parseOfferCards(payload["cards_requested"])
+
+	if _, err := s.HandleCreateOffer(c.PlayerId, targetID, cardsOffered, cardsRequested); err != nil {
+		if gameErr, ok := err.(*game.GameError); ok {
+			c.sendError(gameErr.Code, gameErr.Message)
+		} else {
+			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+		}
+	}
+}
+
+// handleCounterOffer handles the "counterOffer" action payload.
+func (c *Client) handleCounterOffer(session interface{}, payload map[string]any) {
+	s, ok := session.(*game.Session)
+	if !ok {
+		c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+		return
+	}
+
+	parentOfferID, _ := payload["parent_offer_id"].(string)
+	if parentOfferID == "" {
+		c.sendError("invalid_params", "Missing parent_offer_id")
+		return
+	}
+
+	cardsOffered := parseOfferCards(payload["cards_offered"])
+	cardsRequested := parseOfferCards(payload["cards_requested"])
+
+	if _, err := s.HandleCounterOffer(parentOfferID, c.PlayerId, cardsOffered, cardsRequested); err != nil {
+		if gameErr, ok := err.(*game.GameError); ok {
+			c.sendError(gameErr.Code, gameErr.Message)
+		} else {
+			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+		}
+	}
+}
+
+// handleRespondOffer handles the "respondOffer" action payload.
+// The "action" field in the payload must be "accept", "reject", or "cancel".
+func (c *Client) handleRespondOffer(session interface{}, payload map[string]any) {
+	s, ok := session.(*game.Session)
+	if !ok {
+		c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+		return
+	}
+
+	offerID, _ := payload["offer_id"].(string)
+	action, _ := payload["action"].(string)
+
+	if offerID == "" || action == "" {
+		c.sendError("invalid_params", "Missing offer_id or action")
+		return
+	}
+
+	if err := s.HandleRespondOffer(offerID, c.PlayerId, action); err != nil {
+		if gameErr, ok := err.(*game.GameError); ok {
+			c.sendError(gameErr.Code, gameErr.Message)
+		} else {
+			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
+		}
+	}
+}
+
+// parseOfferCards converts a raw JSON-decoded []interface{} into []game.OfferCard.
+func parseOfferCards(raw interface{}) []game.OfferCard {
+	slice, ok := raw.([]interface{})
+	if !ok {
+		return []game.OfferCard{}
+	}
+	result := make([]game.OfferCard, 0, len(slice))
+	for _, item := range slice {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		cardType, _ := m["card_type"].(string)
+		cardID, _ := m["card_id"].(string)
+		result = append(result, game.OfferCard{
+			CardType: game.CardType(cardType),
+			CardID:   cardID,
+		})
+	}
+	return result
 }
 
 func (c *Client) handleHarvestField(session interface{}, payload map[string]any) {
@@ -368,7 +488,6 @@ func (c *Client) handleDrawCards(session interface{}) {
 		}
 	}
 }
-
 func (c *Client) handleNextPhase(session interface{}) {
 	if s, ok := session.(*game.Session); ok {
 		if err := s.HandleNextPhase(c.PlayerId); err != nil {

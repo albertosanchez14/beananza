@@ -28,8 +28,8 @@ type Message struct {
 }
 
 type JoinPayload struct {
-	PlayerName string                 `json:"player_name"`
-	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+	PlayerName string         `json:"player_name"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
 }
 
 type LeavePayload struct {
@@ -41,8 +41,8 @@ type ReadyPayload struct {
 }
 
 type ActionPayload struct {
-	Action string                 `json:"action"`
-	Data   map[string]interface{} `json:"data,omitempty"`
+	Action string         `json:"action"`
+	Data   map[string]any `json:"data,omitempty"`
 }
 
 type ErrorPayload struct {
@@ -51,13 +51,41 @@ type ErrorPayload struct {
 }
 
 type BroadcastPayload struct {
-	Event string                 `json:"event"`
-	Data  map[string]interface{} `json:"data,omitempty"`
+	Event string         `json:"event"`
+	Data  map[string]any `json:"data,omitempty"`
 }
 
-type StatePayload interface{}
+type StatePayload any
 
-func NewMessage(msgType MessageType, roomID, playerID string, payload interface{}) (*Message, error) {
+// OfferCardPayload represents a single card in an offer payload.
+type OfferCardPayload struct {
+	CardType string `json:"card_type"`
+	CardID   string `json:"card_id"`
+}
+
+// CreateOfferPayload is the payload for the "createOffer" action.
+// TargetPlayerID is optional; when empty the offer is open to all players.
+type CreateOfferPayload struct {
+	CardsOffered   []OfferCardPayload `json:"cards_offered"`
+	CardsRequested []OfferCardPayload `json:"cards_requested"`
+	TargetPlayerID string             `json:"target_player_id,omitempty"`
+}
+
+// CounterOfferPayload is the payload for the "counterOffer" action.
+type CounterOfferPayload struct {
+	ParentOfferID  string             `json:"parent_offer_id"`
+	CardsOffered   []OfferCardPayload `json:"cards_offered"`
+	CardsRequested []OfferCardPayload `json:"cards_requested"`
+}
+
+// RespondOfferPayload is the payload for the "respondOffer" action.
+// Action must be one of: "accept", "reject", "cancel".
+type RespondOfferPayload struct {
+	OfferID string `json:"offer_id"`
+	Action  string `json:"action"`
+}
+
+func NewMessage(msgType MessageType, roomID, playerID string, payload any) (*Message, error) {
 	var rawPayload json.RawMessage
 	if payload != nil {
 		data, err := json.Marshal(payload)
@@ -76,7 +104,7 @@ func NewMessage(msgType MessageType, roomID, playerID string, payload interface{
 	}, nil
 }
 
-func (m *Message) ParsePayload(dest interface{}) error {
+func (m *Message) ParsePayload(dest any) error {
 	if m.Payload == nil {
 		return nil
 	}

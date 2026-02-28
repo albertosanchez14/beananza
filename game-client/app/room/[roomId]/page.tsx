@@ -3,9 +3,17 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useActions, BroadcastPayload } from "@/hooks/useActions";
 
-import { CardType, ExternalPlayer, FieldType, Player, WaitingPlayer } from "@/schemas/types";
+import {
+  CardType,
+  ExternalPlayer,
+  FieldType,
+  Offer,
+  OfferCard,
+  WaitingPlayer,
+} from "@/schemas/types";
 import Board from "@/components/board";
 import WaitingRoom from "@/components/waiting-room";
+import OfferPanel from "@/components/offer-panel";
 
 export default function Page() {
   const params = useParams();
@@ -35,6 +43,9 @@ export default function Page() {
     setReady,
     myState,
     nextPhase,
+    createOffer,
+    counterOffer,
+    respondOffer,
   } = useActions({
     wsUrl: WS_URL,
     playerId,
@@ -79,6 +90,7 @@ export default function Page() {
         // Game mode
         if (payload.player) {
           setMyHand(payload.player.hand || []);
+          setMyPickedCards(payload.player.picked_cards || []);
           setMyField({
             ...payload.player.field,
             slots: payload.player.field?.slots || [],
@@ -86,6 +98,7 @@ export default function Page() {
         }
         setCenterCards(payload.center_cards || []);
         setPlayers(payload.external_players || []);
+        setOffers(payload.offers || []);
 
         if (payload.turn_order && payload.turn_order.length > 0) {
           const playerTurnId = payload.turn_order[payload.current_turn || 0];
@@ -111,7 +124,9 @@ export default function Page() {
   });
 
   // Waiting room state
-  const [allPlayers, setAllPlayers] = useState<Record<string, WaitingPlayer>>({});
+  const [allPlayers, setAllPlayers] = useState<Record<string, WaitingPlayer>>(
+    {},
+  );
   const [minPlayers, setMinPlayers] = useState(3);
   const [maxPlayers, setMaxPlayers] = useState(5);
   const [canStart, setCanStart] = useState(false);
@@ -119,11 +134,31 @@ export default function Page() {
 
   // Game state
   const [myHand, setMyHand] = useState<CardType[]>([]);
+  const [myPickedCards, setMyPickedCards] = useState<CardType[]>([]);
   const [myField, setMyField] = useState<FieldType>({ fieldId: "", slots: [] });
   const [centerCards, setCenterCards] = useState<CardType[]>([]);
   const [players, setPlayers] = useState<ExternalPlayer[]>([]);
   const [playerTurn, setPlayerTurn] = useState<string>("");
   const [gamePhase, setPhase] = useState<string>("");
+
+  // Offer state
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [offerPanelOpen, setOfferPanelOpen] = useState(false);
+
+  // Auto-open offer panel when entering trade phase with pending incoming offers
+  useEffect(() => {
+    if (gamePhase === "turnTrade") {
+      const hasIncoming = offers.some(
+        (o) =>
+          o.status === "pending" &&
+          o.creator_id !== playerId &&
+          (o.target_id === "" || o.target_id === playerId),
+      );
+      if (hasIncoming) {
+        setOfferPanelOpen(true);
+      }
+    }
+  }, [gamePhase, offers, playerId]);
 
   useEffect(() => {
     if (isConnected && playerId) {
@@ -162,6 +197,29 @@ export default function Page() {
     nextPhase(roomId);
   };
 
+  const handleCreateOffer = (
+    cardsOffered: OfferCard[],
+    cardsRequested: OfferCard[],
+    targetPlayerId?: string,
+  ) => {
+    createOffer(roomId, cardsOffered, cardsRequested, targetPlayerId);
+  };
+
+  const handleCounterOffer = (
+    parentOfferId: string,
+    cardsOffered: OfferCard[],
+    cardsRequested: OfferCard[],
+  ) => {
+    counterOffer(roomId, parentOfferId, cardsOffered, cardsRequested);
+  };
+
+  const handleRespondOffer = (
+    offerId: string,
+    action: "accept" | "reject" | "cancel",
+  ) => {
+    respondOffer(roomId, offerId, action);
+  };
+
   const handleSetReady = (ready: boolean) => {
     setReady(roomId, ready);
   };
@@ -175,6 +233,13 @@ export default function Page() {
   if (!playerId) {
     return null;
   }
+
+  const pendingIncomingCount = offers.filter(
+    (o) =>
+      o.status === "pending" &&
+      o.creator_id !== playerId &&
+      (o.target_id === "" || o.target_id === playerId),
+  ).length;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
@@ -195,11 +260,41 @@ export default function Page() {
           />
         ) : (
           <>
-            <span>Player: {playerId}</span>
-            <span>Player Turn: {playerTurn}</span>
-            <span>Game Phase: {gamePhase}</span>
+            {/* Left sidebar: player info + trade button */}
+            <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">
+              <div className="flex flex-col gap-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-3 shadow text-xs text-gray-600 dark:text-gray-400 min-w-[120px]">
+                <span className="font-semibold text-gray-800 dark:text-gray-200 truncate">
+                  {playerId}
+                </span>
+                <span>
+                  Turn:{" "}
+                  <span className={playerTurn === playerId ? "text-green-600 dark:text-green-400 font-semibold" : ""}>
+                    {playerTurn === playerId ? "yours" : playerTurn}
+                  </span>
+                </span>
+                <span>
+                  Phase: <span className="font-medium text-gray-700 dark:text-gray-300">{gamePhase}</span>
+                </span>
+              </div>
+
+              {gamePhase === "turnTrade" && (
+                <button
+                  onClick={() => setOfferPanelOpen(true)}
+                  className="relative flex items-center justify-between gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow transition-colors"
+                >
+                  <span>Trade Offers</span>
+                  {pendingIncomingCount > 0 && (
+                    <span className="px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full leading-none">
+                      {pendingIncomingCount}
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
+
             <Board
               myHand={myHand}
+              myPickedCards={myPickedCards}
               myField={myField}
               players={players}
               centerCards={centerCards}
@@ -219,6 +314,20 @@ export default function Page() {
           <button onClick={handleNextPhase}>Next Phase</button>
         </div>
       </main>
+
+      <OfferPanel
+        isOpen={offerPanelOpen}
+        onClose={() => setOfferPanelOpen(false)}
+        offers={offers}
+        myHand={myHand}
+        centerCards={centerCards}
+        myPlayerId={playerId}
+        players={players}
+        gamePhase={gamePhase}
+        onCreateOffer={handleCreateOffer}
+        onCounterOffer={handleCounterOffer}
+        onRespondOffer={handleRespondOffer}
+      />
     </div>
   );
 }

@@ -27,6 +27,7 @@ export const playersData: ExternalPlayer[] = [
     playerCoins: 5,
     playerHandSize: 4,
     playerReady: false,
+    playerPickedCardsCount: 0,
     playerField: {
       fieldId: "field-player-1234",
       slots: [
@@ -42,6 +43,7 @@ export const playersData: ExternalPlayer[] = [
     playerCoins: 3,
     playerHandSize: 3,
     playerReady: false,
+    playerPickedCardsCount: 0,
     playerField: {
       fieldId: "field-player-3212",
       slots: [
@@ -57,6 +59,7 @@ export const playersData: ExternalPlayer[] = [
     playerCoins: 7,
     playerHandSize: 5,
     playerReady: false,
+    playerPickedCardsCount: 0,
     playerField: {
       fieldId: "field-player-2984",
       slots: [
@@ -72,6 +75,7 @@ export const playersData: ExternalPlayer[] = [
     playerCoins: 2,
     playerHandSize: 4,
     playerReady: false,
+    playerPickedCardsCount: 0,
     playerField: {
       fieldId: "field-player-1221",
       slots: [

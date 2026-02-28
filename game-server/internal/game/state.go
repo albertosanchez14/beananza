@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	MAX_NUMBER_PLAYERS = 3
-	MIN_NUMBER_PLAYERS = 2
+	MAX_NUMBER_PLAYERS = 5
+	MIN_NUMBER_PLAYERS = 3
 )
 
 type Player struct {
@@ -17,6 +17,7 @@ type Player struct {
 	Coins            int       `json:"coins"`
 	Hand             []*Card   `json:"hand"`
 	Field            *Field    `json:"field"`
+	PickedCards      []*Card   `json:"picked_cards"`
 	BeansPlantedTurn int       `json:"beans_planted_turn"`
 	JoinedAt         time.Time `json:"joined_at"`
 }
@@ -34,6 +35,7 @@ type State struct {
 	CardsTurned  bool
 	CardsDrawned bool
 	// ==============
+	Offers    []*Offer `json:"offers"`
 	StartedAt time.Time
 	EndedAt   time.Time
 	UpdatedAt time.Time
@@ -46,6 +48,7 @@ func NewState(roomID string) *State {
 		Phase:       "waiting",
 		Players:     make(map[string]*Player),
 		CenterCards: make([]*Card, 0),
+		Offers:      make([]*Offer, 0),
 		DrawPile:    nil,
 		DiscardPile: nil,
 		UpdatedAt:   time.Now(),
@@ -65,6 +68,7 @@ func (s *State) AddPlayer(playerId, playerName string) *Player {
 		Coins:            0,
 		Hand:             make([]*Card, 0),
 		Field:            field,
+		PickedCards:      make([]*Card, 0),
 		BeansPlantedTurn: 0,
 		JoinedAt:         time.Now(),
 	}
@@ -146,11 +150,26 @@ func (s *State) Clone() *State {
 
 	for id, player := range s.Players {
 		playerClone := *player
+		if player.Hand != nil {
+			playerClone.Hand = make([]*Card, len(player.Hand))
+			copy(playerClone.Hand, player.Hand)
+		}
+		if player.PickedCards != nil {
+			playerClone.PickedCards = make([]*Card, len(player.PickedCards))
+			copy(playerClone.PickedCards, player.PickedCards)
+		}
 		clone.Players[id] = &playerClone
 	}
 
 	// Clone turn order (shallow copy of pointers is fine since we cloned the players)
 	copy(clone.TurnOrder, s.TurnOrder)
+
+	// Clone offers (shallow copy of each offer struct is sufficient)
+	clone.Offers = make([]*Offer, len(s.Offers))
+	for i, o := range s.Offers {
+		offerClone := *o
+		clone.Offers[i] = &offerClone
+	}
 
 	return clone
 }
@@ -158,12 +177,24 @@ func (s *State) Clone() *State {
 // TODO: return errors in logger and show them at the session.go handle-action
 // TODO: only plant in order
 func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
-	player, err := s.isPlayerTurn(playerId)
-	if err != nil {
-		return err
+	// During plantTrade, any player may plant their own picked cards —
+	// the "whose turn is it" restriction only applies to plantHand/turnTrade.
+	var player *Player
+	if s.Phase == PhaseTypePlantTrade {
+		p, ok := s.GetPlayer(playerId)
+		if !ok {
+			return NewPlayerNotFoundError(playerId)
+		}
+		player = p
+	} else {
+		p, err := s.isPlayerTurn(playerId)
+		if err != nil {
+			return err
+		}
+		player = p
 	}
 
-	if s.Phase != PhaseTypePlantHand && s.Phase != PhaseTypeTurnTrade {
+	if s.Phase != PhaseTypePlantHand && s.Phase != PhaseTypeTurnTrade && s.Phase != PhaseTypePlantTrade {
 		return NewInvalidPhaseError(s.Phase)
 	}
 
@@ -177,6 +208,7 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 	var cardToPlant *Card
 	cardIndex := -1
 	isFromCenter := false
+	isFromPickedCards := false
 
 	// Try to find card in appropriate location based on phase
 	if s.Phase == PhaseTypePlantHand {
@@ -202,6 +234,18 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 		if cardToPlant == nil {
 			return NewCardNotInCenterError(cardId)
 		}
+	} else if s.Phase == PhaseTypePlantTrade {
+		for i, card := range player.PickedCards {
+			if card.ID == cardId {
+				cardToPlant = card
+				cardIndex = i
+				isFromPickedCards = true
+				break
+			}
+		}
+		if cardToPlant == nil {
+			return NewInvalidActionError("card not found in picked cards")
+		}
 	}
 
 	if err := player.Field.AddToSlot(slotId, cardToPlant.Name, cardId); err != nil {
@@ -210,6 +254,8 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 
 	if isFromCenter {
 		s.CenterCards = append(s.CenterCards[:cardIndex], s.CenterCards[cardIndex+1:]...)
+	} else if isFromPickedCards {
+		player.PickedCards = append(player.PickedCards[:cardIndex], player.PickedCards[cardIndex+1:]...)
 	} else {
 		player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
 	}
@@ -302,7 +348,6 @@ func (s *State) HarvestField(playerId string, slotId string) error {
 	return nil
 }
 
-// TODO: Review this method
 func (s *State) TradeBeans(fromPlayerID string, toPlayerID string, cardsReceived []string, cardsGiven []string) error {
 	fromPlayer, ok := s.GetPlayer(fromPlayerID)
 	if !ok {
@@ -314,7 +359,6 @@ func (s *State) TradeBeans(fromPlayerID string, toPlayerID string, cardsReceived
 		return NewPlayerNotFoundError(toPlayerID)
 	}
 
-	// Find and collect cards that fromPlayer is giving away
 	cardsToGive := make([]*Card, 0, len(cardsGiven))
 	cardsToGiveIndices := make([]int, 0, len(cardsGiven))
 
@@ -336,7 +380,6 @@ func (s *State) TradeBeans(fromPlayerID string, toPlayerID string, cardsReceived
 		}
 	}
 
-	// Find and collect cards that fromPlayer is receiving
 	cardsToReceive := make([]*Card, 0, len(cardsReceived))
 	cardsToReceiveIndices := make([]int, 0, len(cardsReceived))
 
@@ -369,8 +412,6 @@ func (s *State) TradeBeans(fromPlayerID string, toPlayerID string, cardsReceived
 			}
 		}
 		fromPlayer.Hand = newFromPlayerHand
-
-		// Add cards to toPlayer's hand
 		toPlayer.Hand = append(toPlayer.Hand, cardsToGive...)
 	}
 
@@ -385,9 +426,123 @@ func (s *State) TradeBeans(fromPlayerID string, toPlayerID string, cardsReceived
 			}
 		}
 		toPlayer.Hand = newToPlayerHand
-
-		// Add cards to fromPlayer's hand
 		fromPlayer.Hand = append(fromPlayer.Hand, cardsToReceive...)
+	}
+
+	return nil
+}
+
+// tradeToPickedCards performs the same card swap as TradeBeans but delivers
+// the received cards into each player's PickedCards instead of their Hand.
+// Used by AcceptOffer so traded cards must be planted during plantTrade phase.
+func (s *State) tradeToPickedCards(fromPlayerID string, toPlayerID string, cardsReceived []string, cardsGiven []string) error {
+	fromPlayer, ok := s.GetPlayer(fromPlayerID)
+	if !ok {
+		return NewPlayerNotFoundError(fromPlayerID)
+	}
+
+	toPlayer, ok := s.GetPlayer(toPlayerID)
+	if !ok {
+		return NewPlayerNotFoundError(toPlayerID)
+	}
+
+	// Collect cards the creator is giving away (from their Hand, or CenterCards)
+	type cardSource struct {
+		card        *Card
+		handIndex   int // -1 if from center
+		centerIndex int // -1 if from hand
+	}
+	cardsToGiveSources := make([]cardSource, 0, len(cardsGiven))
+	for _, cardID := range cardsGiven {
+		if cardID == "" {
+			continue
+		}
+		found := false
+		// Check hand first
+		for i, card := range fromPlayer.Hand {
+			if card.ID == cardID {
+				cardsToGiveSources = append(cardsToGiveSources, cardSource{card, i, -1})
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Fall back to center cards (turn player may offer center cards)
+			for i, card := range s.CenterCards {
+				if card.ID == cardID {
+					cardsToGiveSources = append(cardsToGiveSources, cardSource{card, -1, i})
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			return NewCardNotInHandError(fromPlayerID, cardID)
+		}
+	}
+
+	// Collect cards the acceptor is giving away (from their Hand)
+	cardsToReceive := make([]*Card, 0, len(cardsReceived))
+	cardsToReceiveIndices := make([]int, 0, len(cardsReceived))
+	for _, cardID := range cardsReceived {
+		if cardID == "" {
+			continue
+		}
+		found := false
+		for i, card := range toPlayer.Hand {
+			if card.ID == cardID {
+				cardsToReceive = append(cardsToReceive, card)
+				cardsToReceiveIndices = append(cardsToReceiveIndices, i)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return NewCardNotInHandError(toPlayerID, cardID)
+		}
+	}
+
+	// Remove given cards from creator's Hand or CenterCards → add to acceptor's PickedCards
+	if len(cardsToGiveSources) > 0 {
+		// Collect hand indices to remove
+		handIndicesToRemove := make([]int, 0)
+		centerIndicesToRemove := make([]int, 0)
+		cardsToGive := make([]*Card, 0, len(cardsToGiveSources))
+		for _, src := range cardsToGiveSources {
+			cardsToGive = append(cardsToGive, src.card)
+			if src.handIndex >= 0 {
+				handIndicesToRemove = append(handIndicesToRemove, src.handIndex)
+			} else {
+				centerIndicesToRemove = append(centerIndicesToRemove, src.centerIndex)
+			}
+		}
+		newHand := make([]*Card, 0, len(fromPlayer.Hand)-len(handIndicesToRemove))
+		for i, card := range fromPlayer.Hand {
+			if !slices.Contains(handIndicesToRemove, i) {
+				newHand = append(newHand, card)
+			}
+		}
+		fromPlayer.Hand = newHand
+		newCenter := make([]*Card, 0, len(s.CenterCards)-len(centerIndicesToRemove))
+		for i, card := range s.CenterCards {
+			if !slices.Contains(centerIndicesToRemove, i) {
+				newCenter = append(newCenter, card)
+			}
+		}
+		s.CenterCards = newCenter
+		toPlayer.PickedCards = append(toPlayer.PickedCards, cardsToGive...)
+	}
+
+	// Remove given cards from acceptor's Hand → add to creator's PickedCards
+	if len(cardsToReceive) > 0 {
+		newHand := make([]*Card, 0, len(toPlayer.Hand)-len(cardsToReceive))
+		for i, card := range toPlayer.Hand {
+			if !slices.Contains(cardsToReceiveIndices, i) {
+				newHand = append(newHand, card)
+			}
+		}
+		toPlayer.Hand = newHand
+		fromPlayer.PickedCards = append(fromPlayer.PickedCards, cardsToReceive...)
 	}
 
 	return nil
@@ -432,14 +587,27 @@ func (s *State) NextPhase(playerId string) error {
 			return NewMinBeansRequiredError(currentPlayerID, currentPlayer.BeansPlantedTurn)
 		}
 		currentPlayer.BeansPlantedTurn = 0
+		s.TurnOverBean(playerId)
 	case PhaseTypeTurnTrade:
 		// RULE: turnTrade phase
 		// 1. Beans in the middle should be planted or traded
-		// TODO: 2. Beans traded should be planted
 		if len(s.CenterCards) != 0 {
 			return NewCenterCardsRemainingError(len(s.CenterCards))
 		}
 		s.CardsTurned = false
+		s.expireOffersForPhase()
+	case PhaseTypePlantTrade:
+		// RULE: Every player who received traded cards must plant them all
+		// before the phase can advance.
+		for _, id := range s.TurnOrder {
+			p, ok := s.GetPlayer(id)
+			if !ok {
+				continue
+			}
+			if len(p.PickedCards) > 0 {
+				return NewInvalidActionError("all players must plant their picked cards before advancing")
+			}
+		}
 	case PhaseTypeDrawCards:
 		if !s.CardsDrawned {
 			return NewNotDrawnedCardsError()
@@ -490,4 +658,333 @@ func (s *State) isPlayerTurn(playerId string) (*Player, error) {
 	}
 
 	return player, nil
+}
+
+// -----------------------------------------------------------------------
+// Offer methods
+// -----------------------------------------------------------------------
+
+// CreateOffer creates a new root offer during the turnTrade phase.
+// cardsOffered must all be in the creator's hand.
+// targetID may be empty to create an open offer.
+func (s *State) CreateOffer(creatorID, targetID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
+	if s.Phase != PhaseTypeTurnTrade {
+		return nil, NewInvalidPhaseError(s.Phase)
+	}
+
+	creator, ok := s.GetPlayer(creatorID)
+	if !ok {
+		return nil, NewPlayerNotFoundError(creatorID)
+	}
+
+	if targetID != "" {
+		if _, ok := s.GetPlayer(targetID); !ok {
+			return nil, NewPlayerNotFoundError(targetID)
+		}
+		if creatorID == targetID {
+			return nil, NewInvalidActionError("cannot create offer targeting yourself")
+		}
+	}
+
+	if err := s.validateCardsOffered(creator, cardsOffered, creatorID == s.TurnOrder[s.CurrentTurn]); err != nil {
+		return nil, err
+	}
+
+	offer := &Offer{
+		ID:             newOfferID(),
+		CreatorID:      creatorID,
+		TargetID:       targetID,
+		ParentOfferID:  "",
+		CardsOffered:   cardsOffered,
+		CardsRequested: cardsRequested,
+		Status:         OfferStatusPending,
+		CreatedAt:      time.Now(),
+	}
+
+	s.Offers = append(s.Offers, offer)
+	s.UpdatedAt = time.Now()
+
+	return offer, nil
+}
+
+// CounterOffer creates a counteroffer against an existing pending offer.
+// The counter-creator proposes their own cardsOffered/cardsRequested swap.
+// Multiple players may counter the same parent offer simultaneously.
+func (s *State) CounterOffer(parentOfferID, creatorID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
+	if s.Phase != PhaseTypeTurnTrade {
+		return nil, NewInvalidPhaseError(s.Phase)
+	}
+
+	creator, ok := s.GetPlayer(creatorID)
+	if !ok {
+		return nil, NewPlayerNotFoundError(creatorID)
+	}
+
+	parent := s.findOffer(parentOfferID)
+	if parent == nil {
+		return nil, NewOfferNotFoundError(parentOfferID)
+	}
+
+	if parent.Status != OfferStatusPending {
+		return nil, NewInvalidActionError("parent offer is no longer pending")
+	}
+
+	if parent.CreatorID == creatorID {
+		return nil, NewInvalidActionError("cannot counter your own offer")
+	}
+
+	if err := s.validateCardsOffered(creator, cardsOffered, false); err != nil {
+		return nil, err
+	}
+
+	offer := &Offer{
+		ID:             newOfferID(),
+		CreatorID:      creatorID,
+		TargetID:       parent.CreatorID,
+		ParentOfferID:  parentOfferID,
+		CardsOffered:   cardsOffered,
+		CardsRequested: cardsRequested,
+		Status:         OfferStatusPending,
+		CreatedAt:      time.Now(),
+	}
+
+	s.Offers = append(s.Offers, offer)
+	s.UpdatedAt = time.Now()
+
+	return offer, nil
+}
+
+// AcceptOffer accepts a pending offer, executing the card swap atomically.
+// Acceptance rules:
+//   - Root offer (ParentOfferID == ""): acceptorID must not be the creator, and if
+//     TargetID is set it must match the acceptor.
+//   - Counteroffer: only the parent offer's creator may accept.
+//
+// On success, the offer is marked accepted, sibling offers (same parent) are
+// expired, and the card swap is executed via TradeBeans.
+func (s *State) AcceptOffer(offerID, acceptorID string) error {
+	if s.Phase != PhaseTypeTurnTrade {
+		return NewInvalidPhaseError(s.Phase)
+	}
+
+	offer := s.findOffer(offerID)
+	if offer == nil {
+		return NewOfferNotFoundError(offerID)
+	}
+
+	if offer.Status != OfferStatusPending {
+		return NewInvalidActionError("offer is no longer pending")
+	}
+
+	// Validate who is allowed to accept.
+	if offer.ParentOfferID == "" {
+		// Root offer
+		if acceptorID == offer.CreatorID {
+			return NewInvalidActionError("cannot accept your own offer")
+		}
+		if offer.TargetID != "" && acceptorID != offer.TargetID {
+			return NewInvalidActionError("offer is targeted at a different player")
+		}
+	} else {
+		// Counteroffer — only the parent offer's creator can accept.
+		parent := s.findOffer(offer.ParentOfferID)
+		if parent == nil {
+			return NewOfferNotFoundError(offer.ParentOfferID)
+		}
+		if acceptorID != parent.CreatorID {
+			return NewInvalidActionError("only the original offer creator can accept a counteroffer")
+		}
+	}
+
+	// Execute the card swap:
+	// offer.CardsOffered  → cards the creator gives → acceptor receives them.
+	// offer.CardsRequested → cards the creator wants → acceptor gives them.
+
+	// CardsOffered always carry explicit card IDs (creator's own cards).
+	givenIDs := make([]string, 0, len(offer.CardsOffered))
+	for _, c := range offer.CardsOffered {
+		givenIDs = append(givenIDs, c.CardID)
+	}
+
+	// CardsRequested are specified by card_type only (card_id == ""), because
+	// the creator cannot see the acceptor's hand. Resolve each request to a
+	// concrete card ID from the acceptor's hand now, at acceptance time.
+	acceptor, ok := s.GetPlayer(acceptorID)
+	if !ok {
+		return NewPlayerNotFoundError(acceptorID)
+	}
+	requestedIDs := make([]string, 0, len(offer.CardsRequested))
+	// Track which acceptor hand indices have already been claimed so the same
+	// card is not resolved twice when multiple cards of the same type are requested.
+	claimed := make(map[int]bool)
+	for _, c := range offer.CardsRequested {
+		if c.CardID != "" {
+			// Explicit ID (e.g. from a counteroffer where IDs are known).
+			requestedIDs = append(requestedIDs, c.CardID)
+			continue
+		}
+		// Resolve by card type.
+		resolved := false
+		for i, card := range acceptor.Hand {
+			if !claimed[i] && card.Name == c.CardType {
+				requestedIDs = append(requestedIDs, card.ID)
+				claimed[i] = true
+				resolved = true
+				break
+			}
+		}
+		if !resolved {
+			return NewCardNotInHandError(acceptorID, string(c.CardType))
+		}
+	}
+
+	// TradeBeans(fromPlayerID, toPlayerID, cardsReceived, cardsGiven)
+	// fromPlayer = offer creator, toPlayer = acceptor
+	// cardsReceived by fromPlayer = requestedIDs (from acceptor's hand)
+	// cardsGiven by fromPlayer    = givenIDs     (from creator's hand)
+	// Cards go to PickedCards (not Hand) so players must plant them in plantTrade.
+	if err := s.tradeToPickedCards(offer.CreatorID, acceptorID, requestedIDs, givenIDs); err != nil {
+		return err
+	}
+
+	offer.Status = OfferStatusAccepted
+
+	// Expire all sibling pending offers (same parent, different ID).
+	s.expireSiblings(offerID, offer.ParentOfferID)
+
+	s.UpdatedAt = time.Now()
+	return nil
+}
+
+// RejectOffer rejects a pending offer. The rejector must be the intended
+// recipient: for a root offer the TargetID (if set) or any non-creator player;
+// for a counteroffer the parent offer's creator.
+func (s *State) RejectOffer(offerID, rejectorID string) error {
+	if s.Phase != PhaseTypeTurnTrade {
+		return NewInvalidPhaseError(s.Phase)
+	}
+
+	offer := s.findOffer(offerID)
+	if offer == nil {
+		return NewOfferNotFoundError(offerID)
+	}
+
+	if offer.Status != OfferStatusPending {
+		return NewInvalidActionError("offer is no longer pending")
+	}
+
+	if offer.ParentOfferID == "" {
+		if rejectorID == offer.CreatorID {
+			return NewInvalidActionError("creator cannot reject their own offer, use cancel instead")
+		}
+		if offer.TargetID != "" && rejectorID != offer.TargetID {
+			return NewInvalidActionError("offer is targeted at a different player")
+		}
+	} else {
+		parent := s.findOffer(offer.ParentOfferID)
+		if parent == nil {
+			return NewOfferNotFoundError(offer.ParentOfferID)
+		}
+		if rejectorID != parent.CreatorID {
+			return NewInvalidActionError("only the original offer creator can reject a counteroffer")
+		}
+	}
+
+	offer.Status = OfferStatusRejected
+	s.UpdatedAt = time.Now()
+	return nil
+}
+
+// CancelOffer cancels a pending offer. Only the offer's creator may cancel it.
+// Cancelling also expires all pending child counteroffers.
+func (s *State) CancelOffer(offerID, cancellerID string) error {
+	offer := s.findOffer(offerID)
+	if offer == nil {
+		return NewOfferNotFoundError(offerID)
+	}
+
+	if offer.Status != OfferStatusPending {
+		return NewInvalidActionError("offer is no longer pending")
+	}
+
+	if offer.CreatorID != cancellerID {
+		return NewInvalidActionError("only the offer creator can cancel this offer")
+	}
+
+	offer.Status = OfferStatusCancelled
+
+	// Expire all pending children of this offer.
+	s.expireChildren(offerID)
+
+	s.UpdatedAt = time.Now()
+	return nil
+}
+
+// expireOffersForPhase marks all pending offers as expired.
+// Called when the phase transitions out of turnTrade.
+func (s *State) expireOffersForPhase() {
+	for _, o := range s.Offers {
+		if o.Status == OfferStatusPending {
+			o.Status = OfferStatusExpired
+		}
+	}
+}
+
+// findOffer returns the offer with the given ID, or nil.
+func (s *State) findOffer(offerID string) *Offer {
+	for _, o := range s.Offers {
+		if o.ID == offerID {
+			return o
+		}
+	}
+	return nil
+}
+
+// expireSiblings expires all pending offers that share the same parent as offerID
+// (excluding offerID itself).
+func (s *State) expireSiblings(acceptedOfferID, parentOfferID string) {
+	for _, o := range s.Offers {
+		if o.ID != acceptedOfferID && o.ParentOfferID == parentOfferID && o.Status == OfferStatusPending {
+			o.Status = OfferStatusExpired
+		}
+	}
+}
+
+// expireChildren recursively expires all pending offers whose ParentOfferID
+// is the given offerID.
+func (s *State) expireChildren(parentOfferID string) {
+	for _, o := range s.Offers {
+		if o.ParentOfferID == parentOfferID && o.Status == OfferStatusPending {
+			o.Status = OfferStatusExpired
+			s.expireChildren(o.ID)
+		}
+	}
+}
+
+// validateCardsOffered checks that every OfferCard in the list is present in
+// the player's hand. When isTurnPlayer is true, cards found in CenterCards are
+// also accepted (the active player may include turned-over center cards in an
+// offer). Returns the first validation error encountered.
+func (s *State) validateCardsOffered(player *Player, cards []OfferCard, isTurnPlayer bool) error {
+	for _, oc := range cards {
+		found := false
+		for _, handCard := range player.Hand {
+			if handCard.ID == oc.CardID {
+				found = true
+				break
+			}
+		}
+		if !found && isTurnPlayer {
+			for _, centerCard := range s.CenterCards {
+				if centerCard.ID == oc.CardID {
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			return NewCardNotInHandError(player.ID, oc.CardID)
+		}
+	}
+	return nil
 }
