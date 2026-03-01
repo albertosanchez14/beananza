@@ -168,6 +168,12 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 	}
 
 	room := c.hub.GetOrCreateRoom(msg.RoomID)
+	if existingSession, ok := c.hub.gameManager.GetSession(msg.RoomID); ok {
+		if existingSession.IsPlaying() {
+			c.sendError(game.ErrCodeGameAlreadyStarted, "Cannot join: game is already in progress")
+			return
+		}
+	}
 	room.Join(c)
 	c.room = room
 
@@ -525,7 +531,6 @@ func (c *Client) handleReady(msg *protocol.Message) {
 		c.logger.Error("failed to create join broadcast", zap.Error(err))
 		return
 	}
-
 	c.room.Broadcast(waitingLobbyStateMsg, c)
 
 	// Check if the game can auto-start now that ready state changed
@@ -551,7 +556,6 @@ func (c *Client) handleReady(msg *protocol.Message) {
 			return
 		}
 		c.room.Broadcast(gameStartedMsg, c)
-
 		c.sendPlayerSnapshotToAll(session)
 	}
 }

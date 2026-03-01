@@ -78,7 +78,6 @@ export interface UseActionsReturn {
   drawCards: (roomId: string) => boolean;
   setReady: (roomId: string, ready: boolean) => boolean;
   myState: (roomId: string) => boolean;
-  nextPhase: (roomId: string) => boolean;
   createOffer: (
     roomId: string,
     cardsOffered: OfferCard[],
@@ -282,18 +281,6 @@ export function useActions({
     [isConnectionReady, createMessage, sendJsonMessage],
   );
 
-  const nextPhase = useCallback(
-    (roomId: string): boolean => {
-      if (!isConnectionReady()) return false;
-
-      const payload = { type: "nextPhase" };
-      const message = createMessage("action", roomId, payload);
-      sendJsonMessage(message);
-      return true;
-    },
-    [isConnectionReady, createMessage, sendJsonMessage],
-  );
-
   const setReady = useCallback(
     (roomId: string, ready: boolean): boolean => {
       if (!isConnectionReady()) return false;
@@ -393,7 +380,6 @@ export function useActions({
     setReady,
 
     myState,
-    nextPhase,
 
     createOffer,
     counterOffer,

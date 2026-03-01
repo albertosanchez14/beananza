@@ -42,6 +42,7 @@ const (
 	ErrCodeCardNotInOrder           = "CARD_NOT_IN_ORDER"
 	ErrCodeSlotAlreadyExistsForType = "SLOT_ALREADY_EXISTS_FOR_TYPE"
 	ErrCodeCannotHarvestSlot        = "CANNOT_HARVEST_SLOT"
+	ErrCodeGameAlreadyStarted       = "GAME_ALREADY_STARTED"
 )
 
 // Constructor functions for common errors
@@ -288,5 +289,13 @@ func NewCannotHarvestSlotError(slotId string) *GameError {
 		Details: map[string]any{
 			"slot_id": slotId,
 		},
+	}
+}
+
+// NewGameAlreadyStartedError creates an error when a player tries to join a game already in progress
+func NewGameAlreadyStartedError() *GameError {
+	return &GameError{
+		Code:    ErrCodeGameAlreadyStarted,
+		Message: "cannot join: game is already in progress",
 	}
 }

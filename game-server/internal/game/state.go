@@ -227,7 +227,6 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 			return NewCardNotInOrderError(playerId, cardId)
 		}
 	case PhaseTypeTurnTrade:
-
 		for i, card := range s.CenterCards {
 			if card.ID == cardId {
 				cardToPlant = card

@@ -11,11 +11,19 @@ import (
 	"github.com/yourusername/game-server/internal/storage"
 )
 
+type SessionState string
+
+const (
+	SessionStateWaiting SessionState = "waiting"
+	SessionStatePlaying SessionState = "playing"
+	SessionStatePause   SessionState = "pause"
+)
+
 // Session manages a game session for a specific room
 type Session struct {
 	gameState    *State
 	waitingLobby *WaitingLobby
-	state        string // waiting, playing, pause
+	state        SessionState
 	repo         *storage.Repository
 	logger       *zap.Logger
 	mu           sync.RWMutex
@@ -26,7 +34,7 @@ func NewSession(roomID string, repo *storage.Repository, logger *zap.Logger) *Se
 	return &Session{
 		gameState:    NewState(roomID),
 		waitingLobby: NewWaitingLobby(roomID),
-		state:        "waiting",
+		state:        SessionStateWaiting,
 		repo:         repo,
 		logger:       logger.With(zap.String("room_id", roomID)),
 	}
@@ -37,6 +45,13 @@ func (s *Session) GetState() *State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.gameState.Clone()
+}
+
+// IsPlaying reports whether the game session is currently in progress.
+func (s *Session) IsPlaying() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state == SessionStatePlaying
 }
 
 // GetFullSnapshot returns a complete snapshot of the session including all game data
@@ -113,10 +128,7 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 
 	// Public data includes all player info except the actual hand cards (only hand size).
 	// Players are ordered according to TurnOrder to ensure a consistent order across snapshots.
-	capacity := len(s.gameState.Players) - 1
-	if capacity < 0 {
-		capacity = 0
-	}
+	capacity := max(len(s.gameState.Players)-1, 0)
 	externalPlayers := make([]map[string]any, 0, capacity)
 	for _, id := range s.gameState.TurnOrder {
 		if id == playerId {
@@ -189,7 +201,6 @@ func (s *Session) HandlePlayerJoin(playerID, playerName string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// s.gameState.AddPlayer(playerID, playerName)
 	s.waitingLobby.AddPlayer(playerID, playerName)
 
 	s.logger.Info("player joined game",
@@ -285,6 +296,7 @@ func (s *Session) startGame() {
 	s.gameState.SetPhase("plantHand")
 	s.gameState.CurrentTurn = 0
 	playerTurn := s.gameState.TurnOrder[s.gameState.CurrentTurn]
+	s.state = SessionStatePlaying
 
 	s.logger.Info("game started",
 		zap.Int("player_count", s.gameState.PlayerCount()),
