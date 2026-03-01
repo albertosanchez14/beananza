@@ -415,22 +415,6 @@ func (s *Session) HandleDrawCards(playerId string) error {
 	return s.persistState()
 }
 
-// HandleNextPhase handles transitioning to the next game phase
-func (s *Session) HandleNextPhase(playerId string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if err := s.gameState.NextPhase(playerId); err != nil {
-		return s.logAndReturnError("next_phase", err)
-	}
-
-	s.logger.Info("phase transitioned",
-		zap.String("new_phase", string(s.gameState.Phase)),
-	)
-
-	return s.persistState()
-}
-
 // persistState persists the current game state to Redis
 func (s *Session) persistState() error {
 	if s.repo != nil {

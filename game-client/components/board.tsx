@@ -61,8 +61,11 @@ export default function Board({
     };
   };
 
-  const handleCardClick = (card: CardType, source: "hand" | "picked" = "hand") => {
-    // During plantTrade phase, only picked cards are selectable
+  const handleCardClick = (
+    card: CardType,
+    source: "hand" | "picked" | "center" = "hand",
+  ) => {
+    // During plantTrade phase, only picked and center cards are selectable
     if (gamePhase === "plantTrade" && source === "hand") return;
     // Toggle selection: if clicking the same card, deselect
     if (selectedCard?.cardId === card.cardId) {
@@ -98,10 +101,10 @@ export default function Board({
   };
 
   const handleCenterDeckClick = () => {
-    if (gamePhase === "drawCards") {
-      onDrawCards();
-    } else {
+    if (gamePhase === "plantHand") {
       onTurnOverBean();
+    } else {
+      onDrawCards();
     }
   };
 
@@ -156,7 +159,7 @@ export default function Board({
                 key={index}
                 card={card}
                 isSelected={selectedCard?.cardId === card.cardId}
-                onClick={() => handleCardClick(card)}
+                onClick={() => handleCardClick(card, "center")}
               />
             );
           })}
@@ -175,7 +178,8 @@ export default function Board({
       {myPickedCards.length > 0 && (
         <div className="mb-2 w-full">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1 text-center">
-            Traded cards{gamePhase === "plantTrade" ? " — must plant before advancing" : ""}
+            Traded cards
+            {gamePhase === "plantTrade" ? " — must plant before advancing" : ""}
           </p>
           <div className="flex justify-center gap-4 rounded-xl px-4 py-3 border-2 border-amber-400 bg-amber-50 dark:bg-amber-950">
             {myPickedCards.map((card, index) => (
@@ -192,7 +196,9 @@ export default function Board({
 
       {/* Main player at the bottom */}
       <div className="w-full mt-auto mx-auto">
-        <div className={`flex justify-center gap-4 ${gamePhase === "plantTrade" ? "opacity-40 pointer-events-none" : ""}`}>
+        <div
+          className={`flex justify-center gap-4 ${gamePhase === "plantTrade" ? "opacity-40 pointer-events-none" : ""}`}
+        >
           {myHand.map((card, index) => {
             return (
               <Card

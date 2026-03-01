@@ -266,8 +266,6 @@ func (c *Client) handleAction(msg *protocol.Message) {
 		c.handleTurnOverBean(session)
 	case "drawCards":
 		c.handleDrawCards(session)
-	case "nextPhase":
-		c.handleNextPhase(session)
 	case "createOffer":
 		c.handleCreateOffer(session, payload)
 	case "counterOffer":
@@ -480,17 +478,6 @@ func (c *Client) handleTurnOverBean(session interface{}) {
 func (c *Client) handleDrawCards(session interface{}) {
 	if s, ok := session.(*game.Session); ok {
 		if err := s.HandleDrawCards(c.PlayerId); err != nil {
-			if gameErr, ok := err.(*game.GameError); ok {
-				c.sendError(gameErr.Code, gameErr.Message)
-			} else {
-				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-			}
-		}
-	}
-}
-func (c *Client) handleNextPhase(session interface{}) {
-	if s, ok := session.(*game.Session); ok {
-		if err := s.HandleNextPhase(c.PlayerId); err != nil {
 			if gameErr, ok := err.(*game.GameError); ok {
 				c.sendError(gameErr.Code, gameErr.Message)
 			} else {

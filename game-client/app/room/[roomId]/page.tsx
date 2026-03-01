@@ -42,7 +42,6 @@ export default function Page() {
     drawCards,
     setReady,
     myState,
-    nextPhase,
     createOffer,
     counterOffer,
     respondOffer,
@@ -189,14 +188,6 @@ export default function Page() {
     drawCards(roomId);
   };
 
-  const handleGetStatus = () => {
-    myState(roomId);
-  };
-
-  const handleNextPhase = () => {
-    nextPhase(roomId);
-  };
-
   const handleCreateOffer = (
     cardsOffered: OfferCard[],
     cardsRequested: OfferCard[],
@@ -262,18 +253,30 @@ export default function Page() {
           <>
             {/* Left sidebar: player info + trade button */}
             <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">
-              <div className="flex flex-col gap-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-3 shadow text-xs text-gray-600 dark:text-gray-400 min-w-[120px]">
+              <div
+                className="flex flex-col gap-1 bg-white dark:bg-gray-900 border border-gray-200 
+							dark:border-gray-700 rounded-xl px-3 py-3 shadow text-xs text-gray-600 dark:text-gray-400 min-w-30"
+              >
                 <span className="font-semibold text-gray-800 dark:text-gray-200 truncate">
                   {playerId}
                 </span>
                 <span>
                   Turn:{" "}
-                  <span className={playerTurn === playerId ? "text-green-600 dark:text-green-400 font-semibold" : ""}>
+                  <span
+                    className={
+                      playerTurn === playerId
+                        ? "text-green-600 dark:text-green-400 font-semibold"
+                        : ""
+                    }
+                  >
                     {playerTurn === playerId ? "yours" : playerTurn}
                   </span>
                 </span>
                 <span>
-                  Phase: <span className="font-medium text-gray-700 dark:text-gray-300">{gamePhase}</span>
+                  Phase:{" "}
+                  <span className="font-medium text-gray-700 dark:text-gray-300">
+                    {gamePhase}
+                  </span>
                 </span>
               </div>
 
@@ -308,11 +311,6 @@ export default function Page() {
             />
           </>
         )}
-
-        <div className="flex gap-4 pt-2">
-          <button onClick={handleGetStatus}>Get Status</button>
-          <button onClick={handleNextPhase}>Next Phase</button>
-        </div>
       </main>
 
       <OfferPanel

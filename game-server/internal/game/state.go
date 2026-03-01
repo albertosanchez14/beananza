@@ -174,8 +174,6 @@ func (s *State) Clone() *State {
 	return clone
 }
 
-// TODO: return errors in logger and show them at the session.go handle-action
-// TODO: only plant in order
 func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 	// During plantTrade, any player may plant their own picked cards —
 	// the "whose turn is it" restriction only applies to plantHand/turnTrade.
@@ -210,8 +208,9 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 	isFromCenter := false
 	isFromPickedCards := false
 
-	// Try to find card in appropriate location based on phase
-	if s.Phase == PhaseTypePlantHand {
+	// Find card in appropriate location based on phase
+	switch s.Phase {
+	case PhaseTypePlantHand:
 		for i, card := range player.Hand {
 			if card.ID == cardId {
 				cardToPlant = card
@@ -222,7 +221,13 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 		if cardToPlant == nil {
 			return NewCardNotInHandError(playerId, cardId)
 		}
-	} else if s.Phase == PhaseTypeTurnTrade {
+		// RULE: In plantHand phase, cards must be planted in order (front of hand first)
+		// TODO: Remove for loop and return generic error
+		if cardIndex != 0 {
+			return NewCardNotInOrderError(playerId, cardId)
+		}
+	case PhaseTypeTurnTrade:
+
 		for i, card := range s.CenterCards {
 			if card.ID == cardId {
 				cardToPlant = card
@@ -232,19 +237,48 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 			}
 		}
 		if cardToPlant == nil {
+			for i, card := range player.PickedCards {
+				if card.ID == cardId {
+					cardToPlant = card
+					cardIndex = i
+					isFromPickedCards = true
+					break
+				}
+			}
+		}
+		if cardToPlant == nil {
 			return NewCardNotInCenterError(cardId)
 		}
-	} else if s.Phase == PhaseTypePlantTrade {
-		for i, card := range player.PickedCards {
+		// Planting from center or picked_cards — always advance to plantTrade first
+		if err := s.nextPhase(playerId); err != nil {
+			return err
+		}
+	case PhaseTypePlantTrade:
+		for i, card := range s.CenterCards {
 			if card.ID == cardId {
+				// Only the turn player may plant center cards
+				currentPlayerID := s.TurnOrder[s.CurrentTurn]
+				if playerId != currentPlayerID {
+					return NewNotPlayerTurnError(playerId, currentPlayerID)
+				}
 				cardToPlant = card
 				cardIndex = i
-				isFromPickedCards = true
+				isFromCenter = true
 				break
 			}
 		}
 		if cardToPlant == nil {
-			return NewInvalidActionError("card not found in picked cards")
+			for i, card := range player.PickedCards {
+				if card.ID == cardId {
+					cardToPlant = card
+					cardIndex = i
+					isFromPickedCards = true
+					break
+				}
+			}
+		}
+		if cardToPlant == nil {
+			return NewInvalidActionError("card not found in picked cards or center")
 		}
 	}
 
@@ -256,12 +290,23 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 		s.CenterCards = append(s.CenterCards[:cardIndex], s.CenterCards[cardIndex+1:]...)
 	} else if isFromPickedCards {
 		player.PickedCards = append(player.PickedCards[:cardIndex], player.PickedCards[cardIndex+1:]...)
+		// Auto-advance to drawCards when all players have planted their traded cards
+		allPlanted := true
+		for _, id := range s.TurnOrder {
+			p, ok := s.GetPlayer(id)
+			if !ok {
+				continue
+			}
+			if len(p.PickedCards) > 0 {
+				allPlanted = false
+				break
+			}
+		}
+		if allPlanted {
+			s.nextPhase(playerId)
+		}
 	} else {
 		player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
-	}
-
-	// Only increment beans planted counter in plantHand phase
-	if s.Phase == PhaseTypePlantHand {
 		player.BeansPlantedTurn++
 	}
 
@@ -269,7 +314,9 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 	// 1. Current player must plant at most 2 beans,
 	// then it goes to the next phase
 	if player.BeansPlantedTurn >= 2 {
-		s.NextPhase(playerId)
+		if err := s.nextPhase(playerId); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -277,8 +324,7 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 
 // turnOverBean performs the turn over bean logic without acquiring locks
 func (s *State) TurnOverBean(playerId string) error {
-	_, err := s.isPlayerTurn(playerId)
-	if err != nil {
+	if _, err := s.isPlayerTurn(playerId); err != nil {
 		return err
 	}
 
@@ -290,9 +336,13 @@ func (s *State) TurnOverBean(playerId string) error {
 		return NewInvalidActionError("cards already drawn")
 	}
 
-	if s.Phase == PhaseTypePlantHand {
-		s.NextPhase(playerId)
-	} else if s.Phase != PhaseTypeTurnTrade {
+	switch s.Phase {
+	case PhaseTypePlantHand:
+		if err := s.nextPhase(playerId); err != nil {
+			return err
+		}
+	case PhaseTypeTurnTrade:
+	default:
 		return NewInvalidPhaseError(s.Phase)
 	}
 
@@ -312,6 +362,10 @@ func (s *State) HarvestField(playerId string, slotId string) error {
 
 	if player.Field.IsEmpty() {
 		return NewFieldEmptyError(playerId)
+	}
+
+	if ok := player.Field.CanHarvestSlot(slotId); !ok {
+		return NewCannotHarvestSlotError(slotId)
 	}
 
 	slot, err := player.Field.GetSlotFromId(slotId)
@@ -549,9 +603,19 @@ func (s *State) tradeToPickedCards(fromPlayerID string, toPlayerID string, cards
 }
 
 func (s *State) DrawCards(playerId string, cardsToDraw int) error {
-	player, ok := s.GetPlayer(playerId)
-	if !ok {
-		return NewPlayerNotFoundError(playerId)
+	player, err := s.isPlayerTurn(playerId)
+	if err != nil {
+		return err
+	}
+
+	if s.Phase == PhaseTypePlantHand {
+		return NewInvalidPhaseError(s.Phase)
+	}
+
+	// RULE: When drawing cards from the DrawPile
+	// the turn ends
+	if err := s.endPhases(playerId); err != nil {
+		return err
 	}
 
 	drawnCards := s.DrawPile.Draw(cardsToDraw)
@@ -566,14 +630,10 @@ func (s *State) DrawCards(playerId string, cardsToDraw int) error {
 	player.Hand = append(player.Hand, drawnCards...)
 	s.CardsDrawned = true
 
-	// RULE: When drawing cards from the DrawPile
-	// the turn ends
-	s.NextPhase(playerId)
-
-	return nil
+	return s.nextPhase(playerId)
 }
 
-func (s *State) NextPhase(playerId string) error {
+func (s *State) nextPhase(playerId string) error {
 	switch s.Phase {
 	case PhaseTypePlantHand:
 		// RULE: In plantHand phase validate that
@@ -587,16 +647,15 @@ func (s *State) NextPhase(playerId string) error {
 			return NewMinBeansRequiredError(currentPlayerID, currentPlayer.BeansPlantedTurn)
 		}
 		currentPlayer.BeansPlantedTurn = 0
-		s.TurnOverBean(playerId)
 	case PhaseTypeTurnTrade:
-		// RULE: turnTrade phase
-		// 1. Beans in the middle should be planted or traded
-		if len(s.CenterCards) != 0 {
-			return NewCenterCardsRemainingError(len(s.CenterCards))
-		}
+		// RULE: turnTrade phase — center cards will be planted during plantTrade
 		s.CardsTurned = false
 		s.expireOffersForPhase()
 	case PhaseTypePlantTrade:
+		// RULE: All center cards must be planted before the phase can advance.
+		if len(s.CenterCards) > 0 {
+			return NewCenterCardsRemainingError(len(s.CenterCards))
+		}
 		// RULE: Every player who received traded cards must plant them all
 		// before the phase can advance.
 		for _, id := range s.TurnOrder {
@@ -620,6 +679,34 @@ func (s *State) NextPhase(playerId string) error {
 	}
 
 	s.Phase.NextPhase()
+
+	switch s.Phase {
+	case PhaseTypeTurnTrade:
+		if err := s.TurnOverBean(playerId); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *State) endPhases(playerId string) error {
+	switch s.Phase {
+	case PhaseTypeTurnTrade:
+		err := s.nextPhase(playerId)
+		if err != nil {
+			return err
+		}
+		err = s.nextPhase(playerId)
+		if err != nil {
+			return err
+		}
+	case PhaseTypePlantTrade:
+		err := s.nextPhase(playerId)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

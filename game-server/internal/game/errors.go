@@ -19,26 +19,29 @@ func (e *GameError) Error() string {
 
 // Error codes
 const (
-	ErrCodePlayerNotFound     = "PLAYER_NOT_FOUND"
-	ErrCodeNotPlayerTurn      = "NOT_PLAYER_TURN"
-	ErrCodeInvalidPhase       = "INVALID_PHASE"
-	ErrCodeMaxBeansPlanted    = "MAX_BEANS_PLANTED"
-	ErrCodeCardNotFound       = "CARD_NOT_FOUND"
-	ErrCodeCardNotInHand      = "CARD_NOT_IN_HAND"
-	ErrCodeCardNotInCenter    = "CARD_NOT_IN_CENTER"
-	ErrCodeDeckEmpty          = "DECK_EMPTY"
-	ErrCodeFieldEmpty         = "FIELD_EMPTY"
-	ErrCodeMinBeansRequired   = "MIN_BEANS_REQUIRED"
-	ErrCodeCenterCardsRemain  = "CENTER_CARDS_REMAINING"
-	ErrCodeCannotChangeTurn   = "CANNOT_CHANGE_TURN"
-	ErrCodeSlotNotFound       = "SLOT_NOT_FOUND"
-	ErrCodeCardTypeMismatch   = "CARD_TYPE_MISMATCH"
-	ErrCodeInvalidAction      = "INVALID_ACTION"
-	ErrCodeNotInWaitingPhase  = "NOT_IN_WAITING_PHASE"
-	ErrCodeNotEnoughPlayers   = "NOT_ENOUGH_PLAYERS"
-	ErrCodeNotAllPlayersReady = "NOT_ALL_PLAYERS_READY"
-	ErrCodeWaitingLobbyFull   = "WAITING_ROOM_FULL"
-	ErrCodeOfferNotFound      = "OFFER_NOT_FOUND"
+	ErrCodePlayerNotFound           = "PLAYER_NOT_FOUND"
+	ErrCodeNotPlayerTurn            = "NOT_PLAYER_TURN"
+	ErrCodeInvalidPhase             = "INVALID_PHASE"
+	ErrCodeMaxBeansPlanted          = "MAX_BEANS_PLANTED"
+	ErrCodeCardNotFound             = "CARD_NOT_FOUND"
+	ErrCodeCardNotInHand            = "CARD_NOT_IN_HAND"
+	ErrCodeCardNotInCenter          = "CARD_NOT_IN_CENTER"
+	ErrCodeDeckEmpty                = "DECK_EMPTY"
+	ErrCodeFieldEmpty               = "FIELD_EMPTY"
+	ErrCodeMinBeansRequired         = "MIN_BEANS_REQUIRED"
+	ErrCodeCenterCardsRemain        = "CENTER_CARDS_REMAINING"
+	ErrCodeCannotChangeTurn         = "CANNOT_CHANGE_TURN"
+	ErrCodeSlotNotFound             = "SLOT_NOT_FOUND"
+	ErrCodeCardTypeMismatch         = "CARD_TYPE_MISMATCH"
+	ErrCodeInvalidAction            = "INVALID_ACTION"
+	ErrCodeNotInWaitingPhase        = "NOT_IN_WAITING_PHASE"
+	ErrCodeNotEnoughPlayers         = "NOT_ENOUGH_PLAYERS"
+	ErrCodeNotAllPlayersReady       = "NOT_ALL_PLAYERS_READY"
+	ErrCodeWaitingLobbyFull         = "WAITING_ROOM_FULL"
+	ErrCodeOfferNotFound            = "OFFER_NOT_FOUND"
+	ErrCodeCardNotInOrder           = "CARD_NOT_IN_ORDER"
+	ErrCodeSlotAlreadyExistsForType = "SLOT_ALREADY_EXISTS_FOR_TYPE"
+	ErrCodeCannotHarvestSlot        = "CANNOT_HARVEST_SLOT"
 )
 
 // Constructor functions for common errors
@@ -249,6 +252,41 @@ func NewOfferNotFoundError(offerID string) *GameError {
 		Message: "offer not found",
 		Details: map[string]any{
 			"offer_id": offerID,
+		},
+	}
+}
+
+// NewCardNotInOrderError creates an error when a player tries to plant a card that is not first in hand
+func NewCardNotInOrderError(playerID, cardID string) *GameError {
+	return &GameError{
+		Code:    ErrCodeCardNotInOrder,
+		Message: "cards must be planted in order; only the first card in hand can be planted",
+		Details: map[string]any{
+			"player_id": playerID,
+			"card_id":   cardID,
+		},
+	}
+}
+
+// NewSlotAlreadyExistsForTypeError creates an error when a slot already exists for the given card type
+func NewSlotAlreadyExistsForTypeError(cardType CardType, existingSlotId string) *GameError {
+	return &GameError{
+		Code:    ErrCodeSlotAlreadyExistsForType,
+		Message: "a slot already exists for this card type; plant there instead",
+		Details: map[string]any{
+			"card_type":        string(cardType),
+			"existing_slot_id": existingSlotId,
+		},
+	}
+}
+
+// NewCannotHarvestSlotError creates an error when a slot cannot be harvested due to game rules
+func NewCannotHarvestSlotError(slotId string) *GameError {
+	return &GameError{
+		Code:    ErrCodeCannotHarvestSlot,
+		Message: "cannot harvest this slot: it has only 1 card while another slot has more than 1",
+		Details: map[string]any{
+			"slot_id": slotId,
 		},
 	}
 }
