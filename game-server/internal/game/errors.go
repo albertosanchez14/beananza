@@ -2,14 +2,12 @@ package game
 
 import "fmt"
 
-// GameError represents a structured error for game operations
 type GameError struct {
 	Code    string         `json:"code"`
 	Message string         `json:"message"`
 	Details map[string]any `json:"details,omitempty"`
 }
 
-// Error implements the error interface
 func (e *GameError) Error() string {
 	if len(e.Details) == 0 {
 		return fmt.Sprintf("%s: %s", e.Code, e.Message)
@@ -17,7 +15,6 @@ func (e *GameError) Error() string {
 	return fmt.Sprintf("%s: %s (details: %v)", e.Code, e.Message, e.Details)
 }
 
-// Error codes
 const (
 	ErrCodePlayerNotFound           = "PLAYER_NOT_FOUND"
 	ErrCodeNotPlayerTurn            = "NOT_PLAYER_TURN"
@@ -44,8 +41,6 @@ const (
 	ErrCodeCannotHarvestSlot        = "CANNOT_HARVEST_SLOT"
 	ErrCodeGameAlreadyStarted       = "GAME_ALREADY_STARTED"
 )
-
-// Constructor functions for common errors
 
 // NewPlayerNotFoundError creates an error when a player is not found
 func NewPlayerNotFoundError(playerID string) *GameError {
@@ -236,12 +231,12 @@ func NewNotAllPlayersReadyError(readyCount, totalCount int) *GameError {
 	}
 }
 
-func NewWaitingLobbyFullError() *GameError {
+func NewWaitingLobbyFullError(maxPlayers int) *GameError {
 	return &GameError{
 		Code:    ErrCodeWaitingLobbyFull,
 		Message: "waiting room is full",
 		Details: map[string]any{
-			"max_number_players": MAX_NUMBER_PLAYERS,
+			"max_number_players": maxPlayers,
 		},
 	}
 }

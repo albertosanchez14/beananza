@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -45,8 +46,9 @@ func New(cfg *config.Config, hub *ws.Hub, repo *storage.Repository, logger *zap.
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
-	// WebSocket endpoint
 	mux.HandleFunc("/ws", s.handleWebSocket)
+
+	mux.HandleFunc("/rooms", s.handleRooms)
 
 	addr := fmt.Sprintf("%s:%s", s.config.Server.Host, s.config.Server.Port)
 	s.server = &http.Server{
@@ -117,4 +119,28 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 // generateClientID generates a unique client ID
 func generateClientID() string {
 	return fmt.Sprintf("client_%d", time.Now().UnixNano())
+}
+
+// handleRooms returns the list of active rooms as JSON.
+func (s *Server) handleRooms(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rooms := s.hub.GetRoomList()
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(rooms); err != nil {
+		s.logger.Error("failed to encode rooms response", zap.Error(err))
+	}
 }

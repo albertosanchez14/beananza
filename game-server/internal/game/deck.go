@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-// Deck represents a deck of cards
 type Deck struct {
 	Cards []*Card
 }
@@ -78,17 +77,14 @@ func (d *Deck) DrawOne() *Card {
 	return card
 }
 
-// Size returns the number of cards remaining in the deck
 func (d *Deck) Size() int {
 	return len(d.Cards)
 }
 
-// IsEmpty checks if the deck has no cards left
 func (d *Deck) IsEmpty() bool {
 	return len(d.Cards) == 0
 }
 
-// Peek returns the top card without removing it
 func (d *Deck) Peek() *Card {
 	if len(d.Cards) == 0 {
 		return nil

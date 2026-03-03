@@ -5,11 +5,6 @@ import (
 	"time"
 )
 
-const (
-	MAX_NUMBER_PLAYERS = 5
-	MIN_NUMBER_PLAYERS = 3
-)
-
 type Player struct {
 	ID               string    `json:"id"`
 	Name             string    `json:"name"`

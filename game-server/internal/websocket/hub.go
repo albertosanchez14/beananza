@@ -5,13 +5,23 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/yourusername/game-server/internal/config"
 	"github.com/yourusername/game-server/internal/game"
 	"github.com/yourusername/game-server/internal/storage"
 )
 
+// RoomInfo is a snapshot of a room used by the REST rooms listing endpoint.
+type RoomInfo struct {
+	ID           string `json:"id"`
+	PlayerCount  int    `json:"player_count"`
+	MaxPlayers   int    `json:"max_players"`
+	SessionState string `json:"session_state"`
+}
+
 // Hub maintains the set of active clients, rooms and
 // broadcasts messages to clients
 type Hub struct {
+	config      *config.Config
 	clients     map[*Client]bool
 	rooms       map[string]*Room
 	gameManager *game.Manager
@@ -23,11 +33,12 @@ type Hub struct {
 }
 
 // NewHub creates a new Hub
-func NewHub(logger *zap.Logger, repo *storage.Repository) *Hub {
+func NewHub(cfg *config.Config, logger *zap.Logger, repo *storage.Repository) *Hub {
 	return &Hub{
+		config:      cfg,
 		clients:     make(map[*Client]bool),
 		rooms:       make(map[string]*Room),
-		gameManager: game.NewManager(repo, logger),
+		gameManager: game.NewManager(cfg, repo, logger),
 		register:    make(chan *Client),
 		unregister:  make(chan *Client),
 		logger:      logger,
@@ -146,4 +157,22 @@ func (h *Hub) GetStats() map[string]interface{} {
 		"total_rooms":   len(h.rooms),
 		"rooms":         roomStats,
 	}
+}
+
+// GetRoomList returns a snapshot of all active rooms.
+func (h *Hub) GetRoomList() []RoomInfo {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	rooms := make([]RoomInfo, 0, len(h.rooms))
+	for roomID, room := range h.rooms {
+		state := h.gameManager.GetSessionState(roomID)
+		rooms = append(rooms, RoomInfo{
+			ID:           roomID,
+			PlayerCount:  room.ClientCount(),
+			MaxPlayers:   h.config.Game.MaxNumberPlayers,
+			SessionState: string(state),
+		})
+	}
+	return rooms
 }

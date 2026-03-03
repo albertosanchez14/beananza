@@ -1,6 +1,8 @@
 package game
 
-import "time"
+import (
+	"time"
+)
 
 type WaitingPlayer struct {
 	ID       string    `json:"id"`
@@ -17,12 +19,12 @@ type WaitingLobby struct {
 	UpdatedAt  time.Time
 }
 
-func NewWaitingLobby(roomID string) *WaitingLobby {
+func NewWaitingLobby(roomID string, minPlayers, maxPlayers int) *WaitingLobby {
 	return &WaitingLobby{
 		RoomID:     roomID,
-		MaxPlayers: MAX_NUMBER_PLAYERS,
-		MinPlayers: MIN_NUMBER_PLAYERS,
-		Players:    make(map[string]*WaitingPlayer, 0),
+		MaxPlayers: maxPlayers,
+		MinPlayers: minPlayers,
+		Players:    make(map[string]*WaitingPlayer),
 	}
 }
 
@@ -33,7 +35,7 @@ func (wl *WaitingLobby) GetPlayer(playerId string) (*WaitingPlayer, bool) {
 
 func (wl *WaitingLobby) AddPlayer(playerID string, playerName string) error {
 	if len(wl.Players) >= wl.MaxPlayers {
-		return NewWaitingLobbyFullError()
+		return NewWaitingLobbyFullError(wl.MaxPlayers)
 	}
 	player := &WaitingPlayer{
 		ID:    playerID,

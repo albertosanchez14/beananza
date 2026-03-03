@@ -8,41 +8,41 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config holds all application configuration
 type Config struct {
 	Server ServerConfig
 	Redis  RedisConfig
 	Logger LoggerConfig
 	WS     WebSocketConfig
+	Game   GameConfig
 }
 
-// ServerConfig contains HTTP server settings
 type ServerConfig struct {
 	Host string
 	Port string
 }
 
-// RedisConfig contains Redis connection settings
 type RedisConfig struct {
 	Addr     string
 	Password string
 	DB       int
 }
 
-// LoggerConfig contains logging settings
 type LoggerConfig struct {
 	Level string
 }
 
-// WebSocketConfig contains WebSocket-specific settings
 type WebSocketConfig struct {
 	ReadBufferSize  int
 	WriteBufferSize int
 }
 
+type GameConfig struct {
+	MaxNumberPlayers int
+	MinNumberPlayers int
+}
+
 // Load reads configuration from environment variables
 func Load() *Config {
-	// Load .env file if it exists
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using system environment variables")
 	}
@@ -63,6 +63,10 @@ func Load() *Config {
 		WS: WebSocketConfig{
 			ReadBufferSize:  getEnvAsInt("READ_BUFFER_SIZE", 1024),
 			WriteBufferSize: getEnvAsInt("WRITE_BUFFER_SIZE", 1024),
+		},
+		Game: GameConfig{
+			MaxNumberPlayers: getEnvAsInt("MAX_NUMBER_PLAYERS", 5),
+			MinNumberPlayers: getEnvAsInt("MIN_NUMBER_PLAYERS", 3),
 		},
 	}
 }

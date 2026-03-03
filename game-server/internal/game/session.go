@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/yourusername/game-server/internal/config"
 	"github.com/yourusername/game-server/internal/storage"
 )
 
@@ -21,6 +22,7 @@ const (
 
 // Session manages a game session for a specific room
 type Session struct {
+	config       *config.Config
 	gameState    *State
 	waitingLobby *WaitingLobby
 	state        SessionState
@@ -30,10 +32,11 @@ type Session struct {
 }
 
 // NewSession creates a new game session
-func NewSession(roomID string, repo *storage.Repository, logger *zap.Logger) *Session {
+func NewSession(roomID string, cfg *config.Config, repo *storage.Repository, logger *zap.Logger) *Session {
 	return &Session{
+		config:       cfg,
 		gameState:    NewState(roomID),
-		waitingLobby: NewWaitingLobby(roomID),
+		waitingLobby: NewWaitingLobby(roomID, cfg.Game.MinNumberPlayers, cfg.Game.MaxNumberPlayers),
 		state:        SessionStateWaiting,
 		repo:         repo,
 		logger:       logger.With(zap.String("room_id", roomID)),
@@ -224,7 +227,8 @@ func (s *Session) HandlePlayerLeave(playerID string) error {
 	)
 
 	// End game if not enough players during an active game (not during waiting phase)
-	if s.gameState.Phase != PhaseTypeWaiting && s.gameState.PlayerCount() < MIN_NUMBER_PLAYERS {
+	if s.gameState.Phase != PhaseTypeWaiting &&
+		s.gameState.PlayerCount() < s.config.Game.MinNumberPlayers {
 		s.endGame()
 	}
 

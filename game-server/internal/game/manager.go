@@ -5,21 +5,24 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/yourusername/game-server/internal/config"
 	"github.com/yourusername/game-server/internal/storage"
 )
 
 // Manager manages all game sessions across different rooms
 type Manager struct {
 	sessions map[string]*Session
+	cfg      *config.Config
 	repo     *storage.Repository
 	logger   *zap.Logger
 	mu       sync.RWMutex
 }
 
 // NewManager creates a new game manager
-func NewManager(repo *storage.Repository, logger *zap.Logger) *Manager {
+func NewManager(cfg *config.Config, repo *storage.Repository, logger *zap.Logger) *Manager {
 	return &Manager{
 		sessions: make(map[string]*Session),
+		cfg:      cfg,
 		repo:     repo,
 		logger:   logger,
 	}
@@ -34,7 +37,7 @@ func (m *Manager) GetOrCreateSession(roomID string) *Session {
 		return session
 	}
 
-	session := NewSession(roomID, m.repo, m.logger)
+	session := NewSession(roomID, m.cfg, m.repo, m.logger)
 	m.sessions[roomID] = session
 
 	m.logger.Info("game session created",
@@ -64,6 +67,20 @@ func (m *Manager) RemoveSession(roomID string) {
 		zap.String("room_id", roomID),
 		zap.Int("active_sessions", len(m.sessions)),
 	)
+}
+
+// GetSessionState returns the SessionState for a room, or SessionStateWaiting if no session exists.
+func (m *Manager) GetSessionState(roomID string) SessionState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if session, ok := m.sessions[roomID]; ok {
+		session.mu.RLock()
+		defer session.mu.RUnlock()
+		return session.state
+	}
+
+	return SessionStateWaiting
 }
 
 // SessionCount returns the number of active sessions

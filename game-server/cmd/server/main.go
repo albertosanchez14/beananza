@@ -25,10 +25,8 @@ func main() {
 }
 
 func run() error {
-	// Load configuration
 	cfg := config.Load()
 
-	// Initialize logger
 	log, err := logger.New(cfg.Logger.Level)
 	if err != nil {
 		return fmt.Errorf("failed to initialize logger: %w", err)
@@ -40,7 +38,6 @@ func run() error {
 		zap.String("port", cfg.Server.Port),
 	)
 
-	// Initialize Redis repository
 	repo, err := storage.NewRepository(
 		cfg.Redis.Addr,
 		cfg.Redis.Password,
@@ -52,10 +49,9 @@ func run() error {
 	}
 	defer repo.Close()
 
-	hub := websocket.NewHub(log, repo)
+	hub := websocket.NewHub(cfg, log, repo)
 	go hub.Run()
 
-	// Create and start HTTP server
 	srv := server.New(cfg, hub, repo, log)
 	serverErrors := make(chan error, 1)
 	go func() {
