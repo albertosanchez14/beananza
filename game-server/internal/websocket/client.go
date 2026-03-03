@@ -134,19 +134,17 @@ func (c *Client) handleMessage(msg *protocol.Message) {
 		zap.String("room_id", msg.RoomID),
 	)
 
-	session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
-
 	switch msg.Type {
 	case protocol.MessageTypeJoin:
 		c.handleJoin(msg)
 	case protocol.MessageTypeLeave:
-		c.handleLeave(msg)
+		c.handleLeave()
 	case protocol.MessageTypeReady:
 		c.handleReady(msg)
 	case protocol.MessageTypeAction:
 		c.handleAction(msg)
 	case protocol.MessageTypeState:
-		c.sendGameState(msg.RoomID, session)
+		c.sendGameState(msg)
 	case protocol.MessageTypePlayerState:
 		c.handlePlayerState(msg)
 	default:
@@ -201,20 +199,18 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 
 	c.room.Broadcast(waitingLobbyStateMsg, c)
 
-	// Persist to Redis
-	// if c.hub.repo != nil {
-	// 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	// 	defer cancel()
-	// 	c.hub.repo.AddPlayerToRoom(ctx, msg.RoomID, c.PlayerId)
-	// }
+	if c.hub.repo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c.hub.repo.AddPlayerToRoom(ctx, msg.RoomID, c.PlayerId)
+	}
 }
 
-func (c *Client) handleLeave(msg *protocol.Message) {
+func (c *Client) handleLeave() {
 	if c.room == nil {
 		return
 	}
 
-	// Remove player from game session
 	if session, ok := c.hub.gameManager.GetSession(c.room.ID); ok {
 		if err := session.HandlePlayerLeave(c.PlayerId); err != nil {
 			c.logger.Error("failed to remove player from game session", zap.Error(err))
@@ -284,15 +280,9 @@ func (c *Client) handleAction(msg *protocol.Message) {
 	}
 
 	c.sendPlayerSnapshotToAll(session)
-
-	if c.hub.repo != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		c.hub.repo.SaveMessage(ctx, c.room.ID, c.ID, msg, 24*time.Hour)
-	}
 }
 
-func (c *Client) handlePlantBean(session interface{}, payload map[string]any) {
+func (c *Client) handlePlantBean(s *game.Session, payload map[string]any) {
 	cardID, _ := payload["cardId"].(string)
 	slotId, _ := payload["slotId"].(string)
 
@@ -301,24 +291,16 @@ func (c *Client) handlePlantBean(session interface{}, payload map[string]any) {
 		return
 	}
 
-	if s, ok := session.(*game.Session); ok {
-		if err := s.HandlePlantBean(c.PlayerId, cardID, slotId); err != nil {
-			if gameErr, ok := err.(*game.GameError); ok {
-				c.sendError(gameErr.Code, gameErr.Message)
-			} else {
-				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-			}
+	if err := s.HandlePlantBean(c.PlayerId, cardID, slotId); err != nil {
+		if gameErr, ok := err.(*game.GameError); ok {
+			c.sendError(gameErr.Code, gameErr.Message)
+		} else {
+			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
 		}
 	}
 }
 
-func (c *Client) handleTradeBean(session interface{}, payload map[string]any) {
-	s, ok := session.(*game.Session)
-	if !ok {
-		c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		return
-	}
-
+func (c *Client) handleTradeBean(s *game.Session, payload map[string]any) {
 	fromPlayerID, _ := payload["fromPlayerId"].(string)
 	toPlayerID, _ := payload["toPlayerId"].(string)
 
@@ -355,13 +337,7 @@ func (c *Client) handleTradeBean(session interface{}, payload map[string]any) {
 }
 
 // handleCreateOffer handles the "createOffer" action payload.
-func (c *Client) handleCreateOffer(session interface{}, payload map[string]any) {
-	s, ok := session.(*game.Session)
-	if !ok {
-		c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		return
-	}
-
+func (c *Client) handleCreateOffer(s *game.Session, payload map[string]any) {
 	targetID, _ := payload["target_player_id"].(string)
 	cardsOffered := parseOfferCards(payload["cards_offered"])
 	cardsRequested := parseOfferCards(payload["cards_requested"])
@@ -376,13 +352,7 @@ func (c *Client) handleCreateOffer(session interface{}, payload map[string]any) 
 }
 
 // handleCounterOffer handles the "counterOffer" action payload.
-func (c *Client) handleCounterOffer(session interface{}, payload map[string]any) {
-	s, ok := session.(*game.Session)
-	if !ok {
-		c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		return
-	}
-
+func (c *Client) handleCounterOffer(s *game.Session, payload map[string]any) {
 	parentOfferID, _ := payload["parent_offer_id"].(string)
 	if parentOfferID == "" {
 		c.sendError("invalid_params", "Missing parent_offer_id")
@@ -403,13 +373,7 @@ func (c *Client) handleCounterOffer(session interface{}, payload map[string]any)
 
 // handleRespondOffer handles the "respondOffer" action payload.
 // The "action" field in the payload must be "accept", "reject", or "cancel".
-func (c *Client) handleRespondOffer(session interface{}, payload map[string]any) {
-	s, ok := session.(*game.Session)
-	if !ok {
-		c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		return
-	}
-
+func (c *Client) handleRespondOffer(s *game.Session, payload map[string]any) {
 	offerID, _ := payload["offer_id"].(string)
 	action, _ := payload["action"].(string)
 
@@ -449,7 +413,7 @@ func parseOfferCards(raw interface{}) []game.OfferCard {
 	return result
 }
 
-func (c *Client) handleHarvestField(session interface{}, payload map[string]any) {
+func (c *Client) handleHarvestField(s *game.Session, payload map[string]any) {
 	slotId, _ := payload["slotId"].(string)
 
 	if slotId == "" {
@@ -457,38 +421,31 @@ func (c *Client) handleHarvestField(session interface{}, payload map[string]any)
 		return
 	}
 
-	if s, ok := session.(*game.Session); ok {
-		if err := s.HandleHarvestField(c.PlayerId, slotId); err != nil {
-			// Check if it's a GameError to send structured error
-			if gameErr, ok := err.(*game.GameError); ok {
-				c.sendError(gameErr.Code, gameErr.Message)
-			} else {
-				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-			}
+	if err := s.HandleHarvestField(c.PlayerId, slotId); err != nil {
+		if gameErr, ok := err.(*game.GameError); ok {
+			c.sendError(gameErr.Code, gameErr.Message)
+		} else {
+			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
 		}
 	}
 }
 
-func (c *Client) handleTurnOverBean(session interface{}) {
-	if s, ok := session.(*game.Session); ok {
-		if err := s.HandleTurnOverBean(c.PlayerId); err != nil {
-			if gameErr, ok := err.(*game.GameError); ok {
-				c.sendError(gameErr.Code, gameErr.Message)
-			} else {
-				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-			}
+func (c *Client) handleTurnOverBean(s *game.Session) {
+	if err := s.HandleTurnOverBean(c.PlayerId); err != nil {
+		if gameErr, ok := err.(*game.GameError); ok {
+			c.sendError(gameErr.Code, gameErr.Message)
+		} else {
+			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
 		}
 	}
 }
 
-func (c *Client) handleDrawCards(session interface{}) {
-	if s, ok := session.(*game.Session); ok {
-		if err := s.HandleDrawCards(c.PlayerId); err != nil {
-			if gameErr, ok := err.(*game.GameError); ok {
-				c.sendError(gameErr.Code, gameErr.Message)
-			} else {
-				c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-			}
+func (c *Client) handleDrawCards(s *game.Session) {
+	if err := s.HandleDrawCards(c.PlayerId); err != nil {
+		if gameErr, ok := err.(*game.GameError); ok {
+			c.sendError(gameErr.Code, gameErr.Message)
+		} else {
+			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
 		}
 	}
 }
@@ -588,19 +545,13 @@ func (c *Client) sendError(code, message string) {
 	}
 }
 
-func (c *Client) sendGameState(roomID string, session interface{}) {
-	var stateData map[string]interface{}
-
-	if s, ok := session.(*game.Session); ok {
-		stateData = s.GetFullSnapshot()
-	} else {
-		c.logger.Error("invalid session type")
-		return
-	}
+func (c *Client) sendGameState(msg *protocol.Message) {
+	session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
+	stateData := session.GetFullSnapshot()
 
 	stateMsg, err := protocol.NewMessage(
 		protocol.MessageTypeState,
-		roomID,
+		msg.RoomID,
 		c.PlayerId,
 		stateData,
 	)
@@ -617,7 +568,7 @@ func (c *Client) sendGameState(roomID string, session interface{}) {
 
 	select {
 	case c.send <- data:
-		c.logger.Debug("sent game state to client", zap.String("room_id", roomID))
+		c.logger.Debug("sent game state to client", zap.String("room_id", msg.RoomID))
 	default:
 		c.logger.Warn("send channel full, dropping state message")
 	}

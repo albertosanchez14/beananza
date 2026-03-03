@@ -10,13 +10,11 @@ import (
 	"go.uber.org/zap"
 )
 
-// Repository handles all data persistence operations
 type Repository struct {
 	client *redis.Client
 	logger *zap.Logger
 }
 
-// NewRepository creates a new Redis repository
 func NewRepository(addr, password string, db int, logger *zap.Logger) (*Repository, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     addr,
@@ -24,7 +22,6 @@ func NewRepository(addr, password string, db int, logger *zap.Logger) (*Reposito
 		DB:       db,
 	})
 
-	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -40,52 +37,10 @@ func NewRepository(addr, password string, db int, logger *zap.Logger) (*Reposito
 	}, nil
 }
 
-// Close closes the Redis connection
 func (r *Repository) Close() error {
 	return r.client.Close()
 }
 
-// SaveMessage stores a message in Redis with a TTL
-func (r *Repository) SaveMessage(ctx context.Context, roomID, messageID string, data interface{}, ttl time.Duration) error {
-	key := fmt.Sprintf("room:%s:message:%s", roomID, messageID)
-
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
-	}
-
-	if err := r.client.Set(ctx, key, jsonData, ttl).Err(); err != nil {
-		return fmt.Errorf("failed to save message: %w", err)
-	}
-
-	r.logger.Debug("message saved",
-		zap.String("room_id", roomID),
-		zap.String("message_id", messageID),
-	)
-
-	return nil
-}
-
-// GetMessage retrieves a message from Redis
-func (r *Repository) GetMessage(ctx context.Context, roomID, messageID string, dest interface{}) error {
-	key := fmt.Sprintf("room:%s:message:%s", roomID, messageID)
-
-	data, err := r.client.Get(ctx, key).Bytes()
-	if err != nil {
-		if err == redis.Nil {
-			return fmt.Errorf("message not found")
-		}
-		return fmt.Errorf("failed to get message: %w", err)
-	}
-
-	if err := json.Unmarshal(data, dest); err != nil {
-		return fmt.Errorf("failed to unmarshal message: %w", err)
-	}
-
-	return nil
-}
-
-// SaveGameState stores the current game state for a room
 func (r *Repository) SaveGameState(ctx context.Context, roomID string, state interface{}) error {
 	key := fmt.Sprintf("room:%s:state", roomID)
 
@@ -103,7 +58,6 @@ func (r *Repository) SaveGameState(ctx context.Context, roomID string, state int
 	return nil
 }
 
-// GetGameState retrieves the game state for a room
 func (r *Repository) GetGameState(ctx context.Context, roomID string, dest interface{}) error {
 	key := fmt.Sprintf("room:%s:state", roomID)
 
@@ -122,7 +76,6 @@ func (r *Repository) GetGameState(ctx context.Context, roomID string, dest inter
 	return nil
 }
 
-// AddPlayerToRoom adds a player to a room's player list
 func (r *Repository) AddPlayerToRoom(ctx context.Context, roomID, playerID string) error {
 	key := fmt.Sprintf("room:%s:players", roomID)
 
@@ -141,7 +94,6 @@ func (r *Repository) AddPlayerToRoom(ctx context.Context, roomID, playerID strin
 	return nil
 }
 
-// RemovePlayerFromRoom removes a player from a room's player list
 func (r *Repository) RemovePlayerFromRoom(ctx context.Context, roomID, playerID string) error {
 	key := fmt.Sprintf("room:%s:players", roomID)
 
@@ -157,7 +109,6 @@ func (r *Repository) RemovePlayerFromRoom(ctx context.Context, roomID, playerID 
 	return nil
 }
 
-// GetRoomPlayers gets all players in a room
 func (r *Repository) GetRoomPlayers(ctx context.Context, roomID string) ([]string, error) {
 	key := fmt.Sprintf("room:%s:players", roomID)
 

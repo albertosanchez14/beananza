@@ -20,7 +20,6 @@ const (
 	SessionStatePause   SessionState = "pause"
 )
 
-// Session manages a game session for a specific room
 type Session struct {
 	config       *config.Config
 	gameState    *State
@@ -31,7 +30,6 @@ type Session struct {
 	mu           sync.RWMutex
 }
 
-// NewSession creates a new game session
 func NewSession(roomID string, cfg *config.Config, repo *storage.Repository, logger *zap.Logger) *Session {
 	return &Session{
 		config:       cfg,
@@ -43,14 +41,12 @@ func NewSession(roomID string, cfg *config.Config, repo *storage.Repository, log
 	}
 }
 
-// GetState returns a clone of the current game state
 func (s *Session) GetState() *State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.gameState.Clone()
 }
 
-// IsPlaying reports whether the game session is currently in progress.
 func (s *Session) IsPlaying() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -324,29 +320,6 @@ func (s *Session) endGame() {
 	s.logger.Info("game ended")
 }
 
-// LoadFromStorage loads game state from Redis
-func (s *Session) LoadFromStorage(ctx context.Context) error {
-	if s.repo == nil {
-		return nil
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var state State
-	if err := s.repo.GetGameState(ctx, s.gameState.RoomID, &state); err != nil {
-		return err
-	}
-
-	s.gameState = &state
-	s.logger.Info("game state loaded from storage",
-		zap.Int("player_count", s.gameState.PlayerCount()),
-		zap.String("phase", string(s.gameState.Phase)),
-	)
-
-	return nil
-}
-
 // HandlePlantBean handles planting a bean card on a field
 func (s *Session) HandlePlantBean(playerID string, cardID string, slotId string) error {
 	s.mu.Lock()
@@ -431,18 +404,6 @@ func (s *Session) HandleDrawCards(playerId string) error {
 	return s.persistState()
 }
 
-// persistState persists the current game state to Redis
-func (s *Session) persistState() error {
-	if s.repo != nil {
-		ctx := context.Background()
-		if err := s.repo.SaveGameState(ctx, s.gameState.RoomID, s.gameState); err != nil {
-			s.logger.Error("failed to save game state", zap.Error(err))
-			return err
-		}
-	}
-	return nil
-}
-
 // HandleCreateOffer handles a player creating a new root offer.
 func (s *Session) HandleCreateOffer(creatorID, targetID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
 	s.mu.Lock()
@@ -510,4 +471,39 @@ func (s *Session) HandleRespondOffer(offerID, playerID, action string) error {
 	)
 
 	return s.persistState()
+}
+
+// LoadFromStorage loads game state from Redis
+func (s *Session) LoadFromStorage(ctx context.Context) error {
+	if s.repo == nil {
+		return nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var state State
+	if err := s.repo.GetGameState(ctx, s.gameState.RoomID, &state); err != nil {
+		return err
+	}
+
+	s.gameState = &state
+	s.logger.Info("game state loaded from storage",
+		zap.Int("player_count", s.gameState.PlayerCount()),
+		zap.String("phase", string(s.gameState.Phase)),
+	)
+
+	return nil
+}
+
+// persistState persists the current game state to Redis
+func (s *Session) persistState() error {
+	if s.repo != nil {
+		ctx := context.Background()
+		if err := s.repo.SaveGameState(ctx, s.gameState.RoomID, s.gameState); err != nil {
+			s.logger.Error("failed to save game state", zap.Error(err))
+			return err
+		}
+	}
+	return nil
 }
