@@ -14,26 +14,35 @@ type Room struct {
 	clients map[*Client]bool
 	mu      sync.RWMutex
 	logger  *zap.Logger
+
+	onMessage   func(message []byte)
+	broadcastFn func(roomID string, data []byte)
 }
 
-func NewRoom(id string, logger *zap.Logger) *Room {
+func NewRoom(id string, logger *zap.Logger, onMessage func(message []byte)) *Room {
 	return &Room{
-		ID:      id,
-		clients: make(map[*Client]bool),
-		logger:  logger.With(zap.String("room_id", id)),
+		ID:        id,
+		clients:   make(map[*Client]bool),
+		logger:    logger.With(zap.String("room_id", id)),
+		onMessage: onMessage,
 	}
+}
+
+func (r *Room) SetBroadcastFn(fn func(roomID string, data []byte)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.broadcastFn = fn
 }
 
 func (r *Room) Join(client *Client) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	r.clients[client] = true
 	r.logger.Info("client joined room",
 		zap.String("client_id", client.ID),
 		zap.String("player_name", client.PlayerName),
 		zap.Int("total_clients", len(r.clients)),
 	)
+	r.mu.Unlock()
 
 	joinMsg, err := protocol.NewMessage(
 		protocol.MessageTypeBroadcast,
@@ -58,17 +67,16 @@ func (r *Room) Join(client *Client) {
 
 func (r *Room) Leave(client *Client) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if _, ok := r.clients[client]; !ok {
+		r.mu.Unlock()
 		return
 	}
-
 	delete(r.clients, client)
 	r.logger.Info("client left room",
 		zap.String("client_id", client.ID),
 		zap.Int("total_clients", len(r.clients)),
 	)
+	r.mu.Unlock()
 
 	leaveMsg, err := protocol.NewMessage(
 		protocol.MessageTypeBroadcast,
@@ -76,7 +84,7 @@ func (r *Room) Leave(client *Client) {
 		client.PlayerId,
 		protocol.BroadcastPayload{
 			Event: "player_left",
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"player_id":   client.PlayerId,
 				"player_name": client.PlayerName,
 			},
@@ -91,23 +99,25 @@ func (r *Room) Leave(client *Client) {
 }
 
 func (r *Room) Broadcast(msg *protocol.Message, sender *Client) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	data, err := msg.ToJSON()
 	if err != nil {
 		r.logger.Error("failed to marshal message", zap.Error(err))
 		return
 	}
 
-	for client := range r.clients {
-		client.Send(data)
+	r.mu.RLock()
+	hasClients := len(r.clients) > 0
+	broadcastFn := r.broadcastFn
+	r.mu.RUnlock()
+
+	if broadcastFn != nil {
+		broadcastFn(r.ID, data)
 	}
 
-	r.logger.Debug("message broadcasted",
+	r.logger.Debug("message broadcasted via pub/sub",
 		zap.String("message_type", string(msg.Type)),
 		zap.String("sender_id", sender.ID),
-		zap.Int("recipient_count", len(r.clients)),
+		zap.Bool("has_local_clients", hasClients),
 	)
 }
 
@@ -118,10 +128,12 @@ func (r *Room) broadcastToOthers(msg *protocol.Message, sender *Client) {
 		return
 	}
 
-	for client := range r.clients {
-		if client != sender {
-			client.Send(data)
-		}
+	r.mu.RLock()
+	broadcastFn := r.broadcastFn
+	r.mu.RUnlock()
+
+	if broadcastFn != nil {
+		broadcastFn(r.ID, data)
 	}
 }
 
@@ -146,4 +158,17 @@ func (r *Room) IsEmpty() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.clients) == 0
+}
+
+func (r *Room) HandleIncomingMessage(data []byte) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for client := range r.clients {
+		client.Send(data)
+	}
+
+	r.logger.Debug("forwarded pub/sub message to local clients",
+		zap.Int("recipient_count", len(r.clients)),
+	)
 }

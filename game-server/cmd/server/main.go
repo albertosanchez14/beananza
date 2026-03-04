@@ -49,7 +49,18 @@ func run() error {
 	}
 	defer repo.Close()
 
-	hub := websocket.NewHub(cfg, log, repo)
+	pubsub, err := storage.NewPubSub(
+		cfg.Redis.Addr,
+		cfg.Redis.Password,
+		cfg.Redis.DB,
+		log,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to initialize redis pub/sub: %w", err)
+	}
+	defer pubsub.Close()
+
+	hub := websocket.NewHub(cfg, log, repo, pubsub)
 	go hub.Run()
 
 	srv := server.New(cfg, hub, repo, log)

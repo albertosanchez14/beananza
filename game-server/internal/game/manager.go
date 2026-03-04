@@ -1,6 +1,7 @@
 package game
 
 import (
+	"context"
 	"sync"
 
 	"go.uber.org/zap"
@@ -38,6 +39,20 @@ func (m *Manager) GetOrCreateSession(roomID string) *Session {
 	}
 
 	session := NewSession(roomID, m.cfg, m.repo, m.logger)
+
+	if m.repo != nil {
+		ctx := context.Background()
+		if err := session.LoadFromStorage(ctx); err != nil {
+			m.logger.Debug("no existing game state in storage, starting fresh",
+				zap.String("room_id", roomID),
+			)
+		} else {
+			m.logger.Info("game state loaded from storage",
+				zap.String("room_id", roomID),
+			)
+		}
+	}
+
 	m.sessions[roomID] = session
 
 	m.logger.Info("game session created",

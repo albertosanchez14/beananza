@@ -486,11 +486,24 @@ func (s *Session) LoadFromStorage(ctx context.Context) error {
 	if err := s.repo.GetGameState(ctx, s.gameState.RoomID, &state); err != nil {
 		return err
 	}
-
 	s.gameState = &state
+
+	// Also reload the waiting lobby so cross-instance joins are visible.
+	var lobby WaitingLobby
+	if err := s.repo.GetWaitingLobby(ctx, s.gameState.RoomID, &lobby); err == nil {
+		// Preserve config values that are not persisted.
+		lobby.MinPlayers = s.waitingLobby.MinPlayers
+		lobby.MaxPlayers = s.waitingLobby.MaxPlayers
+		if lobby.Players == nil {
+			lobby.Players = make(map[string]*WaitingPlayer)
+		}
+		s.waitingLobby = &lobby
+	}
+
 	s.logger.Info("game state loaded from storage",
 		zap.Int("player_count", s.gameState.PlayerCount()),
 		zap.String("phase", string(s.gameState.Phase)),
+		zap.Int("lobby_players", len(s.waitingLobby.Players)),
 	)
 
 	return nil
@@ -498,12 +511,17 @@ func (s *Session) LoadFromStorage(ctx context.Context) error {
 
 // persistState persists the current game state to Redis
 func (s *Session) persistState() error {
-	if s.repo != nil {
-		ctx := context.Background()
-		if err := s.repo.SaveGameState(ctx, s.gameState.RoomID, s.gameState); err != nil {
-			s.logger.Error("failed to save game state", zap.Error(err))
-			return err
-		}
+	if s.repo == nil {
+		return nil
+	}
+	ctx := context.Background()
+	if err := s.repo.SaveGameState(ctx, s.gameState.RoomID, s.gameState); err != nil {
+		s.logger.Error("failed to save game state", zap.Error(err))
+		return err
+	}
+	if err := s.repo.SaveWaitingLobby(ctx, s.gameState.RoomID, s.waitingLobby); err != nil {
+		s.logger.Error("failed to save waiting lobby", zap.Error(err))
+		return err
 	}
 	return nil
 }

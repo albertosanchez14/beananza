@@ -185,19 +185,7 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 		zap.String("player_name", payload.PlayerName),
 	)
 
-	waitingLobbyData := session.GetWaitingLobbySnapshot()
-	waitingLobbyStateMsg, err := protocol.NewMessage(
-		protocol.WaitingLobbyState,
-		c.room.ID,
-		c.PlayerId,
-		waitingLobbyData,
-	)
-	if err != nil {
-		c.logger.Error("failed to create join broadcast", zap.Error(err))
-		return
-	}
-
-	c.room.Broadcast(waitingLobbyStateMsg, c)
+	c.hub.SyncRoomRegistry(msg.RoomID)
 
 	if c.hub.repo != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -222,6 +210,8 @@ func (c *Client) handleLeave() {
 	c.logger.Info("player left room",
 		zap.String("room_id", c.room.ID),
 	)
+
+	c.hub.SyncRoomRegistry(c.room.ID)
 
 	// Persist to Redis
 	if c.hub.repo != nil {
@@ -279,7 +269,24 @@ func (c *Client) handleAction(msg *protocol.Message) {
 		return
 	}
 
+	// Push fresh state to all local clients on this instance.
 	c.sendPlayerSnapshotToAll(session)
+
+	// Signal other instances via pub/sub so they can push fresh state to
+	// their own local clients.  We use a lightweight broadcast envelope so
+	// handlePubSubMessage can intercept it without forwarding it to browsers.
+	stateUpdatedMsg, err := protocol.NewMessage(
+		protocol.MessageTypeBroadcast,
+		c.room.ID,
+		c.PlayerId,
+		protocol.BroadcastPayload{
+			Event: "state_updated",
+			Data:  map[string]any{},
+		},
+	)
+	if err == nil {
+		c.room.Broadcast(stateUpdatedMsg, c)
+	}
 }
 
 func (c *Client) handlePlantBean(s *game.Session, payload map[string]any) {
@@ -477,18 +484,25 @@ func (c *Client) handleReady(msg *protocol.Message) {
 		return
 	}
 
-	waitingLobbyData := session.GetWaitingLobbySnapshot()
-	waitingLobbyStateMsg, err := protocol.NewMessage(
-		protocol.WaitingLobbyState,
+	// Signal all instances (including this one) via pub/sub that a ready
+	// state changed — handlePubSubMessage will push fresh lobby state.
+	readyMsg, err := protocol.NewMessage(
+		protocol.MessageTypeBroadcast,
 		c.room.ID,
 		c.PlayerId,
-		waitingLobbyData,
+		protocol.BroadcastPayload{
+			Event: "player_ready",
+			Data: map[string]any{
+				"player_id": c.PlayerId,
+				"ready":     payload.Ready,
+			},
+		},
 	)
 	if err != nil {
-		c.logger.Error("failed to create join broadcast", zap.Error(err))
-		return
+		c.logger.Error("failed to create player_ready broadcast", zap.Error(err))
+	} else {
+		c.room.Broadcast(readyMsg, c)
 	}
-	c.room.Broadcast(waitingLobbyStateMsg, c)
 
 	// Check if the game can auto-start now that ready state changed
 	started, err := session.HandleStartGame()
@@ -577,11 +591,22 @@ func (c *Client) sendGameState(msg *protocol.Message) {
 func (c *Client) handlePlayerState(msg *protocol.Message) {
 	var stateData map[string]interface{}
 
-	// Get game session
+	// Get game session — reload from Redis first so this instance always
+	// serves the latest state even if the game started on another instance.
 	session, ok := c.hub.gameManager.GetSession(c.room.ID)
 	if !ok {
 		c.sendError("session_not_found", "Game session not found")
 		return
+	}
+	if c.hub.repo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := session.LoadFromStorage(ctx); err != nil {
+			c.logger.Warn("failed to reload session for player state",
+				zap.String("room_id", c.room.ID),
+				zap.Error(err),
+			)
+		}
 	}
 	stateData = session.GetPlayerSnapshot(msg.PlayerID)
 

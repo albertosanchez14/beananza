@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
-const WS_URL = "http://localhost:8080";
+const API_BASE = "";
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost/ws";
 
 type SessionState = "waiting" | "playing" | "pause";
 
@@ -40,7 +41,7 @@ export default function Page() {
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
-    `ws://localhost:8080/ws`,
+    WS_URL,
     {
       share: false,
       shouldReconnect: () => true,
@@ -53,7 +54,7 @@ export default function Page() {
 
     const fetchRooms = async () => {
       try {
-        const res = await fetch(`${WS_URL}/rooms`);
+        const res = await fetch(`${API_BASE}/rooms`);
         if (!res.ok) throw new Error(`Server responded with ${res.status}`);
         const data: Room[] = await res.json();
         if (!cancelled) {

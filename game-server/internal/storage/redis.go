@@ -119,3 +119,94 @@ func (r *Repository) GetRoomPlayers(ctx context.Context, roomID string) ([]strin
 
 	return players, nil
 }
+
+func (r *Repository) SaveWaitingLobby(ctx context.Context, roomID string, lobby interface{}) error {
+	key := fmt.Sprintf("room:%s:lobby", roomID)
+
+	data, err := json.Marshal(lobby)
+	if err != nil {
+		return fmt.Errorf("failed to marshal waiting lobby: %w", err)
+	}
+
+	if err := r.client.Set(ctx, key, data, 24*time.Hour).Err(); err != nil {
+		return fmt.Errorf("failed to save waiting lobby: %w", err)
+	}
+
+	r.logger.Debug("waiting lobby saved", zap.String("room_id", roomID))
+	return nil
+}
+
+func (r *Repository) GetWaitingLobby(ctx context.Context, roomID string, dest interface{}) error {
+	key := fmt.Sprintf("room:%s:lobby", roomID)
+
+	data, err := r.client.Get(ctx, key).Bytes()
+	if err != nil {
+		if err == redis.Nil {
+			return fmt.Errorf("waiting lobby not found")
+		}
+		return fmt.Errorf("failed to get waiting lobby: %w", err)
+	}
+
+	if err := json.Unmarshal(data, dest); err != nil {
+		return fmt.Errorf("failed to unmarshal waiting lobby: %w", err)
+	}
+
+	return nil
+}
+
+// RoomMeta is the per-room data stored in the global room registry.
+type RoomMeta struct {
+	ID           string `json:"id"`
+	PlayerCount  int    `json:"player_count"`
+	MaxPlayers   int    `json:"max_players"`
+	SessionState string `json:"session_state"`
+}
+
+const roomsRegistryKey = "rooms:registry"
+
+// UpsertRoomInfo writes or updates a room's metadata in the shared registry.
+func (r *Repository) UpsertRoomInfo(ctx context.Context, info RoomMeta) error {
+	data, err := json.Marshal(info)
+	if err != nil {
+		return fmt.Errorf("failed to marshal room info: %w", err)
+	}
+
+	if err := r.client.HSet(ctx, roomsRegistryKey, info.ID, data).Err(); err != nil {
+		return fmt.Errorf("failed to upsert room info: %w", err)
+	}
+
+	r.client.Expire(ctx, roomsRegistryKey, 24*time.Hour)
+
+	r.logger.Debug("room info upserted", zap.String("room_id", info.ID))
+	return nil
+}
+
+// DeleteRoomInfo removes a room from the shared registry.
+func (r *Repository) DeleteRoomInfo(ctx context.Context, roomID string) error {
+	if err := r.client.HDel(ctx, roomsRegistryKey, roomID).Err(); err != nil {
+		return fmt.Errorf("failed to delete room info: %w", err)
+	}
+
+	r.logger.Debug("room info deleted", zap.String("room_id", roomID))
+	return nil
+}
+
+// GetAllRooms returns all rooms from the shared registry.
+func (r *Repository) GetAllRooms(ctx context.Context) ([]RoomMeta, error) {
+	entries, err := r.client.HGetAll(ctx, roomsRegistryKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all rooms: %w", err)
+	}
+
+	rooms := make([]RoomMeta, 0, len(entries))
+	for _, v := range entries {
+		var meta RoomMeta
+		if err := json.Unmarshal([]byte(v), &meta); err != nil {
+			r.logger.Warn("failed to unmarshal room meta, skipping", zap.Error(err))
+			continue
+		}
+		rooms = append(rooms, meta)
+	}
+
+	return rooms, nil
+}
