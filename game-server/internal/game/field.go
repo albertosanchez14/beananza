@@ -150,7 +150,12 @@ func (f *Field) CanHarvestSlot(slotId string) bool {
 }
 
 func (f *Field) IsEmpty() bool {
-	return len(f.Slots) == 0
+	for _, s := range f.Slots {
+		if s.CardNumber > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (f *Field) IsFull() bool {

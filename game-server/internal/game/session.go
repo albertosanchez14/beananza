@@ -509,16 +509,26 @@ func (s *Session) LoadFromStorage(ctx context.Context) error {
 	return nil
 }
 
-// persistState persists the current game state to Redis
+// persistState persists the current game state and waiting lobby to Redis.
+// The game state write is guarded by a dirty flag to skip redundant
+// serialisation when nothing has changed.  The waiting lobby is always
+// written because lobby mutations (join/leave/ready) don't go through the
+// game.State mutation methods.
 func (s *Session) persistState() error {
 	if s.repo == nil {
 		return nil
 	}
 	ctx := context.Background()
-	if err := s.repo.SaveGameState(ctx, s.gameState.RoomID, s.gameState); err != nil {
-		s.logger.Error("failed to save game state", zap.Error(err))
-		return err
+
+	// Only persist game state when it has actually changed.
+	if s.gameState.IsDirty() {
+		if err := s.repo.SaveGameState(ctx, s.gameState.RoomID, s.gameState); err != nil {
+			s.logger.Error("failed to save game state", zap.Error(err))
+			return err
+		}
+		s.gameState.ClearDirty()
 	}
+
 	if err := s.repo.SaveWaitingLobby(ctx, s.gameState.RoomID, s.waitingLobby); err != nil {
 		s.logger.Error("failed to save waiting lobby", zap.Error(err))
 		return err

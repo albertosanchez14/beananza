@@ -49,7 +49,7 @@ func (r *Room) Join(client *Client) {
 		r.ID,
 		client.PlayerId,
 		protocol.BroadcastPayload{
-			Event: "player_joined",
+			Event: protocol.EventPlayerJoined,
 			Data: map[string]any{
 				"player_id":   client.PlayerId,
 				"player_name": client.PlayerName,
@@ -83,7 +83,7 @@ func (r *Room) Leave(client *Client) {
 		r.ID,
 		client.PlayerId,
 		protocol.BroadcastPayload{
-			Event: "player_left",
+			Event: protocol.EventPlayerLeft,
 			Data: map[string]any{
 				"player_id":   client.PlayerId,
 				"player_name": client.PlayerName,

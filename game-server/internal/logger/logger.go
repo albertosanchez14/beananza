@@ -5,9 +5,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// New creates a new configured logger
 func New(level string) (*zap.Logger, error) {
-	// Parse log level
 	var zapLevel zapcore.Level
 	if err := zapLevel.UnmarshalText([]byte(level)); err != nil {
 		zapLevel = zapcore.InfoLevel
@@ -34,12 +32,5 @@ func New(level string) (*zap.Logger, error) {
 		},
 	}
 
-	return config.Build()
-}
-
-// NewDevelopment creates a development logger with console output
-func NewDevelopment() (*zap.Logger, error) {
-	config := zap.NewDevelopmentConfig()
-	config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	return config.Build()
 }

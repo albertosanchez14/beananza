@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"math/rand"
 	"time"
 )
@@ -99,17 +100,18 @@ func (d *Deck) AddCards(cards []*Card) {
 
 // generateCardID generates a unique card ID
 func generateCardID(id int) string {
-	return "card-" + string(rune('0'+id/10)) + string(rune('0'+id%10))
+	return fmt.Sprintf("card-%d", id)
 }
 
-// GetExchangeRates returns the money exchange rates for a given card type
+// GetExchangeRates returns the money exchange rates for a given card type.
+// These must match the definitions in NewDeck exactly.
 func GetExchangeRates(cardType CardType) map[int]int {
 	exchangeRates := map[CardType]map[int]int{
 		CardTypeJudicultor: {1: 1, 2: 2, 3: 3, 4: 4},
-		CardTypeColora:     {1: 1, 2: 2, 3: 3, 4: 4},
-		CardTypeRocky:      {1: 1, 2: 2, 3: 3, 4: 4},
-		CardTypeHippy:      {1: 1, 2: 2, 3: 3, 4: 4},
-		CardTypePocha:      {1: 1, 2: 2, 3: 3, 4: 4},
+		CardTypeColora:     {1: 1, 2: 2, 6: 3, 4: 4},
+		CardTypeRocky:      {1: 1, 2: 2, 6: 3, 4: 4},
+		CardTypeHippy:      {1: 1, 2: 2, 7: 3, 4: 4},
+		CardTypePocha:      {1: 1, 2: 2, 7: 3, 4: 4},
 		CardTypeApestosa:   {1: 1, 2: 2, 3: 3, 4: 4},
 		CardTypeBoom:       {1: 1, 2: 2, 3: 3, 4: 4},
 		CardTypeBill:       {1: 1, 2: 2, 3: 3, 4: 4},

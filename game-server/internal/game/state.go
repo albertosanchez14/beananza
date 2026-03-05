@@ -34,6 +34,27 @@ type State struct {
 	StartedAt time.Time
 	EndedAt   time.Time
 	UpdatedAt time.Time
+	// dirty is set to true by every mutation method and cleared by persistState
+	// after a successful Redis write.  It prevents redundant serialisation when
+	// multiple read-only operations happen between two real mutations.
+	dirty bool `json:"-"`
+}
+
+// markDirty sets the dirty flag and bumps UpdatedAt on every state mutation.
+// Call this at the end of every method that changes game state.
+func (s *State) markDirty() {
+	s.dirty = true
+	s.UpdatedAt = time.Now()
+}
+
+// IsDirty reports whether the state has unsaved mutations.
+func (s *State) IsDirty() bool {
+	return s.dirty
+}
+
+// ClearDirty clears the dirty flag after the state has been persisted.
+func (s *State) ClearDirty() {
+	s.dirty = false
 }
 
 // NewState creates a new game state
@@ -69,7 +90,7 @@ func (s *State) AddPlayer(playerId, playerName string) *Player {
 	}
 
 	s.Players[playerId] = player
-	s.UpdatedAt = time.Now()
+	s.markDirty()
 
 	return player
 }
@@ -77,7 +98,7 @@ func (s *State) AddPlayer(playerId, playerName string) *Player {
 // RemovePlayer removes a player from the game state
 func (s *State) RemovePlayer(playerId string) {
 	delete(s.Players, playerId)
-	s.UpdatedAt = time.Now()
+	s.markDirty()
 }
 
 // GetPlayer retrieves a player by ID
@@ -89,7 +110,7 @@ func (s *State) GetPlayer(playerId string) (*Player, bool) {
 // SetPhase updates the game phase
 func (s *State) SetPhase(phase PhaseType) {
 	s.Phase = phase
-	s.UpdatedAt = time.Now()
+	s.markDirty()
 
 	if phase == "playing" && s.StartedAt.IsZero() {
 		s.StartedAt = time.Now()
@@ -115,7 +136,7 @@ func (s *State) UpdatePlayerStatus(playerID, status string) error {
 		return NewPlayerNotFoundError(playerID)
 	}
 	player.Status = status
-	s.UpdatedAt = time.Now()
+	s.markDirty()
 	return nil
 }
 
@@ -126,7 +147,7 @@ func (s *State) UpdatePlayerCoins(playerID string, score int) error {
 		return NewPlayerNotFoundError(playerID)
 	}
 	player.Coins = score
-	s.UpdatedAt = time.Now()
+	s.markDirty()
 	return nil
 }
 
@@ -304,15 +325,14 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 		player.BeansPlantedTurn++
 	}
 
-	// RULE: In plantHand phase validate that
-	// 1. Current player must plant at most 2 beans,
-	// then it goes to the next phase
-	if player.BeansPlantedTurn >= 2 {
+	// RULE: In plantHand phase, after planting 2 beans advance to the next phase.
+	if s.Phase == PhaseTypePlantHand && player.BeansPlantedTurn >= 2 {
 		if err := s.nextPhase(playerId); err != nil {
 			return err
 		}
 	}
 
+	s.markDirty()
 	return nil
 }
 
@@ -345,6 +365,7 @@ func (s *State) TurnOverBean(playerId string) error {
 	s.CenterCards = cards
 	s.CardsTurned = true
 
+	s.markDirty()
 	return nil
 }
 
@@ -393,6 +414,7 @@ func (s *State) HarvestField(playerId string, slotId string) error {
 	player.Coins += coinsEarned
 	player.Field.RemoveFromSlot(slotId)
 
+	s.markDirty()
 	return nil
 }
 
@@ -602,12 +624,15 @@ func (s *State) DrawCards(playerId string, cardsToDraw int) error {
 		return err
 	}
 
-	if s.Phase == PhaseTypePlantHand {
+	switch s.Phase {
+	case PhaseTypeDrawCards, PhaseTypeTurnTrade, PhaseTypePlantTrade:
+		// valid phases to draw from
+	default:
 		return NewInvalidPhaseError(s.Phase)
 	}
 
-	// RULE: When drawing cards from the DrawPile
-	// the turn ends
+	// RULE: When drawing cards from the DrawPile the turn ends.
+	// endPhases advances from turnTrade/plantTrade to drawCards first.
 	if err := s.endPhases(playerId); err != nil {
 		return err
 	}
@@ -624,6 +649,7 @@ func (s *State) DrawCards(playerId string, cardsToDraw int) error {
 	player.Hand = append(player.Hand, drawnCards...)
 	s.CardsDrawned = true
 
+	s.markDirty()
 	return s.nextPhase(playerId)
 }
 
@@ -674,13 +700,6 @@ func (s *State) nextPhase(playerId string) error {
 
 	s.Phase.NextPhase()
 
-	switch s.Phase {
-	case PhaseTypeTurnTrade:
-		if err := s.TurnOverBean(playerId); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -724,6 +743,7 @@ func (s *State) nextTurn() error {
 		s.CurrentTurn += 1
 	}
 	s.Phase.ResetPhase()
+	s.markDirty()
 	return nil
 }
 
@@ -783,7 +803,7 @@ func (s *State) CreateOffer(creatorID, targetID string, cardsOffered, cardsReque
 	}
 
 	s.Offers = append(s.Offers, offer)
-	s.UpdatedAt = time.Now()
+	s.markDirty()
 
 	return offer, nil
 }
@@ -830,7 +850,7 @@ func (s *State) CounterOffer(parentOfferID, creatorID string, cardsOffered, card
 	}
 
 	s.Offers = append(s.Offers, offer)
-	s.UpdatedAt = time.Now()
+	s.markDirty()
 
 	return offer, nil
 }
@@ -933,7 +953,7 @@ func (s *State) AcceptOffer(offerID, acceptorID string) error {
 	// Expire all sibling pending offers (same parent, different ID).
 	s.expireSiblings(offerID, offer.ParentOfferID)
 
-	s.UpdatedAt = time.Now()
+	s.markDirty()
 	return nil
 }
 
@@ -972,7 +992,7 @@ func (s *State) RejectOffer(offerID, rejectorID string) error {
 	}
 
 	offer.Status = OfferStatusRejected
-	s.UpdatedAt = time.Now()
+	s.markDirty()
 	return nil
 }
 
@@ -997,7 +1017,7 @@ func (s *State) CancelOffer(offerID, cancellerID string) error {
 	// Expire all pending children of this offer.
 	s.expireChildren(offerID)
 
-	s.UpdatedAt = time.Now()
+	s.markDirty()
 	return nil
 }
 

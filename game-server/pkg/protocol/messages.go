@@ -17,6 +17,20 @@ const (
 	MessageTypeState       MessageType = "state"
 	MessageTypePlayerState MessageType = "myState"
 	WaitingLobbyState      MessageType = "waitingLobbyState"
+	MessageTypeReconnect   MessageType = "reconnect"
+	// MessageTypeJoined is sent by the server after a successful join, carrying
+	// the session token the client should store for reconnection.
+	MessageTypeJoined MessageType = "joined"
+)
+
+// BroadcastEvent names used in BroadcastPayload.Event.
+// Using constants prevents typos and makes cross-file references greppable.
+const (
+	EventPlayerJoined = "player_joined"
+	EventPlayerLeft   = "player_left"
+	EventPlayerReady  = "player_ready"
+	EventGameStarted  = "game_started"
+	EventStateUpdated = "state_updated"
 )
 
 type Message struct {
@@ -78,11 +92,18 @@ type CounterOfferPayload struct {
 	CardsRequested []OfferCardPayload `json:"cards_requested"`
 }
 
-// RespondOfferPayload is the payload for the "respondOffer" action.
-// Action must be one of: "accept", "reject", "cancel".
-type RespondOfferPayload struct {
-	OfferID string `json:"offer_id"`
-	Action  string `json:"action"`
+// JoinedPayload is sent by the server back to a client after a successful join,
+// carrying the session token the client must present to reconnect.
+type JoinedPayload struct {
+	PlayerID     string `json:"player_id"`
+	SessionToken string `json:"session_token"`
+}
+
+// ReconnectPayload is sent by a client to resume a game session after a
+// disconnect.  SessionToken was issued by the server during the original join.
+type ReconnectPayload struct {
+	SessionToken string `json:"session_token"`
+	PlayerName   string `json:"player_name,omitempty"`
 }
 
 func NewMessage(msgType MessageType, roomID, playerID string, payload any) (*Message, error) {

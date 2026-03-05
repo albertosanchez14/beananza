@@ -210,3 +210,37 @@ func (r *Repository) GetAllRooms(ctx context.Context) ([]RoomMeta, error) {
 
 	return rooms, nil
 }
+
+// ----------------------------------------------------------------------------
+// Session tokens — used for reconnection support
+// ----------------------------------------------------------------------------
+
+const sessionTokenTTL = 30 * time.Minute
+
+// SaveSessionToken stores a mapping from a random token to a player ID so the
+// player can reconnect to their in-progress session after a disconnect.
+// The token expires after sessionTokenTTL (30 minutes).
+func (r *Repository) SaveSessionToken(ctx context.Context, token, playerID string) error {
+	key := fmt.Sprintf("session:%s", token)
+	if err := r.client.Set(ctx, key, playerID, sessionTokenTTL).Err(); err != nil {
+		return fmt.Errorf("failed to save session token: %w", err)
+	}
+	r.logger.Debug("session token saved",
+		zap.String("player_id", playerID),
+	)
+	return nil
+}
+
+// GetSessionToken retrieves the player ID associated with a token.
+// Returns an empty string and no error when the token is not found.
+func (r *Repository) GetSessionToken(ctx context.Context, token string) (string, error) {
+	key := fmt.Sprintf("session:%s", token)
+	playerID, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", nil // token not found — treat as expired
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to get session token: %w", err)
+	}
+	return playerID, nil
+}

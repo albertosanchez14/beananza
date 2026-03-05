@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 
@@ -17,28 +19,43 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	config *config.Config
-	hub    *ws.Hub
-	repo   *storage.Repository
-	logger *zap.Logger
-	server *http.Server
+	config   *config.Config
+	hub      *ws.Hub
+	repo     *storage.Repository
+	logger   *zap.Logger
+	server   *http.Server
+	upgrader websocket.Upgrader
 }
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		// Allow all origins for development
-		// TODO: Configure this properly for production
-		return true
-	},
+// newUpgrader returns a WebSocket upgrader that validates the request origin
+// against the allowed origins configured via ALLOWED_ORIGINS.
+func newUpgrader(cfg *config.Config) websocket.Upgrader {
+	return websocket.Upgrader{
+		ReadBufferSize:  cfg.WS.ReadBufferSize,
+		WriteBufferSize: cfg.WS.WriteBufferSize,
+		CheckOrigin: func(r *http.Request) bool {
+			if len(cfg.Server.AllowedOrigins) == 0 {
+				return true // no restriction configured (dev / test)
+			}
+			origin := r.Header.Get("Origin")
+			for _, allowed := range cfg.Server.AllowedOrigins {
+				if strings.EqualFold(origin, allowed) {
+					return true
+				}
+			}
+			return false
+		},
+	}
 }
 
 // New creates a new HTTP server
 func New(cfg *config.Config, hub *ws.Hub, repo *storage.Repository, logger *zap.Logger) *Server {
 	return &Server{
-		config: cfg,
-		hub:    hub,
-		repo:   repo,
-		logger: logger,
+		config:   cfg,
+		hub:      hub,
+		repo:     repo,
+		logger:   logger,
+		upgrader: newUpgrader(cfg),
 	}
 }
 
@@ -77,15 +94,15 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // handleWebSocket handles WebSocket upgrade requests
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Upgrade HTTP connection to WebSocket
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Error("websocket upgrade failed", zap.Error(err))
 		return
 	}
 
-	// Create new client
-	clientID := generateClientID()
-	client := ws.NewClient(clientID, conn, s.hub, s.logger)
+	// Create new client with a collision-safe UUID
+	clientID := uuid.NewString()
+	client := ws.NewClient(clientID, conn, s.hub, s.config, s.logger)
 
 	// Register client with hub
 	s.hub.Register(client)
@@ -116,14 +133,21 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// generateClientID generates a unique client ID
-func generateClientID() string {
-	return fmt.Sprintf("client_%d", time.Now().UnixNano())
-}
-
 // handleRooms returns the list of active rooms as JSON.
 func (s *Server) handleRooms(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// CORS: allow configured origins (or all when none are configured).
+	origin := r.Header.Get("Origin")
+	if len(s.config.Server.AllowedOrigins) == 0 {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	} else {
+		for _, allowed := range s.config.Server.AllowedOrigins {
+			if strings.EqualFold(origin, allowed) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				break
+			}
+		}
+	}
 	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 

@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -19,6 +20,11 @@ type Config struct {
 type ServerConfig struct {
 	Host string
 	Port string
+	// AllowedOrigins is the list of permitted WebSocket / CORS origins.
+	// An empty slice disables the check (useful for local dev).
+	// Set via ALLOWED_ORIGINS as a comma-separated list, e.g.
+	//   ALLOWED_ORIGINS=https://mygame.example.com,https://www.mygame.example.com
+	AllowedOrigins []string
 }
 
 type RedisConfig struct {
@@ -34,6 +40,16 @@ type LoggerConfig struct {
 type WebSocketConfig struct {
 	ReadBufferSize  int
 	WriteBufferSize int
+	// SendBufferSize is the number of messages that can be queued per client
+	// before the connection is considered slow and the message is dropped.
+	// Configurable via WS_SEND_BUFFER_SIZE (default 256).
+	SendBufferSize int
+	// RateLimit is the sustained messages-per-second allowed per client.
+	// Configurable via WS_RATE_LIMIT (default 10).
+	RateLimit int
+	// RateBurst is the maximum burst size for the per-client rate limiter.
+	// Configurable via WS_RATE_BURST (default 20).
+	RateBurst int
 }
 
 type GameConfig struct {
@@ -49,8 +65,9 @@ func Load() *Config {
 
 	return &Config{
 		Server: ServerConfig{
-			Host: getEnv("SERVER_HOST", "localhost"),
-			Port: getEnv("SERVER_PORT", "8080"),
+			Host:           getEnv("SERVER_HOST", "localhost"),
+			Port:           getEnv("SERVER_PORT", "8080"),
+			AllowedOrigins: getEnvAsStringSlice("ALLOWED_ORIGINS"),
 		},
 		Redis: RedisConfig{
 			Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
@@ -63,6 +80,9 @@ func Load() *Config {
 		WS: WebSocketConfig{
 			ReadBufferSize:  getEnvAsInt("READ_BUFFER_SIZE", 1024),
 			WriteBufferSize: getEnvAsInt("WRITE_BUFFER_SIZE", 1024),
+			SendBufferSize:  getEnvAsInt("WS_SEND_BUFFER_SIZE", 256),
+			RateLimit:       getEnvAsInt("WS_RATE_LIMIT", 10),
+			RateBurst:       getEnvAsInt("WS_RATE_BURST", 20),
 		},
 		Game: GameConfig{
 			MaxNumberPlayers: getEnvAsInt("MAX_NUMBER_PLAYERS", 5),
@@ -86,4 +106,22 @@ func getEnvAsInt(key string, defaultValue int) int {
 		return value
 	}
 	return defaultValue
+}
+
+// getEnvAsStringSlice splits a comma-separated environment variable into a
+// slice of trimmed strings.  Returns nil (empty slice) when the variable is
+// unset or empty.
+func getEnvAsStringSlice(key string) []string {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			result = append(result, t)
+		}
+	}
+	return result
 }

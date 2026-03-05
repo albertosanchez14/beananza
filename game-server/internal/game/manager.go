@@ -10,7 +10,15 @@ import (
 	"github.com/yourusername/game-server/internal/storage"
 )
 
-// Manager manages all game sessions across different rooms
+// Manager manages all game sessions across different rooms.
+//
+// Lock ordering (must always be acquired in this order to avoid deadlocks):
+//
+//  1. Manager.mu  — protects the sessions map
+//  2. Session.mu  — protects per-session state (lobby, game state, etc.)
+//
+// Never acquire Manager.mu while already holding Session.mu.
+// GetSessionState is the canonical example of the correct nested-lock pattern.
 type Manager struct {
 	sessions map[string]*Session
 	cfg      *config.Config

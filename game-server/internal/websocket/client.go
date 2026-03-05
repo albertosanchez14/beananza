@@ -6,19 +6,26 @@ import (
 
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 
+	"github.com/yourusername/game-server/internal/config"
 	"github.com/yourusername/game-server/internal/game"
 	"github.com/yourusername/game-server/pkg/protocol"
 )
 
 const (
-	writeWait      = 10 * time.Second
-	pongWait       = 60 * time.Second
-	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 8192
+	writeWait        = 10 * time.Second
+	pongWait         = 60 * time.Second
+	pingPeriod       = (pongWait * 9) / 10
+	maxMessageSize   = 8192
+	defaultRateLimit = 10
+	defaultRateBurst = 20
 )
 
-// Client represents a WebSocket client connection
+// Client represents a WebSocket client connection.
+// It is responsible solely for I/O: reading frames from the wire, writing
+// frames to the wire, and forwarding decoded messages to the dispatcher.
+// All game-domain logic lives in dispatcher.go.
 type Client struct {
 	ID         string
 	conn       *websocket.Conn
@@ -30,22 +37,42 @@ type Client struct {
 	logger     *zap.Logger
 	ctx        context.Context
 	cancel     context.CancelFunc
+	limiter    *rate.Limiter
 }
 
-func NewClient(id string, conn *websocket.Conn, hub *Hub, logger *zap.Logger) *Client {
+func NewClient(id string, conn *websocket.Conn, hub *Hub, cfg *config.Config, logger *zap.Logger) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	bufSize := 256
+	rateLimit := rate.Limit(defaultRateLimit)
+	rateBurst := defaultRateBurst
+
+	if cfg != nil {
+		if cfg.WS.SendBufferSize > 0 {
+			bufSize = cfg.WS.SendBufferSize
+		}
+		if cfg.WS.RateLimit > 0 {
+			rateLimit = rate.Limit(cfg.WS.RateLimit)
+		}
+		if cfg.WS.RateBurst > 0 {
+			rateBurst = cfg.WS.RateBurst
+		}
+	}
+
 	return &Client{
-		ID:     id,
-		conn:   conn,
-		hub:    hub,
-		send:   make(chan []byte, 256),
-		logger: logger.With(zap.String("client_id", id)),
-		ctx:    ctx,
-		cancel: cancel,
+		ID:      id,
+		conn:    conn,
+		hub:     hub,
+		send:    make(chan []byte, bufSize),
+		logger:  logger.With(zap.String("client_id", id)),
+		ctx:     ctx,
+		cancel:  cancel,
+		limiter: rate.NewLimiter(rateLimit, rateBurst),
 	}
 }
 
+// ReadPump pumps messages from the WebSocket connection to the dispatcher.
+// One goroutine per client runs ReadPump.
 func (c *Client) ReadPump() {
 	defer func() {
 		c.hub.Unregister(c)
@@ -69,7 +96,6 @@ func (c *Client) ReadPump() {
 			break
 		}
 
-		// Parse the incoming message
 		msg, err := protocol.FromJSON(messageData)
 		if err != nil {
 			c.logger.Error("failed to parse message", zap.Error(err))
@@ -77,7 +103,20 @@ func (c *Client) ReadPump() {
 			continue
 		}
 
-		// Set player ID from message if not already set
+		// Enforce per-client rate limit.  When a client exceeds the allowed
+		// rate we drop the message and send back an error rather than
+		// disconnecting immediately, giving the client a chance to slow down.
+		if !c.limiter.Allow() {
+			c.logger.Warn("rate limit exceeded, dropping message",
+				zap.String("player_id", c.PlayerId),
+				zap.String("msg_type", string(msg.Type)),
+			)
+			c.sendError("rate_limited", "Too many messages — slow down")
+			continue
+		}
+
+		// Bind the player ID carried in the message envelope the first time we
+		// see it — before auth is in place the client sends its own ID.
 		if c.PlayerId == "" && msg.PlayerID != "" {
 			c.PlayerId = msg.PlayerID
 		}
@@ -86,6 +125,8 @@ func (c *Client) ReadPump() {
 	}
 }
 
+// WritePump pumps messages from the hub to the WebSocket connection.
+// One goroutine per client runs WritePump.
 func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -98,7 +139,7 @@ func (c *Client) WritePump() {
 		case message, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				// Hub closed the channel
+				// Hub closed the channel — signal clean close to the peer.
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
@@ -107,7 +148,8 @@ func (c *Client) WritePump() {
 				return
 			}
 
-			// Send queued messages as individual WebSocket frames
+			// Drain any messages already queued in the channel and send each
+			// as its own frame so clients never receive concatenated JSON.
 			n := len(c.send)
 			for range n {
 				c.conn.SetWriteDeadline(time.Now().Add(writeWait))
@@ -147,390 +189,19 @@ func (c *Client) handleMessage(msg *protocol.Message) {
 		c.sendGameState(msg)
 	case protocol.MessageTypePlayerState:
 		c.handlePlayerState(msg)
+	case protocol.MessageTypeReconnect:
+		c.handleReconnect(msg)
 	default:
 		c.sendError("unknown_message_type", "Unknown message type")
 	}
 }
 
-func (c *Client) handleJoin(msg *protocol.Message) {
-	var payload protocol.JoinPayload
-	if err := msg.ParsePayload(&payload); err != nil {
-		c.sendError("invalid_payload", "Invalid join payload")
-		return
-	}
+// ----------------------------------------------------------------------------
+// Outbound helpers
+// ----------------------------------------------------------------------------
 
-	// TODO: PlayerId should be obtained by auth
-	c.PlayerName = payload.PlayerName
-	if c.PlayerId == "" {
-		c.PlayerId = c.ID // Use client ID as player ID if not set
-	}
-
-	room := c.hub.GetOrCreateRoom(msg.RoomID)
-	if existingSession, ok := c.hub.gameManager.GetSession(msg.RoomID); ok {
-		if existingSession.IsPlaying() {
-			c.sendError(game.ErrCodeGameAlreadyStarted, "Cannot join: game is already in progress")
-			return
-		}
-	}
-	room.Join(c)
-	c.room = room
-
-	session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
-	if err := session.HandlePlayerJoin(c.PlayerId, c.PlayerName); err != nil {
-		c.logger.Error("failed to add player to game session", zap.Error(err))
-	}
-
-	c.logger.Info("player joined room",
-		zap.String("room_id", msg.RoomID),
-		zap.String("player_name", payload.PlayerName),
-	)
-
-	c.hub.SyncRoomRegistry(msg.RoomID)
-
-	if c.hub.repo != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		c.hub.repo.AddPlayerToRoom(ctx, msg.RoomID, c.PlayerId)
-	}
-}
-
-func (c *Client) handleLeave() {
-	if c.room == nil {
-		return
-	}
-
-	if session, ok := c.hub.gameManager.GetSession(c.room.ID); ok {
-		if err := session.HandlePlayerLeave(c.PlayerId); err != nil {
-			c.logger.Error("failed to remove player from game session", zap.Error(err))
-		}
-	}
-
-	c.room.Leave(c)
-
-	c.logger.Info("player left room",
-		zap.String("room_id", c.room.ID),
-	)
-
-	c.hub.SyncRoomRegistry(c.room.ID)
-
-	// Persist to Redis
-	if c.hub.repo != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		c.hub.repo.RemovePlayerFromRoom(ctx, c.room.ID, c.PlayerId)
-	}
-
-	c.room = nil
-}
-
-func (c *Client) handleAction(msg *protocol.Message) {
-	if c.room == nil {
-		c.sendError("not_in_room", "You must join a room first")
-		return
-	}
-
-	var payload map[string]any
-	if err := msg.ParsePayload(&payload); err != nil {
-		c.sendError("invalid_payload", "Invalid action payload")
-		return
-	}
-
-	actionType, ok := payload["type"].(string)
-	if !ok {
-		c.sendError("invalid_action", "Action type missing")
-		return
-	}
-
-	session, ok := c.hub.gameManager.GetSession(c.room.ID)
-	if !ok {
-		c.sendError("session_not_found", "Game session not found")
-		return
-	}
-
-	switch actionType {
-	case "plantBean":
-		c.handlePlantBean(session, payload)
-	case "tradeBean":
-		c.handleTradeBean(session, payload)
-	case "harvestField":
-		c.handleHarvestField(session, payload)
-	case "turnOverBean":
-		c.handleTurnOverBean(session)
-	case "drawCards":
-		c.handleDrawCards(session)
-	case "createOffer":
-		c.handleCreateOffer(session, payload)
-	case "counterOffer":
-		c.handleCounterOffer(session, payload)
-	case "respondOffer":
-		c.handleRespondOffer(session, payload)
-	default:
-		c.sendError("unknown_action", "Unknown action type")
-		return
-	}
-
-	// Push fresh state to all local clients on this instance.
-	c.sendPlayerSnapshotToAll(session)
-
-	// Signal other instances via pub/sub so they can push fresh state to
-	// their own local clients.  We use a lightweight broadcast envelope so
-	// handlePubSubMessage can intercept it without forwarding it to browsers.
-	stateUpdatedMsg, err := protocol.NewMessage(
-		protocol.MessageTypeBroadcast,
-		c.room.ID,
-		c.PlayerId,
-		protocol.BroadcastPayload{
-			Event: "state_updated",
-			Data:  map[string]any{},
-		},
-	)
-	if err == nil {
-		c.room.Broadcast(stateUpdatedMsg, c)
-	}
-}
-
-func (c *Client) handlePlantBean(s *game.Session, payload map[string]any) {
-	cardID, _ := payload["cardId"].(string)
-	slotId, _ := payload["slotId"].(string)
-
-	if cardID == "" || slotId == "" {
-		c.sendError("invalid_params", "Missing cardId or slotId")
-		return
-	}
-
-	if err := s.HandlePlantBean(c.PlayerId, cardID, slotId); err != nil {
-		if gameErr, ok := err.(*game.GameError); ok {
-			c.sendError(gameErr.Code, gameErr.Message)
-		} else {
-			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		}
-	}
-}
-
-func (c *Client) handleTradeBean(s *game.Session, payload map[string]any) {
-	fromPlayerID, _ := payload["fromPlayerId"].(string)
-	toPlayerID, _ := payload["toPlayerId"].(string)
-
-	// cardsGiven and cardsReceived are sent as []interface{} from JSON
-	cardsGivenRaw, _ := payload["cardsGiven"].([]interface{})
-	cardsReceivedRaw, _ := payload["cardsReceived"].([]interface{})
-
-	cardsGiven := make([]string, 0, len(cardsGivenRaw))
-	for _, v := range cardsGivenRaw {
-		if id, ok := v.(string); ok {
-			cardsGiven = append(cardsGiven, id)
-		}
-	}
-
-	cardsReceived := make([]string, 0, len(cardsReceivedRaw))
-	for _, v := range cardsReceivedRaw {
-		if id, ok := v.(string); ok {
-			cardsReceived = append(cardsReceived, id)
-		}
-	}
-
-	if fromPlayerID == "" || toPlayerID == "" {
-		c.sendError("invalid_params", "Missing fromPlayerId or toPlayerId")
-		return
-	}
-
-	if err := s.HandleTradeBean(fromPlayerID, toPlayerID, cardsReceived, cardsGiven); err != nil {
-		if gameErr, ok := err.(*game.GameError); ok {
-			c.sendError(gameErr.Code, gameErr.Message)
-		} else {
-			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		}
-	}
-}
-
-// handleCreateOffer handles the "createOffer" action payload.
-func (c *Client) handleCreateOffer(s *game.Session, payload map[string]any) {
-	targetID, _ := payload["target_player_id"].(string)
-	cardsOffered := parseOfferCards(payload["cards_offered"])
-	cardsRequested := parseOfferCards(payload["cards_requested"])
-
-	if _, err := s.HandleCreateOffer(c.PlayerId, targetID, cardsOffered, cardsRequested); err != nil {
-		if gameErr, ok := err.(*game.GameError); ok {
-			c.sendError(gameErr.Code, gameErr.Message)
-		} else {
-			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		}
-	}
-}
-
-// handleCounterOffer handles the "counterOffer" action payload.
-func (c *Client) handleCounterOffer(s *game.Session, payload map[string]any) {
-	parentOfferID, _ := payload["parent_offer_id"].(string)
-	if parentOfferID == "" {
-		c.sendError("invalid_params", "Missing parent_offer_id")
-		return
-	}
-
-	cardsOffered := parseOfferCards(payload["cards_offered"])
-	cardsRequested := parseOfferCards(payload["cards_requested"])
-
-	if _, err := s.HandleCounterOffer(parentOfferID, c.PlayerId, cardsOffered, cardsRequested); err != nil {
-		if gameErr, ok := err.(*game.GameError); ok {
-			c.sendError(gameErr.Code, gameErr.Message)
-		} else {
-			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		}
-	}
-}
-
-// handleRespondOffer handles the "respondOffer" action payload.
-// The "action" field in the payload must be "accept", "reject", or "cancel".
-func (c *Client) handleRespondOffer(s *game.Session, payload map[string]any) {
-	offerID, _ := payload["offer_id"].(string)
-	action, _ := payload["action"].(string)
-
-	if offerID == "" || action == "" {
-		c.sendError("invalid_params", "Missing offer_id or action")
-		return
-	}
-
-	if err := s.HandleRespondOffer(offerID, c.PlayerId, action); err != nil {
-		if gameErr, ok := err.(*game.GameError); ok {
-			c.sendError(gameErr.Code, gameErr.Message)
-		} else {
-			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		}
-	}
-}
-
-// parseOfferCards converts a raw JSON-decoded []interface{} into []game.OfferCard.
-func parseOfferCards(raw interface{}) []game.OfferCard {
-	slice, ok := raw.([]interface{})
-	if !ok {
-		return []game.OfferCard{}
-	}
-	result := make([]game.OfferCard, 0, len(slice))
-	for _, item := range slice {
-		m, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		cardType, _ := m["card_type"].(string)
-		cardID, _ := m["card_id"].(string)
-		result = append(result, game.OfferCard{
-			CardType: game.CardType(cardType),
-			CardID:   cardID,
-		})
-	}
-	return result
-}
-
-func (c *Client) handleHarvestField(s *game.Session, payload map[string]any) {
-	slotId, _ := payload["slotId"].(string)
-
-	if slotId == "" {
-		c.sendError("invalid_params", "Missing slotId")
-		return
-	}
-
-	if err := s.HandleHarvestField(c.PlayerId, slotId); err != nil {
-		if gameErr, ok := err.(*game.GameError); ok {
-			c.sendError(gameErr.Code, gameErr.Message)
-		} else {
-			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		}
-	}
-}
-
-func (c *Client) handleTurnOverBean(s *game.Session) {
-	if err := s.HandleTurnOverBean(c.PlayerId); err != nil {
-		if gameErr, ok := err.(*game.GameError); ok {
-			c.sendError(gameErr.Code, gameErr.Message)
-		} else {
-			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		}
-	}
-}
-
-func (c *Client) handleDrawCards(s *game.Session) {
-	if err := s.HandleDrawCards(c.PlayerId); err != nil {
-		if gameErr, ok := err.(*game.GameError); ok {
-			c.sendError(gameErr.Code, gameErr.Message)
-		} else {
-			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		}
-	}
-}
-
-func (c *Client) handleReady(msg *protocol.Message) {
-	if c.room == nil {
-		c.sendError("not_in_room", "You must join a room first")
-		return
-	}
-
-	var payload protocol.ReadyPayload
-	if err := msg.ParsePayload(&payload); err != nil {
-		c.sendError("invalid_payload", "Invalid ready payload")
-		return
-	}
-
-	session, ok := c.hub.gameManager.GetSession(c.room.ID)
-	if !ok {
-		c.sendError("session_not_found", "Game session not found")
-		return
-	}
-
-	if err := session.HandlePlayerReady(c.PlayerId, payload.Ready); err != nil {
-		if gameErr, ok := err.(*game.GameError); ok {
-			c.sendError(gameErr.Code, gameErr.Message)
-		} else {
-			c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
-		}
-		return
-	}
-
-	// Signal all instances (including this one) via pub/sub that a ready
-	// state changed — handlePubSubMessage will push fresh lobby state.
-	readyMsg, err := protocol.NewMessage(
-		protocol.MessageTypeBroadcast,
-		c.room.ID,
-		c.PlayerId,
-		protocol.BroadcastPayload{
-			Event: "player_ready",
-			Data: map[string]any{
-				"player_id": c.PlayerId,
-				"ready":     payload.Ready,
-			},
-		},
-	)
-	if err != nil {
-		c.logger.Error("failed to create player_ready broadcast", zap.Error(err))
-	} else {
-		c.room.Broadcast(readyMsg, c)
-	}
-
-	// Check if the game can auto-start now that ready state changed
-	started, err := session.HandleStartGame()
-	if err != nil {
-		c.logger.Debug("game cannot start yet", zap.Error(err))
-		return
-	}
-
-	if started {
-		// Broadcast "game_started" event to all clients in the room
-		gameStartedMsg, err := protocol.NewMessage(
-			protocol.MessageTypeBroadcast,
-			c.room.ID,
-			c.PlayerId,
-			protocol.BroadcastPayload{
-				Event: "game_started",
-				Data:  map[string]any{},
-			},
-		)
-		if err != nil {
-			c.logger.Error("failed to create game_started broadcast", zap.Error(err))
-			return
-		}
-		c.room.Broadcast(gameStartedMsg, c)
-		c.sendPlayerSnapshotToAll(session)
-	}
-}
-
+// sendError marshals a protocol error and queues it for delivery to the client.
+// If the send channel is full the message is dropped and a warning is logged.
 func (c *Client) sendError(code, message string) {
 	errorMsg, err := protocol.NewMessage(
 		protocol.MessageTypeError,
@@ -555,7 +226,19 @@ func (c *Client) sendError(code, message string) {
 	select {
 	case c.send <- data:
 	default:
-		c.logger.Warn("send channel full, dropping error message")
+		c.logger.Warn("send channel full, dropping error message",
+			zap.String("error_code", code),
+		)
+	}
+}
+
+// sendGameError is a convenience wrapper that extracts code and message from a
+// *game.GameError, falling back to INTERNAL_ERROR for unexpected errors.
+func (c *Client) sendGameError(err error) {
+	if gameErr, ok := err.(*game.GameError); ok {
+		c.sendError(gameErr.Code, gameErr.Message)
+	} else {
+		c.sendError("INTERNAL_ERROR", "An unexpected error occurred")
 	}
 }
 
@@ -584,15 +267,13 @@ func (c *Client) sendGameState(msg *protocol.Message) {
 	case c.send <- data:
 		c.logger.Debug("sent game state to client", zap.String("room_id", msg.RoomID))
 	default:
-		c.logger.Warn("send channel full, dropping state message")
+		c.logger.Warn("send channel full, dropping state message",
+			zap.String("room_id", msg.RoomID),
+		)
 	}
 }
 
 func (c *Client) handlePlayerState(msg *protocol.Message) {
-	var stateData map[string]interface{}
-
-	// Get game session — reload from Redis first so this instance always
-	// serves the latest state even if the game started on another instance.
 	session, ok := c.hub.gameManager.GetSession(c.room.ID)
 	if !ok {
 		c.sendError("session_not_found", "Game session not found")
@@ -608,7 +289,7 @@ func (c *Client) handlePlayerState(msg *protocol.Message) {
 			)
 		}
 	}
-	stateData = session.GetPlayerSnapshot(msg.PlayerID)
+	stateData := session.GetPlayerSnapshot(msg.PlayerID)
 
 	stateMsg, err := protocol.NewMessage(
 		protocol.MessageTypePlayerState,
@@ -629,13 +310,16 @@ func (c *Client) handlePlayerState(msg *protocol.Message) {
 
 	select {
 	case c.send <- data:
-		c.logger.Debug("sent game state to client", zap.String("room_id", c.room.ID))
+		c.logger.Debug("sent player state to client", zap.String("room_id", c.room.ID))
 	default:
-		c.logger.Warn("send channel full, dropping state message")
+		c.logger.Warn("send channel full, dropping player state message",
+			zap.String("room_id", c.room.ID),
+		)
 	}
 }
 
-// sendPlayerSnapshotToAll sends each client in the room their personalized player snapshot
+// sendPlayerSnapshotToAll pushes each client in the room their own personalised
+// myState snapshot. Called after any action that mutates game state.
 func (c *Client) sendPlayerSnapshotToAll(session *game.Session) {
 	for _, client := range c.room.GetClients() {
 		playerSnapshot := session.GetPlayerSnapshot(client.PlayerId)
@@ -664,13 +348,16 @@ func (c *Client) sendPlayerSnapshotToAll(session *game.Session) {
 	}
 }
 
-// Send sends a message to the client
+// Send queues data for delivery to the client.
+// If the channel is full (slow/unresponsive client) the message is dropped.
 func (c *Client) Send(data []byte) {
 	select {
 	case c.send <- data:
 	case <-c.ctx.Done():
 		return
 	default:
-		c.logger.Warn("send channel full, dropping message")
+		c.logger.Warn("send channel full, dropping message",
+			zap.String("player_id", c.PlayerId),
+		)
 	}
 }

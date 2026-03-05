@@ -1,5 +1,16 @@
 package websocket
 
+// hub.go — central connection manager.
+//
+// Lock ordering (MUST be respected everywhere to prevent deadlock):
+//   1. clientsMu — guards the clients map
+//   2. roomsMu   — guards the rooms map
+//
+// Never acquire clientsMu while holding roomsMu.
+// Never acquire roomsMu while holding clientsMu.
+// Always acquire at most one of the two locks at a time.
+// session.mu (game.Session) is always acquired AFTER both hub locks are released.
+
 import (
 	"context"
 	"sync"
@@ -21,8 +32,18 @@ type RoomInfo struct {
 	SessionState string `json:"session_state"`
 }
 
-// Hub maintains the set of active clients, rooms and
-// broadcasts messages to clients
+// fanoutEvent is queued on the fanout channel by action handlers so that the
+// hub's Run() loop can push personalised state to local clients asynchronously,
+// decoupling the read pump from the O(N) broadcast work.
+type fanoutEvent struct {
+	roomID  string
+	session *game.Session
+}
+
+// Hub maintains the set of active clients, rooms, and broadcasts messages to
+// clients.  It uses two independent mutexes to reduce contention:
+//   - clientsMu protects the clients map
+//   - roomsMu   protects the rooms map
 type Hub struct {
 	config      *config.Config
 	clients     map[*Client]bool
@@ -30,10 +51,14 @@ type Hub struct {
 	gameManager *game.Manager
 	register    chan *Client
 	unregister  chan *Client
-	mu          sync.RWMutex
-	logger      *zap.Logger
-	repo        *storage.Repository
-	pubsub      *storage.PubSub
+	// fanout receives broadcast requests from action handlers.
+	// Processed by Run() to avoid blocking the calling goroutine.
+	fanout    chan fanoutEvent
+	clientsMu sync.RWMutex
+	roomsMu   sync.RWMutex
+	logger    *zap.Logger
+	repo      *storage.Repository
+	pubsub    *storage.PubSub
 }
 
 func NewHub(cfg *config.Config, logger *zap.Logger, repo *storage.Repository, pubsub *storage.PubSub) *Hub {
@@ -44,6 +69,7 @@ func NewHub(cfg *config.Config, logger *zap.Logger, repo *storage.Repository, pu
 		gameManager: game.NewManager(cfg, repo, logger),
 		register:    make(chan *Client),
 		unregister:  make(chan *Client),
+		fanout:      make(chan fanoutEvent, 64),
 		logger:      logger,
 		repo:        repo,
 		pubsub:      pubsub,
@@ -54,43 +80,83 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:
-			h.mu.Lock()
+			h.clientsMu.Lock()
 			h.clients[client] = true
-			h.mu.Unlock()
+			h.clientsMu.Unlock()
 
 			h.logger.Info("client registered",
 				zap.String("client_id", client.ID),
-				zap.Int("total_clients", len(h.clients)),
 			)
 
 		case client := <-h.unregister:
-			h.mu.Lock()
+			h.clientsMu.Lock()
 			if _, ok := h.clients[client]; ok {
 				if client.room != nil {
 					client.room.Leave(client)
 				}
-
 				delete(h.clients, client)
 				close(client.send)
 
 				h.logger.Info("client unregistered",
 					zap.String("client_id", client.ID),
-					zap.Int("total_clients", len(h.clients)),
 				)
 			}
-			h.mu.Unlock()
+			h.clientsMu.Unlock()
 
 			h.cleanupEmptyRooms()
+
+		case ev := <-h.fanout:
+			// Asynchronous fan-out: push personalised snapshots to all local
+			// clients in the room.  This runs in the hub goroutine so the
+			// client's ReadPump is never blocked by O(N) marshalling work.
+			h.roomsMu.RLock()
+			room, ok := h.rooms[ev.roomID]
+			h.roomsMu.RUnlock()
+			if !ok {
+				continue
+			}
+			for _, client := range room.GetClients() {
+				playerSnapshot := ev.session.GetPlayerSnapshot(client.PlayerId)
+				msg, err := protocol.NewMessage(
+					protocol.MessageTypePlayerState,
+					ev.roomID,
+					client.PlayerId,
+					playerSnapshot,
+				)
+				if err != nil {
+					h.logger.Error("fanout: failed to create player state message", zap.Error(err))
+					continue
+				}
+				data, err := msg.ToJSON()
+				if err != nil {
+					h.logger.Error("fanout: failed to marshal player state message", zap.Error(err))
+					continue
+				}
+				client.Send(data)
+			}
 		}
 	}
 }
 
-// GetOrCreateRoom retrieves an existing room or creates a new one
+// EnqueueFanout queues a personalised-state broadcast for all clients in the
+// room.  The broadcast is processed asynchronously by Run() so the caller
+// (typically a client's ReadPump) is not blocked.
+func (h *Hub) EnqueueFanout(roomID string, session *game.Session) {
+	select {
+	case h.fanout <- fanoutEvent{roomID: roomID, session: session}:
+	default:
+		h.logger.Warn("fanout channel full, dropping snapshot broadcast",
+			zap.String("room_id", roomID),
+		)
+	}
+}
+
+// GetOrCreateRoom retrieves an existing room or creates a new one.
 func (h *Hub) GetOrCreateRoom(roomID string) *Room {
-	h.mu.Lock()
+	h.roomsMu.Lock()
 
 	if room, ok := h.rooms[roomID]; ok {
-		h.mu.Unlock()
+		h.roomsMu.Unlock()
 		return room
 	}
 
@@ -109,13 +175,12 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 
 	h.logger.Info("room created",
 		zap.String("room_id", roomID),
-		zap.Int("total_rooms", len(h.rooms)),
 	)
 
 	// Release the lock before subscribing: Subscribe blocks on a Redis
-	// round-trip (sub.Receive) and holding h.mu would deadlock any
-	// concurrent read (e.g. GET /rooms) for the duration of that call.
-	h.mu.Unlock()
+	// round-trip (sub.Receive) and holding roomsMu for the duration of that
+	// call would stall every concurrent room lookup.
+	h.roomsMu.Unlock()
 
 	if h.pubsub != nil {
 		if err := h.pubsub.Subscribe(roomID, func(rid string, msg []byte) { handler(msg) }); err != nil {
@@ -142,16 +207,16 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	return room
 }
 
-// GetRoom retrieves an existing room
+// GetRoom retrieves an existing room without creating one.
 func (h *Hub) GetRoom(roomID string) *Room {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	h.roomsMu.RLock()
+	defer h.roomsMu.RUnlock()
 	return h.rooms[roomID]
 }
 
-// cleanupEmptyRooms removes rooms that have no clients
+// cleanupEmptyRooms removes rooms that have no clients.
 func (h *Hub) cleanupEmptyRooms() {
-	h.mu.Lock()
+	h.roomsMu.Lock()
 
 	var toDelete []string
 	for roomID, room := range h.rooms {
@@ -162,10 +227,9 @@ func (h *Hub) cleanupEmptyRooms() {
 		}
 	}
 
-	h.mu.Unlock()
+	h.roomsMu.Unlock()
 
 	for _, roomID := range toDelete {
-		// Unsubscribe from Redis pub/sub
 		if h.pubsub != nil {
 			if err := h.pubsub.Unsubscribe(roomID); err != nil {
 				h.logger.Error("failed to unsubscribe from room channel",
@@ -175,7 +239,6 @@ func (h *Hub) cleanupEmptyRooms() {
 			}
 		}
 
-		// Remove from the shared room registry
 		if h.repo != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = h.repo.DeleteRoomInfo(ctx, roomID)
@@ -186,21 +249,23 @@ func (h *Hub) cleanupEmptyRooms() {
 	}
 }
 
-// Register adds a client to the hub
+// Register adds a client to the hub.
 func (h *Hub) Register(client *Client) {
 	h.register <- client
 }
 
-// Unregister removes a client from the hub
+// Unregister removes a client from the hub.
 func (h *Hub) Unregister(client *Client) {
 	h.unregister <- client
 }
 
-// GetStats returns statistics about the hub
+// GetStats returns statistics about the hub.
 func (h *Hub) GetStats() map[string]interface{} {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	h.clientsMu.RLock()
+	totalClients := len(h.clients)
+	h.clientsMu.RUnlock()
 
+	h.roomsMu.RLock()
 	roomStats := make([]map[string]interface{}, 0, len(h.rooms))
 	for roomID, room := range h.rooms {
 		roomStats = append(roomStats, map[string]interface{}{
@@ -208,17 +273,19 @@ func (h *Hub) GetStats() map[string]interface{} {
 			"client_count": room.ClientCount(),
 		})
 	}
+	totalRooms := len(h.rooms)
+	h.roomsMu.RUnlock()
 
 	return map[string]interface{}{
-		"total_clients": len(h.clients),
-		"total_rooms":   len(h.rooms),
+		"total_clients": totalClients,
+		"total_rooms":   totalRooms,
 		"rooms":         roomStats,
 	}
 }
 
 // GetRoomList returns a snapshot of all active rooms.
-// When a Redis repository is configured it reads from the shared registry
-// so every instance returns the full cross-instance list.
+// When a Redis repository is configured it reads from the shared registry so
+// every instance returns the full cross-instance list.
 func (h *Hub) GetRoomList() []RoomInfo {
 	if h.repo != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -240,9 +307,9 @@ func (h *Hub) GetRoomList() []RoomInfo {
 		h.logger.Warn("failed to read room list from redis, falling back to local", zap.Error(err))
 	}
 
-	// Fallback: local rooms only (no Redis configured)
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	// Fallback: local rooms only (no Redis configured).
+	h.roomsMu.RLock()
+	defer h.roomsMu.RUnlock()
 
 	rooms := make([]RoomInfo, 0, len(h.rooms))
 	for roomID, room := range h.rooms {
@@ -257,11 +324,11 @@ func (h *Hub) GetRoomList() []RoomInfo {
 	return rooms
 }
 
-// handlePubSubMessage forwards a message received from Redis to local room clients
+// handlePubSubMessage forwards a message received from Redis to local room clients.
 func (h *Hub) handlePubSubMessage(roomID string, message []byte) {
-	h.mu.RLock()
+	h.roomsMu.RLock()
 	room, ok := h.rooms[roomID]
-	h.mu.RUnlock()
+	h.roomsMu.RUnlock()
 
 	if !ok || room == nil {
 		h.logger.Debug("received pub/sub message for non-existent room",
@@ -270,31 +337,22 @@ func (h *Hub) handlePubSubMessage(roomID string, message []byte) {
 		return
 	}
 
-	// Decode the message type so we can react to lobby-mutating events.
 	decoded, err := protocol.FromJSON(message)
 	if err == nil {
 		switch decoded.Type {
 		case protocol.MessageTypeBroadcast:
 			var bp protocol.BroadcastPayload
 			if decoded.ParsePayload(&bp) == nil {
-				if bp.Event == "player_joined" || bp.Event == "player_left" || bp.Event == "player_ready" {
-					// Another instance mutated the lobby — push a fresh snapshot
-					// from Redis to every local client so they see the full list.
+				if bp.Event == protocol.EventPlayerJoined || bp.Event == protocol.EventPlayerLeft || bp.Event == protocol.EventPlayerReady {
 					go h.BroadcastWaitingLobbyToRoom(roomID)
 					return
 				}
-				if bp.Event == "game_started" {
-					// Another instance started the game — forward the broadcast so
-					// clients know the game began, then push each client their own
-					// personalised game state loaded from Redis.
+				if bp.Event == protocol.EventGameStarted {
 					room.HandleIncomingMessage(message)
 					go h.BroadcastGameStateToRoom(roomID)
 					return
 				}
-				if bp.Event == "state_updated" {
-					// A game action was processed on another instance — push fresh
-					// personalised snapshots to local clients without forwarding
-					// the internal event to browsers.
+				if bp.Event == protocol.EventStateUpdated {
 					go h.BroadcastGameStateToRoom(roomID)
 					return
 				}
@@ -306,19 +364,15 @@ func (h *Hub) handlePubSubMessage(roomID string, message []byte) {
 }
 
 // BroadcastGameStateToRoom reloads the game session from Redis so this instance
-// has the latest state, then pushes each local client their personalised
-// myState snapshot. Call this when a game_started event arrives via pub/sub
-// from another instance.
+// has the latest state, then pushes each local client their personalised myState.
 func (h *Hub) BroadcastGameStateToRoom(roomID string) {
-	h.mu.RLock()
+	h.roomsMu.RLock()
 	room, ok := h.rooms[roomID]
-	h.mu.RUnlock()
+	h.roomsMu.RUnlock()
 	if !ok {
 		return
 	}
 
-	// Reload from Redis so this instance picks up the game state written by
-	// whichever instance actually started the game.
 	session := h.gameManager.GetOrCreateSession(roomID)
 	if h.repo != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -353,16 +407,15 @@ func (h *Hub) BroadcastGameStateToRoom(roomID string) {
 }
 
 // SyncRoomRegistry updates the shared Redis room registry with the current
-// player count and session state for the given room. Call this after any
-// join or leave event so the /rooms listing stays accurate across instances.
+// player count and session state for the given room.
 func (h *Hub) SyncRoomRegistry(roomID string) {
 	if h.repo == nil {
 		return
 	}
 
-	h.mu.RLock()
+	h.roomsMu.RLock()
 	room, ok := h.rooms[roomID]
-	h.mu.RUnlock()
+	h.roomsMu.RUnlock()
 	if !ok {
 		return
 	}
@@ -380,19 +433,16 @@ func (h *Hub) SyncRoomRegistry(roomID string) {
 	})
 }
 
-// BroadcastWaitingLobbyToRoom reloads the session from Redis so it has the
-// latest cross-instance state, then sends a fresh waitingLobbyState to every
-// local client in the room. Call this after any join/leave/ready mutation.
+// BroadcastWaitingLobbyToRoom reloads the session from Redis then sends a
+// fresh waitingLobbyState to every local client in the room.
 func (h *Hub) BroadcastWaitingLobbyToRoom(roomID string) {
-	h.mu.RLock()
+	h.roomsMu.RLock()
 	room, ok := h.rooms[roomID]
-	h.mu.RUnlock()
+	h.roomsMu.RUnlock()
 	if !ok {
 		return
 	}
 
-	// Force a reload from Redis so this instance sees players that joined
-	// on other instances.
 	session := h.gameManager.GetOrCreateSession(roomID)
 	if h.repo != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
