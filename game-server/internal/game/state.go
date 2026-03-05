@@ -342,22 +342,24 @@ func (s *State) TurnOverBean(playerId string) error {
 		return err
 	}
 
+	if s.Phase == PhaseTypePlantHand {
+		if err := s.nextPhase(playerId); err != nil {
+			return err
+		}
+		s.markDirty()
+		return nil
+	}
+
+	if s.Phase != PhaseTypeTurnTrade {
+		return NewInvalidPhaseError(s.Phase)
+	}
+
 	if s.DrawPile == nil || s.DrawPile.IsEmpty() {
 		return NewDeckEmptyError()
 	}
 
 	if s.CardsTurned {
 		return NewInvalidActionError("cards already drawn")
-	}
-
-	switch s.Phase {
-	case PhaseTypePlantHand:
-		if err := s.nextPhase(playerId); err != nil {
-			return err
-		}
-	case PhaseTypeTurnTrade:
-	default:
-		return NewInvalidPhaseError(s.Phase)
 	}
 
 	// RULE: Can only draw 2 cards from deck and add to center
@@ -667,6 +669,11 @@ func (s *State) nextPhase(playerId string) error {
 			return NewMinBeansRequiredError(currentPlayerID, currentPlayer.BeansPlantedTurn)
 		}
 		currentPlayer.BeansPlantedTurn = 0
+		s.Phase.NextPhase()
+		if err := s.TurnOverBean(playerId); err != nil {
+			return err
+		}
+		return nil
 	case PhaseTypeTurnTrade:
 		// RULE: turnTrade phase — center cards will be planted during plantTrade
 		s.CardsTurned = false
