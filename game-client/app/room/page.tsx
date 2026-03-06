@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
-const API_BASE = "";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8080";
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost/ws";
 
 type SessionState = "waiting" | "playing" | "pause";
@@ -21,11 +21,13 @@ const SESSION_STATE_BADGE: Record<
 > = {
   waiting: {
     label: "Waiting",
-    className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+    className:
+      "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   },
   playing: {
     label: "In Progress",
-    className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+    className:
+      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
   },
   pause: {
     label: "Paused",
@@ -35,12 +37,29 @@ const SESSION_STATE_BADGE: Record<
 
 export default function Page() {
   const router = useRouter();
-  const [playerId] = useState(() => Math.random().toString(36).substring(7));
+  const [playerId, setPlayerId] = useState<string>("");
+  const [playerName, setPlayerName] = useState<string>("");
+  const [profile, setProfile] = useState<{ name: string; playerId: string; color: string } | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("playerProfile");
+      const p = raw ? JSON.parse(raw) : null;
+      const id = p?.playerId ?? Math.random().toString(36).substring(7);
+      const name = p?.name ?? `Player_${id}`;
+      setProfile(p);
+      setPlayerId(id);
+      setPlayerName(name);
+    } catch {
+      const id = Math.random().toString(36).substring(7);
+      setPlayerId(id);
+      setPlayerName(`Player_${id}`);
+    }
+  }, []);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-
-  const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
+  const { sendJsonMessage, readyState } = useWebSocket(
     WS_URL,
     {
       share: false,
@@ -63,7 +82,9 @@ export default function Page() {
         }
       } catch (err) {
         if (!cancelled) {
-          setFetchError(err instanceof Error ? err.message : "Failed to load rooms");
+          setFetchError(
+            err instanceof Error ? err.message : "Failed to load rooms",
+          );
         }
       } finally {
         if (!cancelled) setLoadingRooms(false);
@@ -89,7 +110,7 @@ export default function Page() {
       room_id: roomId,
       player_id: playerId,
       payload: {
-        player_name: `Player_${playerId}`,
+        player_name: playerName,
       },
       timestamp: new Date().toISOString(),
     });
@@ -103,7 +124,13 @@ export default function Page() {
         {/* Header */}
         <div className="flex items-center justify-between w-full mb-8">
           <h1 className="text-2xl font-bold">Rooms</h1>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            {profile && (
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Playing as <span className="font-semibold text-gray-800 dark:text-gray-200">{profile.name}</span>
+              </span>
+            )}
+            <div className="flex items-center gap-2">
             <div
               className={`w-3 h-3 rounded-full ${
                 readyState === ReadyState.OPEN
@@ -120,6 +147,7 @@ export default function Page() {
                   ? "Connecting..."
                   : "Disconnected"}
             </span>
+            </div>
           </div>
         </div>
 
@@ -131,18 +159,20 @@ export default function Page() {
             <p className="text-sm text-gray-500">Loading rooms...</p>
           )}
 
-          {fetchError && (
-            <p className="text-sm text-red-500">{fetchError}</p>
-          )}
+          {fetchError && <p className="text-sm text-red-500">{fetchError}</p>}
 
           {!loadingRooms && !fetchError && rooms.length === 0 && (
-            <p className="text-sm text-gray-500">No rooms available. Be the first to join one!</p>
+            <p className="text-sm text-gray-500">
+              No rooms available. Be the first to join one!
+            </p>
           )}
 
           {rooms.length > 0 && (
             <div className="grid gap-4">
               {rooms.map((room) => {
-                const badge = SESSION_STATE_BADGE[room.session_state] ?? SESSION_STATE_BADGE.waiting;
+                const badge =
+                  SESSION_STATE_BADGE[room.session_state] ??
+                  SESSION_STATE_BADGE.waiting;
                 const isFull = room.player_count >= room.max_players;
                 const isJoinable =
                   room.session_state === "waiting" &&
@@ -181,21 +211,6 @@ export default function Page() {
           )}
         </div>
 
-        {/* Debug panel */}
-        <div className="mt-8 w-full">
-          <h2 className="text-xl font-semibold mb-4">Server Messages</h2>
-          <div className="max-h-64 overflow-y-auto border border-gray-300 rounded p-4">
-            {lastJsonMessage ? (
-              <div className="mb-2 p-2 rounded shadow bg-gray-100 dark:bg-gray-800">
-                <pre className="text-xs whitespace-pre-wrap">
-                  {JSON.stringify(lastJsonMessage, null, 2)}
-                </pre>
-              </div>
-            ) : (
-              <p className="text-gray-500">No messages received yet</p>
-            )}
-          </div>
-        </div>
       </main>
     </div>
   );

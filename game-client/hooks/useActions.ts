@@ -1,21 +1,134 @@
 import { useCallback } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { OfferCard } from "@/schemas/types";
+import {
+  JoinedResponsePayload,
+  PlayerJoinedBroadcastData,
+  PlayerLeftBroadcastData,
+  PlayerReadyBroadcastData,
+} from "@/schemas/messages";
 
+// ---------------------------------------------------------------------------
+// Message types
+// ---------------------------------------------------------------------------
+
+/**
+ * All WebSocket message type strings used in the protocol.
+ *
+ * Client → Server:
+ *   join              — join a room
+ *   leave             — leave a room
+ *   ready             — set ready state in the waiting lobby
+ *   action            — game action (plantBean, tradeBean, …)
+ *   myState           — request the server to push a fresh personalised state
+ *   reconnect         — re-bind to a session using a stored token
+ *
+ * Server → Client:
+ *   joined            — server acknowledges join; contains session_token
+ *   myState           — personalised game state snapshot
+ *   waitingLobbyState — waiting lobby snapshot
+ *   broadcast         — room-wide event (player_joined, game_started, …)
+ *   error             — error response
+ */
 export type MessageType =
   | "join"
   | "leave"
   | "ready"
   | "action"
-  | "error"
-  | "state"
   | "myState"
+  | "reconnect"
+  | "joined"
   | "waitingLobbyState"
-  | "broadcast";
+  | "broadcast"
+  | "error";
+
+// ---------------------------------------------------------------------------
+// Broadcast event types
+// ---------------------------------------------------------------------------
+
+/** Discriminated union of all broadcast event payloads. */
+export type BroadcastEvent =
+  | { event: "player_joined"; data: PlayerJoinedBroadcastData }
+  | { event: "player_left"; data: PlayerLeftBroadcastData }
+  | { event: "player_ready"; data: PlayerReadyBroadcastData }
+  | { event: "game_started"; data: Record<string, never> }
+  | { event: "state_updated"; data: Record<string, never> };
+
+/** Convenience alias matching the old shape — use BroadcastEvent where possible. */
+export type BroadcastPayload = BroadcastEvent;
+
+// ---------------------------------------------------------------------------
+// Action payload types (Client → Server inside a "action" message)
+// ---------------------------------------------------------------------------
+
+export type PlantBeanActionPayload = {
+  type: "plantBean";
+  playerId: string;
+  cardId: string;
+  slotId: string;
+};
+
+export type TradeBeanActionPayload = {
+  type: "tradeBean";
+  fromPlayerId: string;
+  toPlayerId: string;
+  /** Card IDs that fromPlayer gives to toPlayer. */
+  cardsGiven: string[];
+  /** Card IDs that fromPlayer receives from toPlayer. */
+  cardsReceived: string[];
+};
+
+export type HarvestFieldActionPayload = {
+  type: "harvestField";
+  playerId: string;
+  slotId: string;
+};
+
+export type TurnOverBeanActionPayload = {
+  type: "turnOverBean";
+};
+
+export type DrawCardsActionPayload = {
+  type: "drawCards";
+};
+
+export type CreateOfferActionPayload = {
+  type: "createOffer";
+  cards_offered: OfferCard[];
+  cards_requested: OfferCard[];
+  target_player_id?: string;
+};
+
+export type CounterOfferActionPayload = {
+  type: "counterOffer";
+  parent_offer_id: string;
+  cards_offered: OfferCard[];
+  cards_requested: OfferCard[];
+};
+
+export type RespondOfferActionPayload = {
+  type: "respondOffer";
+  offer_id: string;
+  action: "accept" | "reject" | "cancel";
+};
+
+export type ActionPayload =
+  | PlantBeanActionPayload
+  | TradeBeanActionPayload
+  | HarvestFieldActionPayload
+  | TurnOverBeanActionPayload
+  | DrawCardsActionPayload
+  | CreateOfferActionPayload
+  | CounterOfferActionPayload
+  | RespondOfferActionPayload;
+
+// ---------------------------------------------------------------------------
+// Envelope types (Client → Server)
+// ---------------------------------------------------------------------------
 
 export interface WebSocketMessage {
   type: MessageType;
-  room_id?: string;
+  room_id: string;
   player_id: string;
   payload: Record<string, unknown>;
   timestamp: string;
@@ -30,15 +143,22 @@ export interface LeavePayload extends Record<string, unknown> {
   reason?: string;
 }
 
-export interface BroadcastPayload {
-  event: "player_joined" | "player_left" | "player_ready" | "game_started";
-  data: Record<string, unknown>;
+export interface ReconnectPayload extends Record<string, unknown> {
+  session_token: string;
+  player_name?: string;
 }
 
 export interface ErrorPayload {
   code: string;
   message: string;
 }
+
+// Re-export for consumers that import JoinedResponsePayload from here
+export type { JoinedResponsePayload };
+
+// ---------------------------------------------------------------------------
+// Hook options / return types
+// ---------------------------------------------------------------------------
 
 export interface UseActionsOptions {
   wsUrl: string;
@@ -57,23 +177,32 @@ export interface UseActionsReturn {
 
   lastMessage: WebSocketMessage | null;
 
+  // Lifecycle
   sendJoin: (roomId: string, payload: JoinPayload) => boolean;
   sendLeave: (roomId: string, payload?: LeavePayload) => boolean;
+  sendReconnect: (roomId: string, payload: ReconnectPayload) => boolean;
   sendCustomMessage: (message: Partial<WebSocketMessage>) => boolean;
 
+  // Game actions
   plantBean: (
     roomId: string,
     playerId: string,
     cardId: string,
-    fieldId: string,
+    slotId: string,
   ) => boolean;
+  /**
+   * Trade beans between two players.
+   * @param cardsGiven    IDs of cards fromPlayer gives to toPlayer.
+   * @param cardsReceived IDs of cards fromPlayer receives from toPlayer.
+   */
   tradeBean: (
     roomId: string,
     fromPlayerId: string,
     toPlayerId: string,
-    cardId: string,
+    cardsGiven: string[],
+    cardsReceived: string[],
   ) => boolean;
-  harvestField: (roomId: string, playerId: string, fieldId: string) => boolean;
+  harvestField: (roomId: string, playerId: string, slotId: string) => boolean;
   turnOverBean: (roomId: string) => boolean;
   drawCards: (roomId: string) => boolean;
   setReady: (roomId: string, ready: boolean) => boolean;
@@ -97,8 +226,12 @@ export interface UseActionsReturn {
   ) => boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Hook implementation
+// ---------------------------------------------------------------------------
+
 /**
- * Custom hook to manage WebSocket actions for the card game
+ * Custom hook to manage WebSocket actions for the card game.
  */
 export function useActions({
   wsUrl,
@@ -114,13 +247,11 @@ export function useActions({
       try {
         const message = JSON.parse(event.data) as WebSocketMessage;
 
-        // Handle error messages
         if (message.type === "error" && onError) {
           const errorPayload = message.payload as unknown as ErrorPayload;
           onError(errorPayload);
         }
 
-        // Call custom message handler
         if (onMessage) {
           onMessage(message);
         }
@@ -141,7 +272,7 @@ export function useActions({
   const createMessage = useCallback(
     (
       type: MessageType,
-      roomId: string | undefined,
+      roomId: string,
       payload: Record<string, unknown>,
     ): WebSocketMessage => ({
       type,
@@ -153,12 +284,14 @@ export function useActions({
     [playerId],
   );
 
+  // -------------------------------------------------------------------------
+  // Lifecycle actions
+  // -------------------------------------------------------------------------
+
   const sendJoin = useCallback(
     (roomId: string, payload: JoinPayload): boolean => {
       if (!isConnectionReady()) return false;
-
-      const message = createMessage("join", roomId, payload);
-      sendJsonMessage(message);
+      sendJsonMessage(createMessage("join", roomId, payload));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -167,9 +300,18 @@ export function useActions({
   const sendLeave = useCallback(
     (roomId: string, payload: LeavePayload = {}): boolean => {
       if (!isConnectionReady()) return false;
+      sendJsonMessage(createMessage("leave", roomId, payload));
+      return true;
+    },
+    [isConnectionReady, createMessage, sendJsonMessage],
+  );
 
-      const message = createMessage("leave", roomId, payload);
-      sendJsonMessage(message);
+  const sendReconnect = useCallback(
+    (roomId: string, payload: ReconnectPayload): boolean => {
+      if (!isConnectionReady()) return false;
+      sendJsonMessage(
+        createMessage("reconnect", roomId, payload as Record<string, unknown>),
+      );
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -179,7 +321,6 @@ export function useActions({
     (message: Partial<WebSocketMessage>): boolean => {
       if (!isConnectionReady()) return false;
 
-      // Ensure type is defined
       if (!message.type) {
         console.error("Message type is required");
         return false;
@@ -187,7 +328,7 @@ export function useActions({
 
       const fullMessage: WebSocketMessage = {
         type: message.type,
-        room_id: message.room_id,
+        room_id: message.room_id ?? "",
         player_id: message.player_id || playerId,
         payload: message.payload || {},
         timestamp: message.timestamp || new Date().toISOString(),
@@ -199,6 +340,10 @@ export function useActions({
     [isConnectionReady, playerId, sendJsonMessage],
   );
 
+  // -------------------------------------------------------------------------
+  // Game actions
+  // -------------------------------------------------------------------------
+
   const plantBean = useCallback(
     (
       roomId: string,
@@ -207,10 +352,13 @@ export function useActions({
       slotId: string,
     ): boolean => {
       if (!isConnectionReady()) return false;
-
-      const payload = { type: "plantBean", playerId, cardId, slotId };
-      const message = createMessage("action", roomId, payload);
-      sendJsonMessage(message);
+      const payload: PlantBeanActionPayload = {
+        type: "plantBean",
+        playerId,
+        cardId,
+        slotId,
+      };
+      sendJsonMessage(createMessage("action", roomId, payload));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -221,13 +369,18 @@ export function useActions({
       roomId: string,
       fromPlayerId: string,
       toPlayerId: string,
-      cardId: string,
+      cardsGiven: string[],
+      cardsReceived: string[],
     ): boolean => {
       if (!isConnectionReady()) return false;
-
-      const payload = { type: "tradeBean", fromPlayerId, toPlayerId, cardId };
-      const message = createMessage("action", roomId, payload);
-      sendJsonMessage(message);
+      const payload: TradeBeanActionPayload = {
+        type: "tradeBean",
+        fromPlayerId,
+        toPlayerId,
+        cardsGiven,
+        cardsReceived,
+      };
+      sendJsonMessage(createMessage("action", roomId, payload));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -236,10 +389,12 @@ export function useActions({
   const harvestField = useCallback(
     (roomId: string, playerId: string, slotId: string): boolean => {
       if (!isConnectionReady()) return false;
-
-      const payload = { type: "harvestField", playerId, slotId };
-      const message = createMessage("action", roomId, payload);
-      sendJsonMessage(message);
+      const payload: HarvestFieldActionPayload = {
+        type: "harvestField",
+        playerId,
+        slotId,
+      };
+      sendJsonMessage(createMessage("action", roomId, payload));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -248,10 +403,8 @@ export function useActions({
   const turnOverBean = useCallback(
     (roomId: string): boolean => {
       if (!isConnectionReady()) return false;
-
-      const payload = { type: "turnOverBean" };
-      const message = createMessage("action", roomId, payload);
-      sendJsonMessage(message);
+      const payload: TurnOverBeanActionPayload = { type: "turnOverBean" };
+      sendJsonMessage(createMessage("action", roomId, payload));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -260,10 +413,8 @@ export function useActions({
   const drawCards = useCallback(
     (roomId: string): boolean => {
       if (!isConnectionReady()) return false;
-
-      const payload = { type: "drawCards" };
-      const message = createMessage("action", roomId, payload);
-      sendJsonMessage(message);
+      const payload: DrawCardsActionPayload = { type: "drawCards" };
+      sendJsonMessage(createMessage("action", roomId, payload));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -272,10 +423,8 @@ export function useActions({
   const myState = useCallback(
     (roomId: string): boolean => {
       if (!isConnectionReady()) return false;
-
       const payload = { type: "myState" };
-      const message = createMessage("myState", roomId, payload);
-      sendJsonMessage(message);
+      sendJsonMessage(createMessage("myState", roomId, payload));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -284,10 +433,7 @@ export function useActions({
   const setReady = useCallback(
     (roomId: string, ready: boolean): boolean => {
       if (!isConnectionReady()) return false;
-
-      const payload = { ready };
-      const message = createMessage("ready", roomId, payload);
-      sendJsonMessage(message);
+      sendJsonMessage(createMessage("ready", roomId, { ready }));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -301,17 +447,13 @@ export function useActions({
       targetPlayerId?: string,
     ): boolean => {
       if (!isConnectionReady()) return false;
-
-      const payload: Record<string, unknown> = {
+      const payload: CreateOfferActionPayload = {
         type: "createOffer",
         cards_offered: cardsOffered,
         cards_requested: cardsRequested,
+        ...(targetPlayerId ? { target_player_id: targetPlayerId } : {}),
       };
-      if (targetPlayerId) {
-        payload.target_player_id = targetPlayerId;
-      }
-      const message = createMessage("action", roomId, payload);
-      sendJsonMessage(message);
+      sendJsonMessage(createMessage("action", roomId, payload));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -325,15 +467,13 @@ export function useActions({
       cardsRequested: OfferCard[],
     ): boolean => {
       if (!isConnectionReady()) return false;
-
-      const payload = {
+      const payload: CounterOfferActionPayload = {
         type: "counterOffer",
         parent_offer_id: parentOfferId,
         cards_offered: cardsOffered,
         cards_requested: cardsRequested,
       };
-      const message = createMessage("action", roomId, payload);
-      sendJsonMessage(message);
+      sendJsonMessage(createMessage("action", roomId, payload));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -346,14 +486,12 @@ export function useActions({
       action: "accept" | "reject" | "cancel",
     ): boolean => {
       if (!isConnectionReady()) return false;
-
-      const payload = {
+      const payload: RespondOfferActionPayload = {
         type: "respondOffer",
         offer_id: offerId,
         action,
       };
-      const message = createMessage("action", roomId, payload);
-      sendJsonMessage(message);
+      sendJsonMessage(createMessage("action", roomId, payload));
       return true;
     },
     [isConnectionReady, createMessage, sendJsonMessage],
@@ -370,6 +508,7 @@ export function useActions({
 
     sendJoin,
     sendLeave,
+    sendReconnect,
     sendCustomMessage,
 
     plantBean,
@@ -378,7 +517,6 @@ export function useActions({
     turnOverBean,
     drawCards,
     setReady,
-
     myState,
 
     createOffer,

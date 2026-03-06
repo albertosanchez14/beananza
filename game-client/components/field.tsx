@@ -11,7 +11,6 @@ export default function Field({
   onSlotClick,
   highlightEmpty = false,
 }: FieldProp) {
-  const maxSlots = 2;
   // Slots are always provided by the server, even when empty
   const slots = field.slots || [];
 

@@ -7,10 +7,12 @@ export type Slot = {
   slotId: string;
   cardName: string;
   cardQuantity: number;
+  cardIds: string[];
 };
 
 export type FieldType = {
-  fieldId: string;
+  // Matches the server's JSON key "fieldID" (uppercase D)
+  fieldID: string;
   slots: Array<Slot>;
 };
 

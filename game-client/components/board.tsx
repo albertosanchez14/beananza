@@ -13,7 +13,6 @@ type BoardProp = {
   currentTurnPlayerId?: string;
   gamePhase?: string;
   onPlantBean: (cardId: string, slotId: string) => void;
-  onTradeBean: (cardId: string, toPlayerId: string) => void;
   onHarvestField: (slotId: string) => void;
   onTurnOverBean: () => void;
   onDrawCards: () => void;
@@ -28,7 +27,6 @@ export default function Board({
   currentTurnPlayerId,
   gamePhase,
   onPlantBean,
-  onTradeBean,
   onHarvestField,
   onTurnOverBean,
   onDrawCards,
@@ -93,13 +91,6 @@ export default function Board({
     }
   };
 
-  const handlePlayerClick = (playerId: string) => {
-    if (selectedCard) {
-      onTradeBean(selectedCard.cardId, playerId);
-      setSelectedCard(null);
-    }
-  };
-
   const handleCenterDeckClick = () => {
     if (gamePhase === "plantHand") {
       onTurnOverBean();
@@ -132,7 +123,6 @@ export default function Board({
             <div key={player.playerId} className="absolute" style={position}>
               <Player
                 player={player}
-                onClick={handlePlayerClick}
                 isClickable={!!selectedCard}
                 isCurrentTurn={player.playerId === currentTurnPlayerId}
                 gamePhase={gamePhase}
