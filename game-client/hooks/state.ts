@@ -28,6 +28,9 @@ export type GameState = {
   playerTurn: string;
   deckSize: number;
   discardPileSize: number;
+  discardTopCard: CardType | null;
+  /** Number of cards flipped face-up per turn. Undefined until the first myState arrives. */
+  cardsPerTurn: number | undefined;
 };
 
 export type WaitingLobbyState = {
@@ -53,6 +56,8 @@ const DEFAULT_GAME_STATE: GameState = {
   playerTurn: "",
   deckSize: 0,
   discardPileSize: 0,
+  discardTopCard: null,
+  cardsPerTurn: undefined,
 };
 
 const DEFAULT_LOBBY_STATE: WaitingLobbyState = {
@@ -98,6 +103,8 @@ export function useGameState(lastMessage: WebSocketMessage | null): GameState {
           : state.playerTurn,
       deckSize: payload.deck_size ?? state.deckSize,
       discardPileSize: payload.discard_pile_size ?? state.discardPileSize,
+      discardTopCard: payload.discard_top_card ?? state.discardTopCard,
+      cardsPerTurn: payload.cards_per_turn ?? state.cardsPerTurn,
     };
 
     setState(next);

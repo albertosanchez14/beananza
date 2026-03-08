@@ -19,6 +19,10 @@ services:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8080
       - LOG_LEVEL=info
+      - CARDS_PER_TURN=2
+      - MAX_NUMBER_PLAYERS=5
+      - MIN_NUMBER_PLAYERS=3
+      - CARDS_CONFIG_PATH=/app/cards.yaml
     depends_on:
       redis:
         condition: service_healthy
@@ -35,6 +39,10 @@ services:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8080
       - LOG_LEVEL=info
+      - CARDS_PER_TURN=2
+      - MAX_NUMBER_PLAYERS=5
+      - MIN_NUMBER_PLAYERS=3
+      - CARDS_CONFIG_PATH=/app/cards.yaml
     depends_on:
       redis:
         condition: service_healthy

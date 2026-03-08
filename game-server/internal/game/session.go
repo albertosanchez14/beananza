@@ -78,11 +78,13 @@ func (s *Session) GetFullSnapshot() map[string]any {
 		snapshot["deck_size"] = 0
 	}
 
-	// Include discard pile size
+	// Include discard pile size and top card (front image shown on discard pile)
 	if s.gameState.DiscardPile != nil {
 		snapshot["discard_pile_size"] = s.gameState.DiscardPile.Size()
+		snapshot["discard_top_card"] = s.gameState.DiscardPile.PeekLast()
 	} else {
 		snapshot["discard_pile_size"] = 0
+		snapshot["discard_top_card"] = nil
 	}
 
 	return snapshot
@@ -99,16 +101,17 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 	}
 
 	snapshot := map[string]any{
-		"room_id":      s.gameState.RoomID,
-		"phase":        s.gameState.Phase,
-		"player":       playerData,
-		"turn_order":   s.gameState.TurnOrder,
-		"current_turn": s.gameState.CurrentTurn,
-		"center_cards": s.gameState.CenterCards,
-		"offers":       s.gameState.Offers,
-		"started_at":   s.gameState.StartedAt,
-		"ended_at":     s.gameState.EndedAt,
-		"updated_at":   s.gameState.UpdatedAt,
+		"room_id":        s.gameState.RoomID,
+		"phase":          s.gameState.Phase,
+		"player":         playerData,
+		"turn_order":     s.gameState.TurnOrder,
+		"current_turn":   s.gameState.CurrentTurn,
+		"center_cards":   s.gameState.CenterCards,
+		"offers":         s.gameState.Offers,
+		"started_at":     s.gameState.StartedAt,
+		"ended_at":       s.gameState.EndedAt,
+		"updated_at":     s.gameState.UpdatedAt,
+		"cards_per_turn": s.gameState.CardsPerTurn,
 	}
 
 	// Include deck size but not the actual deck contents
@@ -118,11 +121,13 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 		snapshot["deck_size"] = 0
 	}
 
-	// Include discard pile size
+	// Include discard pile size and top card (front image shown on discard pile)
 	if s.gameState.DiscardPile != nil {
 		snapshot["discard_pile_size"] = s.gameState.DiscardPile.Size()
+		snapshot["discard_top_card"] = s.gameState.DiscardPile.PeekLast()
 	} else {
 		snapshot["discard_pile_size"] = 0
+		snapshot["discard_top_card"] = nil
 	}
 
 	// Public data includes all player info except the actual hand cards (only hand size).
@@ -273,7 +278,9 @@ func (s *Session) HandleStartGame() (bool, error) {
 
 // startGame transitions the game to playing phase
 func (s *Session) startGame() {
-	s.gameState.DrawPile = NewDeck()
+	s.gameState.Cards = s.config.Game.Cards
+	s.gameState.CardsPerTurn = s.config.Game.CardsPerTurn
+	s.gameState.DrawPile = NewDeck(s.config.Game.Cards)
 	s.gameState.DrawPile.Shuffle()
 	s.gameState.DiscardPile = &Deck{Cards: make([]*Card, 0)}
 

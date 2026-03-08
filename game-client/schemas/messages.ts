@@ -28,6 +28,7 @@ export type GameStateResponsePayload = {
   current_turn: number;
   deck_size: number;
   discard_pile_size: number;
+  discard_top_card: CardType | null;
   ended_at: string;
   external_players: Array<ExternalPlayer>;
   offers: Array<Offer>;
@@ -37,6 +38,7 @@ export type GameStateResponsePayload = {
   started_at: string;
   turn_order: Array<string>;
   updated_at: string;
+  cards_per_turn?: number;
 };
 
 /** Sent by the server after a successful join, carrying the session token. */

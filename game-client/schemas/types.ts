@@ -1,6 +1,9 @@
 export type CardType = {
   cardId: string;
   cardName: string;
+  frontImage?: string;
+  backImage?: string;
+  money_exchange?: Record<string, number>;
 };
 
 export type Slot = {

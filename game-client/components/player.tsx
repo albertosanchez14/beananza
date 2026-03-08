@@ -1,4 +1,4 @@
-import { ExternalPlayer } from "@/schemas/types";
+import { CardType, ExternalPlayer } from "@/schemas/types";
 import Field from "@/components/field";
 
 type PlayerProps = {
@@ -7,6 +7,7 @@ type PlayerProps = {
   isClickable?: boolean;
   isCurrentTurn?: boolean;
   gamePhase?: string;
+  cardLookup?: Map<string, CardType>;
 };
 
 export default function Player({
@@ -15,6 +16,7 @@ export default function Player({
   isClickable = false,
   isCurrentTurn = false,
   gamePhase,
+  cardLookup,
 }: PlayerProps) {
   const handleClick = () => {
     if (isClickable && onClick) {
@@ -66,7 +68,7 @@ export default function Player({
 
       {/* Player Field - Compact version */}
       <div className="scale-75 origin-top">
-        <Field field={player.playerField} highlightEmpty={false} />
+        <Field field={player.playerField} highlightEmpty={false} cardLookup={cardLookup} />
       </div>
     </div>
   );

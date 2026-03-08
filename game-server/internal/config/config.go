@@ -9,40 +9,8 @@ import (
 	"sync"
 
 	"github.com/joho/godotenv"
+	"gopkg.in/yaml.v3"
 )
-
-var cardsConfigFile []byte
-
-// CardTypeConfig holds the configuration for a single card type.
-type CardTypeConfig struct {
-	Name          string      `yaml:"name"`
-	Count         int         `yaml:"count"`
-	ExchangeRates map[int]int `yaml:"exchange_rates"`
-}
-
-// CardsConfig is the top-level structure of cards.yaml.
-type CardsConfig struct {
-	CardTypes []CardTypeConfig `yaml:"card_types"`
-}
-
-var (
-	cardsOnce sync.Once
-	cards     CardsConfig
-)
-
-// LoadCards returns the parsed cards.yaml configuration.
-// The file is parsed exactly once; the function panics if the YAML is invalid.
-func LoadCards() CardsConfig {
-	cardsOnce.Do(func() {
-		if err := yaml.Unmarshal(cardsConfigFile, &cards); err != nil {
-			panic(fmt.Sprintf("failed to parse cards.yaml: %v", err))
-		}
-		if len(cards.CardTypes) == 0 {
-			panic("cards.yaml contains no card_types")
-		}
-	})
-	return cards
-}
 
 type Config struct {
 	Server ServerConfig
@@ -90,12 +58,33 @@ type WebSocketConfig struct {
 type GameConfig struct {
 	MaxNumberPlayers int
 	MinNumberPlayers int
+	// CardsPerTurn is the number of cards flipped face-up from the draw pile
+	// during the "turn over beans" phase. Configurable via CARDS_PER_TURN (default 2).
+	CardsPerTurn int
+	Cards        CardsConfig
 }
 
-// Load reads configuration from environment variables
+type CardsConfig struct {
+	CardTypes []CardTypeConfig `yaml:"card_types"`
+}
+
+type CardTypeConfig struct {
+	Name          string      `yaml:"name"`
+	Count         int         `yaml:"count"`
+	FrontImage    string      `yaml:"front_image"`
+	BackImage     string      `yaml:"back_image"`
+	ExchangeRates map[int]int `yaml:"exchange_rates"`
+}
+
 func Load() *Config {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using system environment variables")
+	}
+
+	cardsPath := getEnv("CARDS_CONFIG_PATH", "cards.yaml")
+	cards, err := LoadCards(cardsPath)
+	if err != nil {
+		log.Fatalf("failed to load cards config: %v", err)
 	}
 
 	return &Config{
@@ -122,11 +111,42 @@ func Load() *Config {
 		Game: GameConfig{
 			MaxNumberPlayers: getEnvAsInt("MAX_NUMBER_PLAYERS", 5),
 			MinNumberPlayers: getEnvAsInt("MIN_NUMBER_PLAYERS", 3),
+			CardsPerTurn:     getEnvAsInt("CARDS_PER_TURN", 2),
+			Cards:            cards,
 		},
 	}
 }
 
-// getEnv gets an environment variable or returns a default value
+var (
+	cardsOnce sync.Once
+	cards     CardsConfig
+)
+
+// LoadCards reads and parses the cards.yaml file at the given path.
+// Returns an error if the file cannot be read, the YAML is invalid, or no
+// card types are defined.
+func LoadCards(path string) (CardsConfig, error) {
+	var loadErr error
+	cardsOnce.Do(func() {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			loadErr = fmt.Errorf("failed to read cards config %q: %w", path, err)
+			return
+		}
+		if err := yaml.Unmarshal(data, &cards); err != nil {
+			loadErr = fmt.Errorf("failed to parse cards config %q: %w", path, err)
+			return
+		}
+		if len(cards.CardTypes) == 0 {
+			loadErr = fmt.Errorf("cards config %q contains no card_types", path)
+		}
+	})
+	if loadErr != nil {
+		return CardsConfig{}, loadErr
+	}
+	return cards, nil
+}
+
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -134,7 +154,6 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// getEnvAsInt gets an environment variable as int or returns a default value
 func getEnvAsInt(key string, defaultValue int) int {
 	valueStr := os.Getenv(key)
 	if value, err := strconv.Atoi(valueStr); err == nil {
@@ -143,9 +162,6 @@ func getEnvAsInt(key string, defaultValue int) int {
 	return defaultValue
 }
 
-// getEnvAsStringSlice splits a comma-separated environment variable into a
-// slice of trimmed strings.  Returns nil (empty slice) when the variable is
-// unset or empty.
 func getEnvAsStringSlice(key string) []string {
 	raw := os.Getenv(key)
 	if raw == "" {

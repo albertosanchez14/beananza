@@ -165,8 +165,10 @@ export default function GameRoom({
           centerCards={gameState.centerCards}
           deckSize={gameState.deckSize}
           discardPileSize={gameState.discardPileSize}
+          discardTopCard={gameState.discardTopCard}
           currentTurnPlayerId={gameState.playerTurn}
           gamePhase={gameState.phase}
+          cardsPerTurn={gameState.cardsPerTurn}
           onPlantBean={handlePlantBean}
           onHarvestField={handleHarvestField}
           onTurnOverBean={handleTurnOverBean}

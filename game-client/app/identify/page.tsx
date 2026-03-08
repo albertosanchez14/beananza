@@ -35,7 +35,7 @@ export default function IdentifyPage() {
   const isValid = name.trim().length > 0 && playerId.trim().length > 0;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-zinc-900 via-zinc-800 to-zinc-900 px-4">
       <div className="w-full max-w-sm rounded-2xl bg-zinc-800 border border-zinc-700 shadow-2xl p-8 flex flex-col gap-7">
         {/* Header */}
         <div className="flex flex-col gap-1">

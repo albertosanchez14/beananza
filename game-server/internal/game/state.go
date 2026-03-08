@@ -3,6 +3,8 @@ package game
 import (
 	"slices"
 	"time"
+
+	"github.com/yourusername/game-server/internal/config"
 )
 
 type Player struct {
@@ -30,10 +32,12 @@ type State struct {
 	CardsTurned  bool
 	CardsDrawned bool
 	// ==============
-	Offers    []*Offer `json:"offers"`
-	StartedAt time.Time
-	EndedAt   time.Time
-	UpdatedAt time.Time
+	Offers       []*Offer `json:"offers"`
+	StartedAt    time.Time
+	EndedAt      time.Time
+	UpdatedAt    time.Time
+	Cards        config.CardsConfig
+	CardsPerTurn int
 	// dirty is set to true by every mutation method and cleared by persistState
 	// after a successful Redis write.  It prevents redundant serialisation when
 	// multiple read-only operations happen between two real mutations.
@@ -362,8 +366,8 @@ func (s *State) TurnOverBean(playerId string) error {
 		return NewInvalidActionError("cards already drawn")
 	}
 
-	// RULE: Can only draw 2 cards from deck and add to center
-	cards := s.DrawPile.Draw(2)
+	// RULE: Draw CardsPerTurn cards from deck and add to center
+	cards := s.DrawPile.Draw(s.CardsPerTurn)
 	s.CenterCards = cards
 	s.CardsTurned = true
 
@@ -393,7 +397,7 @@ func (s *State) HarvestField(playerId string, slotId string) error {
 	// Calculate coins earned based on the number of cards
 	coinsEarned := 0
 	if slot.CardType != "" && slot.CardNumber > 0 {
-		exchangeRates := GetExchangeRates(slot.CardType)
+		exchangeRates := GetExchangeRates(slot.CardType, s.Cards)
 		for numCards, coins := range exchangeRates {
 			if slot.CardNumber >= numCards && coins > coinsEarned {
 				coinsEarned = coins
@@ -409,7 +413,7 @@ func (s *State) HarvestField(playerId string, slotId string) error {
 			s.DiscardPile = &Deck{Cards: make([]*Card, 0)}
 		}
 
-		discardedCards := CreateCards(slot.CardType, cardsToDiscard, slot.CardIds)
+		discardedCards := CreateCards(slot.CardType, cardsToDiscard, slot.CardIds, s.Cards)
 		s.DiscardPile.AddCards(discardedCards)
 	}
 

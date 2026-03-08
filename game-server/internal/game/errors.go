@@ -158,7 +158,7 @@ func NewNotDrawnedCardsError() *GameError {
 	// NewNotDrawnedCardsError creates an error when center cards must be cleared
 	return &GameError{
 		Code:    ErrCodeCannotChangeTurn,
-		Message: "Need to draw 2 cards from the middle before changing turn",
+		Message: "Need to draw all cards from the middle before changing turn",
 	}
 }
 
