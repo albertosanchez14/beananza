@@ -26,6 +26,8 @@ export type GameState = {
   players: ExternalPlayer[];
   offers: Offer[];
   playerTurn: string;
+  deckSize: number;
+  discardPileSize: number;
 };
 
 export type WaitingLobbyState = {
@@ -49,6 +51,8 @@ const DEFAULT_GAME_STATE: GameState = {
   players: [],
   offers: [],
   playerTurn: "",
+  deckSize: 0,
+  discardPileSize: 0,
 };
 
 const DEFAULT_LOBBY_STATE: WaitingLobbyState = {
@@ -92,6 +96,8 @@ export function useGameState(lastMessage: WebSocketMessage | null): GameState {
         payload.turn_order && payload.turn_order.length > 0
           ? (payload.turn_order[payload.current_turn ?? 0] ?? state.playerTurn)
           : state.playerTurn,
+      deckSize: payload.deck_size ?? state.deckSize,
+      discardPileSize: payload.discard_pile_size ?? state.discardPileSize,
     };
 
     setState(next);

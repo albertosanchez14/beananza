@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8080";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost";
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost/ws";
 
 type SessionState = "waiting" | "playing" | "pause";
@@ -45,17 +45,17 @@ export default function Page() {
     try {
       const raw = localStorage.getItem("playerProfile");
       const p = raw ? JSON.parse(raw) : null;
-      const id = p?.playerId ?? Math.random().toString(36).substring(7);
-      const name = p?.name ?? `Player_${id}`;
+      if (!p?.playerId || !p?.name) {
+        router.replace("/identify");
+        return;
+      }
       setProfile(p);
-      setPlayerId(id);
-      setPlayerName(name);
+      setPlayerId(p.playerId);
+      setPlayerName(p.name);
     } catch {
-      const id = Math.random().toString(36).substring(7);
-      setPlayerId(id);
-      setPlayerName(`Player_${id}`);
+      router.replace("/identify");
     }
-  }, []);
+  }, [router]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);

@@ -1,0 +1,64 @@
+card_types:
+  - name: "Judicultor"
+    count: 6
+    exchange_rates:
+      1: 1
+      2: 2
+      3: 3
+      4: 4
+
+  - name: "Judia Colora"
+    count: 8
+    exchange_rates:
+      1: 1
+      2: 2
+      4: 4
+      6: 3
+
+  - name: "Rocky Judia"
+    count: 10
+    exchange_rates:
+      1: 1
+      2: 2
+      4: 4
+      6: 3
+
+  - name: "Hippy Judia"
+    count: 12
+    exchange_rates:
+      1: 1
+      2: 2
+      4: 4
+      7: 3
+
+  - name: "La Pocha"
+    count: 14
+    exchange_rates:
+      1: 1
+      2: 2
+      4: 4
+      7: 3
+
+  - name: "La Apestosa"
+    count: 16
+    exchange_rates:
+      1: 1
+      2: 2
+      3: 3
+      4: 4
+
+  - name: "Judia Boom"
+    count: 18
+    exchange_rates:
+      1: 1
+      2: 2
+      3: 3
+      4: 4
+
+  - name: "Judia Bill"
+    count: 20
+    exchange_rates:
+      1: 1
+      2: 2
+      3: 3
+      4: 4

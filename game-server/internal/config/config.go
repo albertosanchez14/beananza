@@ -1,13 +1,48 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/joho/godotenv"
 )
+
+var cardsConfigFile []byte
+
+// CardTypeConfig holds the configuration for a single card type.
+type CardTypeConfig struct {
+	Name          string      `yaml:"name"`
+	Count         int         `yaml:"count"`
+	ExchangeRates map[int]int `yaml:"exchange_rates"`
+}
+
+// CardsConfig is the top-level structure of cards.yaml.
+type CardsConfig struct {
+	CardTypes []CardTypeConfig `yaml:"card_types"`
+}
+
+var (
+	cardsOnce sync.Once
+	cards     CardsConfig
+)
+
+// LoadCards returns the parsed cards.yaml configuration.
+// The file is parsed exactly once; the function panics if the YAML is invalid.
+func LoadCards() CardsConfig {
+	cardsOnce.Do(func() {
+		if err := yaml.Unmarshal(cardsConfigFile, &cards); err != nil {
+			panic(fmt.Sprintf("failed to parse cards.yaml: %v", err))
+		}
+		if len(cards.CardTypes) == 0 {
+			panic("cards.yaml contains no card_types")
+		}
+	})
+	return cards
+}
 
 type Config struct {
 	Server ServerConfig

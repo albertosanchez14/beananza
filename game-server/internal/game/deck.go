@@ -4,41 +4,40 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
+
+	gameconfig "github.com/yourusername/game-server/internal/config"
 )
+
+// loadCardConfig is a convenience alias so the rest of this file reads cleanly.
+func loadCardConfig() gameconfig.CardsConfig {
+	return gameconfig.LoadCards()
+}
 
 type Deck struct {
 	Cards []*Card
 }
 
-// NewDeck creates a standard bean game deck
+// NewDeck creates a standard bean game deck from the cards.yaml configuration.
 func NewDeck() *Deck {
-	cards := make([]*Card, 0, 104)
+	cfg := loadCardConfig()
 
-	cardDefinitions := []struct {
-		cardType  CardType
-		count     int
-		exchanges map[int]int
-	}{
-		{CardTypeJudicultor, 6, map[int]int{1: 1, 2: 2, 3: 3, 4: 4}},
-		{CardTypeColora, 8, map[int]int{1: 1, 2: 2, 6: 3, 4: 4}},
-		{CardTypeRocky, 10, map[int]int{1: 1, 2: 2, 6: 3, 4: 4}},
-		{CardTypeHippy, 12, map[int]int{1: 1, 2: 2, 7: 3, 4: 4}},
-		{CardTypePocha, 14, map[int]int{1: 1, 2: 2, 7: 3, 4: 4}},
-		{CardTypeApestosa, 16, map[int]int{1: 1, 2: 2, 3: 3, 4: 4}},
-		{CardTypeBoom, 18, map[int]int{1: 1, 2: 2, 3: 3, 4: 4}},
-		{CardTypeBill, 20, map[int]int{1: 1, 2: 2, 3: 3, 4: 4}},
+	totalCards := 0
+	for _, ct := range cfg.CardTypes {
+		totalCards += ct.Count
 	}
 
+	cards := make([]*Card, 0, totalCards)
 	cardID := 1
-	for _, def := range cardDefinitions {
-		for i := 0; i < def.count; i++ {
-			card := &Card{
+
+	for _, ct := range cfg.CardTypes {
+		cardType := CardType(ct.Name)
+		for i := 0; i < ct.Count; i++ {
+			cards = append(cards, &Card{
 				ID:            generateCardID(cardID),
-				Name:          def.cardType,
-				NumCards:      string(rune('0' + def.count)),
-				MoneyExchange: def.exchanges,
-			}
-			cards = append(cards, card)
+				Name:          cardType,
+				NumCards:      fmt.Sprintf("%d", ct.Count),
+				MoneyExchange: ct.ExchangeRates,
+			})
 			cardID++
 		}
 	}
@@ -104,27 +103,19 @@ func generateCardID(id int) string {
 }
 
 // GetExchangeRates returns the money exchange rates for a given card type.
-// These must match the definitions in NewDeck exactly.
+// The data is sourced from cards.yaml — there is no separate hardcoded table.
 func GetExchangeRates(cardType CardType) map[int]int {
-	exchangeRates := map[CardType]map[int]int{
-		CardTypeJudicultor: {1: 1, 2: 2, 3: 3, 4: 4},
-		CardTypeColora:     {1: 1, 2: 2, 6: 3, 4: 4},
-		CardTypeRocky:      {1: 1, 2: 2, 6: 3, 4: 4},
-		CardTypeHippy:      {1: 1, 2: 2, 7: 3, 4: 4},
-		CardTypePocha:      {1: 1, 2: 2, 7: 3, 4: 4},
-		CardTypeApestosa:   {1: 1, 2: 2, 3: 3, 4: 4},
-		CardTypeBoom:       {1: 1, 2: 2, 3: 3, 4: 4},
-		CardTypeBill:       {1: 1, 2: 2, 3: 3, 4: 4},
-	}
-
-	if rates, ok := exchangeRates[cardType]; ok {
-		return rates
+	cfg := loadCardConfig()
+	for _, ct := range cfg.CardTypes {
+		if CardType(ct.Name) == cardType {
+			return ct.ExchangeRates
+		}
 	}
 	return map[int]int{}
 }
 
-// CreateCards creates card instances for a given card type and count
-// Used when adding cards to discard pile from harvested fields
+// CreateCards creates card instances for a given card type and count.
+// Used when adding cards to the discard pile from harvested fields.
 func CreateCards(cardType CardType, count int, cardIds []string) []*Card {
 	if count <= 0 {
 		return []*Card{}

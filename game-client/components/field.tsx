@@ -1,67 +1,128 @@
-import { FieldType } from "@/schemas/types";
+"use client";
+
+import { useState, useRef } from "react";
+import { CardType, FieldType } from "@/schemas/types";
 
 type FieldProp = {
   field: FieldType;
   onSlotClick?: (slotId: string, slotIndex: number) => void;
+  onDrop?: (slotId: string, slotIndex: number, card: CardType) => void;
   highlightEmpty?: boolean;
+  plantedSlotId?: string | null; // set externally to trigger the animation (click-to-plant)
 };
 
 export default function Field({
   field,
   onSlotClick,
+  onDrop,
   highlightEmpty = false,
+  plantedSlotId,
 }: FieldProp) {
-  // Slots are always provided by the server, even when empty
   const slots = field.slots || [];
+  const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
+  // tracks which slot is mid-animation (from drag-drop)
+  const [animatingSlot, setAnimatingSlot] = useState<string | null>(null);
+  const animTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Helper to check if a slot has cards
   const isSlotFilled = (slot: typeof slots[0]) => {
     return slot && slot.cardName && slot.cardQuantity > 0;
   };
 
-  return (
-    <div className="flex gap-2 px-4 py-3 bg-linear-to-b from-green-600 to-green-700 border-2 border-green-800 rounded-lg shadow-lg">
-      {slots.map((slot, index) => (
-        <div
-          key={slot.slotId}
-          onClick={() => onSlotClick?.(slot.slotId, index)}
-          className={`
-            relative flex flex-col items-center justify-center
-            w-20 h-28 rounded-md border-2
-            transition-all duration-200
-            ${
-              isSlotFilled(slot)
-                ? "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 shadow-md hover:shadow-xl hover:-translate-y-1 cursor-pointer"
-                : `bg-green-700/50 border-dashed ${highlightEmpty ? "border-green-400 hover:bg-green-600/70 hover:border-green-500 cursor-pointer" : "border-green-600"}`
-            }
-          `}
-        >
-          {isSlotFilled(slot) ? (
-            <>
-              {/* Card name */}
-              <div className="text-xs font-semibold text-center px-2 text-gray-800 dark:text-gray-100 line-clamp-2">
-                {slot.cardName}
-              </div>
+  const triggerAnimation = (slotId: string) => {
+    if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+    setAnimatingSlot(slotId);
+    animTimeoutRef.current = setTimeout(() => setAnimatingSlot(null), 350);
+  };
 
-              {/* Card quantity badge */}
-              <div
-                className="absolute -top-2 -right-2 flex items-center
-							justify-center w-6 h-6 bg-blue-500 text-white text-xs 
-							font-bold rounded-full border-2 border-white 
-							dark:border-gray-900 shadow-md"
-              >
-                {slot.cardQuantity}
-              </div>
-            </>
-          ) : (
+  const handleDragOver = (e: React.DragEvent, slotId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverSlot(slotId);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverSlot(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, slotId: string, slotIndex: number) => {
+    e.preventDefault();
+    setDragOverSlot(null);
+    const raw = e.dataTransfer.getData("application/card");
+    if (!raw) return;
+    try {
+      const card: CardType = JSON.parse(raw);
+      triggerAnimation(slotId);
+      onDrop?.(slotId, slotIndex, card);
+    } catch {
+      // ignore malformed data
+    }
+  };
+
+  // The active animation slot is either the one just dragged, or the one
+  // triggered externally by click-to-plant (plantedSlotId).
+  const activeAnimSlot = animatingSlot ?? plantedSlotId ?? null;
+
+  return (
+    <div style={{ perspective: "700px" }}>
+      <div
+        className="relative flex gap-2 px-4 py-3
+                   bg-green-800 border-2 border-green-900 rounded-lg shadow-2xl"
+        style={{
+          transform: "rotateX(25deg) scaleX(1.08)",
+          transformOrigin: "bottom center",
+        }}
+      >
+        {slots.map((slot, index) => {
+          const filled = isSlotFilled(slot);
+          const isDragOver = dragOverSlot === slot.slotId;
+          const isAnimating = activeAnimSlot === slot.slotId;
+
+          return (
             <div
-              className={`text-2xl ${highlightEmpty ? "text-green-400" : "text-green-500/50"}`}
+              key={slot.slotId}
+              onClick={() => onSlotClick?.(slot.slotId, index)}
+              onDragOver={(e) => handleDragOver(e, slot.slotId)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, slot.slotId, index)}
+              className={`
+                relative flex flex-col items-center justify-center
+                w-20 h-28 rounded-md border-2
+                ${isAnimating ? "animate-plant" : "transition-all duration-150"}
+                ${filled
+                  ? "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 shadow-md hover:shadow-xl hover:-translate-y-1 cursor-pointer"
+                  : isDragOver
+                    ? "bg-green-500/40 border-green-300 border-solid scale-105 shadow-lg shadow-green-400/40 cursor-copy"
+                    : `bg-green-700/50 border-dashed ${
+                        highlightEmpty
+                          ? "border-green-300 hover:bg-green-700/70 hover:border-green-400 cursor-pointer"
+                          : "border-green-700"
+                      }`
+                }
+              `}
             >
-              +
+              {filled ? (
+                <>
+                  <div className="text-xs font-semibold text-center px-2 text-gray-800 dark:text-gray-100 line-clamp-2">
+                    {slot.cardName}
+                  </div>
+                  <div className="absolute -top-2 -right-2 flex items-center
+                                  justify-center w-6 h-6 bg-blue-500 text-white
+                                  text-xs font-bold rounded-full border-2 border-white
+                                  dark:border-gray-900 shadow-md">
+                    {slot.cardQuantity}
+                  </div>
+                </>
+              ) : (
+                <div className={`text-2xl transition-colors ${
+                  isDragOver ? "text-green-200" : highlightEmpty ? "text-green-300" : "text-green-600/60"
+                }`}>
+                  {isDragOver ? "↓" : "+"}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      ))}
+          );
+        })}
+      </div>
     </div>
   );
 }

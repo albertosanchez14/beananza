@@ -1,17 +1,7 @@
 package game
 
+// CardType is the name of a bean card type, as defined in config/cards.yaml.
 type CardType string
-
-const (
-	CardTypeJudicultor CardType = "Judicultor"
-	CardTypeColora     CardType = "Judia Colora"
-	CardTypeRocky      CardType = "Rocky Judia"
-	CardTypeHippy      CardType = "Hippy Judia"
-	CardTypePocha      CardType = "La Pocha"
-	CardTypeApestosa   CardType = "La Apestosa"
-	CardTypeBoom       CardType = "Judia Boom"
-	CardTypeBill       CardType = "Judia Bill"
-)
 
 type Card struct {
 	ID            string      `json:"cardId"`

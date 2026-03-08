@@ -110,7 +110,7 @@ export default function GameRoom({
   };
 
   return (
-    <div>
+    <div className="flex flex-col h-full w-full overflow-hidden">
       <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">
         <div
           className="flex flex-col gap-1 bg-white dark:bg-gray-900 border border-gray-200
@@ -156,19 +156,23 @@ export default function GameRoom({
         )}
       </div>
 
-      <Board
-        myHand={gameState.hand}
-        myPickedCards={gameState.pickedCards}
-        myField={gameState.field}
-        players={gameState.players}
-        centerCards={gameState.centerCards}
-        currentTurnPlayerId={gameState.playerTurn}
-        gamePhase={gameState.phase}
-        onPlantBean={handlePlantBean}
-        onHarvestField={handleHarvestField}
-        onTurnOverBean={handleTurnOverBean}
-        onDrawCards={handleDrawCards}
-      />
+      <div className="flex-1 min-h-0">
+        <Board
+          myHand={gameState.hand}
+          myPickedCards={gameState.pickedCards}
+          myField={gameState.field}
+          players={gameState.players}
+          centerCards={gameState.centerCards}
+          deckSize={gameState.deckSize}
+          discardPileSize={gameState.discardPileSize}
+          currentTurnPlayerId={gameState.playerTurn}
+          gamePhase={gameState.phase}
+          onPlantBean={handlePlantBean}
+          onHarvestField={handleHarvestField}
+          onTurnOverBean={handleTurnOverBean}
+          onDrawCards={handleDrawCards}
+        />
+      </div>
 
       <OfferPanel
         isOpen={offerPanelOpen}
