@@ -67,6 +67,8 @@ func (s *Server) Start() error {
 
 	mux.HandleFunc("/rooms", s.handleRooms)
 
+	mux.HandleFunc("/config", s.handleConfig)
+
 	addr := fmt.Sprintf("%s:%s", s.config.Server.Host, s.config.Server.Port)
 	s.server = &http.Server{
 		Addr:         addr,
@@ -131,6 +133,55 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 			zap.Duration("duration", time.Since(start)),
 		)
 	})
+}
+
+// handleConfig returns the game configuration (card types, exchange rates, and
+// game settings) as JSON. This endpoint is safe to call before joining a room
+// and does not include any per-session state.
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if len(s.config.Server.AllowedOrigins) == 0 {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	} else {
+		for _, allowed := range s.config.Server.AllowedOrigins {
+			if strings.EqualFold(origin, allowed) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				break
+			}
+		}
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	type configResponse struct {
+		MaxPlayers   int                `json:"max_players"`
+		MinPlayers   int                `json:"min_players"`
+		CardsPerTurn int                `json:"cards_per_turn"`
+		Cards        config.CardsConfig `json:"cards"`
+	}
+
+	resp := configResponse{
+		MaxPlayers:   s.config.Game.MaxNumberPlayers,
+		MinPlayers:   s.config.Game.MinNumberPlayers,
+		CardsPerTurn: s.config.Game.CardsPerTurn,
+		Cards:        s.config.Game.Cards,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		s.logger.Error("failed to encode config response", zap.Error(err))
+	}
 }
 
 // handleRooms returns the list of active rooms as JSON.

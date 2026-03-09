@@ -3,6 +3,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useActions, BroadcastPayload } from "@/hooks/useActions";
 import { useGameState, useWaitingLobbyState } from "@/hooks/state";
+import { useGameConfig } from "@/hooks/useGameConfig";
 import { JoinedResponsePayload } from "@/schemas/messages";
 import WaitingRoom from "./waiting-room";
 import GameRoom from "./game-room";
@@ -97,6 +98,7 @@ export default function Page() {
   });
   const waitingLobbyState = useWaitingLobbyState(lastMessage, playerId);
   const gameState = useGameState(lastMessage);
+  const { config, cardLookup } = useGameConfig();
   const gamePhase = errorPhase ?? gameState.phase;
 
   // Send join once connected and profile is loaded
@@ -139,6 +141,8 @@ export default function Page() {
             roomId={roomId}
             playerId={playerId}
             gameState={gameState}
+            cardsPerTurn={config?.cards_per_turn}
+            cardLookup={cardLookup}
             plantBean={plantBean}
             harvestField={harvestField}
             turnOverBean={turnOverBean}

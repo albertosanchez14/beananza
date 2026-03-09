@@ -29,7 +29,7 @@ export default function Field({
   const [animatingSlot, setAnimatingSlot] = useState<string | null>(null);
   const animTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isSlotFilled = (slot: typeof slots[0]): boolean => {
+  const isSlotFilled = (slot: (typeof slots)[0]): boolean => {
     return !!(slot && slot.cardName && slot.cardQuantity > 0);
   };
 
@@ -49,7 +49,11 @@ export default function Field({
     setDragOverSlot(null);
   };
 
-  const handleDrop = (e: React.DragEvent, slotId: string, slotIndex: number) => {
+  const handleDrop = (
+    e: React.DragEvent,
+    slotId: string,
+    slotIndex: number,
+  ) => {
     e.preventDefault();
     setDragOverSlot(null);
     const raw = e.dataTransfer.getData("application/card");
@@ -71,7 +75,10 @@ export default function Field({
                  bg-green-800 border-2 border-green-900 rounded-lg shadow-2xl"
       style={
         standalone
-          ? { transform: "rotateX(25deg) scaleX(1.08)", transformOrigin: "bottom center" }
+          ? {
+              transform: "rotateX(25deg) scaleX(1.08)",
+              transformOrigin: "bottom center",
+            }
           : undefined
       }
     >
@@ -79,7 +86,9 @@ export default function Field({
         const filled = isSlotFilled(slot);
         const isDragOver = dragOverSlot === slot.slotId;
         const isAnimating = activeAnimSlot === slot.slotId;
-        const cardForSlot = filled ? (cardLookup?.get(slot.cardName) ?? null) : null;
+        const cardForSlot = filled
+          ? (cardLookup?.get(slot.cardName) ?? null)
+          : null;
 
         if (filled && cardForSlot) {
           // Render a real Card image for the slot, with quantity badge overlaid
@@ -96,10 +105,12 @@ export default function Field({
             >
               <Card card={cardForSlot} flipped={false} />
               {/* Quantity badge */}
-              <div className="absolute -top-2 -right-2 flex items-center
+              <div
+                className="absolute -top-2 -right-2 flex items-center
                               justify-center w-6 h-6 bg-blue-500 text-white
                               text-xs font-bold rounded-full border-2 border-white
-                              shadow-md z-10">
+                              shadow-md z-10"
+              >
                 {slot.cardQuantity}
               </div>
             </div>
@@ -111,13 +122,14 @@ export default function Field({
           "relative flex flex-col items-center justify-center w-24 h-36 rounded-md border-2",
           isAnimating ? "animate-plant" : "transition-all duration-150",
           filled
-            // cardName known but not in lookup yet — plain box with text fallback
-            ? "bg-white border-gray-300 shadow-md hover:shadow-xl hover:-translate-y-1 cursor-pointer"
+            ? // cardName known but not in lookup yet — plain box with text fallback
+              "bg-white border-gray-300 shadow-md hover:shadow-xl hover:-translate-y-1 cursor-pointer"
             : isDragOver
-            ? "bg-green-500/40 border-green-300 border-solid scale-105 shadow-lg shadow-green-400/40 cursor-copy"
-            : "bg-green-700/50 border-dashed " + (highlightEmpty
-                ? "border-green-300 hover:bg-green-700/70 hover:border-green-400 cursor-pointer"
-                : "border-green-700"),
+              ? "bg-green-500/40 border-green-300 border-solid scale-105 shadow-lg shadow-green-400/40 cursor-copy"
+              : "bg-green-700/50 border-dashed " +
+                (highlightEmpty
+                  ? "border-green-300 hover:bg-green-700/70 hover:border-green-400 cursor-pointer"
+                  : "border-green-700"),
         ].join(" ");
 
         return (
@@ -134,16 +146,24 @@ export default function Field({
                 <div className="text-xs font-semibold text-center px-2 text-gray-800 line-clamp-2">
                   {slot.cardName}
                 </div>
-                <div className="absolute -top-2 -right-2 flex items-center
+                <div
+                  className="absolute -top-2 -right-2 flex items-center
                                 justify-center w-6 h-6 bg-blue-500 text-white
-                                text-xs font-bold rounded-full border-2 border-white shadow-md">
+                                text-xs font-bold rounded-full border-2 border-white shadow-md"
+                >
                   {slot.cardQuantity}
                 </div>
               </>
             ) : (
-              <div className={`text-2xl transition-colors ${
-                isDragOver ? "text-green-200" : highlightEmpty ? "text-green-300" : "text-green-600/60"
-              }`}>
+              <div
+                className={`text-2xl transition-colors ${
+                  isDragOver
+                    ? "text-green-200"
+                    : highlightEmpty
+                      ? "text-green-300"
+                      : "text-green-600/60"
+                }`}
+              >
                 {isDragOver ? "↓" : "+"}
               </div>
             )}
@@ -158,4 +178,3 @@ export default function Field({
   }
   return inner;
 }
-

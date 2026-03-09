@@ -65,15 +65,15 @@ type GameConfig struct {
 }
 
 type CardsConfig struct {
-	CardTypes []CardTypeConfig `yaml:"card_types"`
+	CardTypes []CardTypeConfig `yaml:"card_types" json:"card_types"`
 }
 
 type CardTypeConfig struct {
-	Name          string      `yaml:"name"`
-	Count         int         `yaml:"count"`
-	FrontImage    string      `yaml:"front_image"`
-	BackImage     string      `yaml:"back_image"`
-	ExchangeRates map[int]int `yaml:"exchange_rates"`
+	Name          string      `yaml:"name"           json:"name"`
+	Count         int         `yaml:"count"          json:"count"`
+	FrontImage    string      `yaml:"front_image"    json:"front_image"`
+	BackImage     string      `yaml:"back_image"     json:"back_image"`
+	ExchangeRates map[int]int `yaml:"exchange_rates" json:"exchange_rates"`
 }
 
 func Load() *Config {

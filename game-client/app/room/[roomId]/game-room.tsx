@@ -1,13 +1,15 @@
 import Board from "@/components/board";
 import OfferPanel from "@/components/offer-panel";
 import { GameState } from "@/hooks/state";
-import { OfferCard } from "@/schemas/types";
+import { CardType, OfferCard } from "@/schemas/types";
 import { useState } from "react";
 
 type GameRoomProp = {
   roomId: string;
   playerId: string;
   gameState: GameState;
+  cardsPerTurn?: number;
+  cardLookup: Map<string, CardType>;
   plantBean: (
     roomId: string,
     playerId: string,
@@ -40,6 +42,8 @@ export default function GameRoom({
   roomId,
   playerId,
   gameState,
+  cardsPerTurn,
+  cardLookup,
   plantBean,
   harvestField,
   turnOverBean,
@@ -112,39 +116,12 @@ export default function GameRoom({
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
       <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">
-        <div
-          className="flex flex-col gap-1 bg-white dark:bg-gray-900 border border-gray-200
-                dark:border-gray-700 rounded-xl px-3 py-3 shadow text-xs text-gray-600 dark:text-gray-400 min-w-30"
-        >
-          <span className="font-semibold text-gray-800 dark:text-gray-200 truncate">
-            {playerId}
-          </span>
-          <span>
-            Turn:{" "}
-            <span
-              className={
-                gameState.playerTurn === playerId
-                  ? "text-green-600 dark:text-green-400 font-semibold"
-                  : ""
-              }
-            >
-              {gameState.playerTurn === playerId
-                ? "yours"
-                : gameState.playerTurn}
-            </span>
-          </span>
-          <span>
-            Phase:{" "}
-            <span className="font-medium text-gray-700 dark:text-gray-300">
-              {gameState.phase}
-            </span>
-          </span>
-        </div>
-
         {gameState.phase === "turnTrade" && (
           <button
             onClick={() => setOfferPanelOpen(true)}
-            className="relative flex items-center justify-between gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow transition-colors"
+            className="relative flex items-center justify-between gap-2 px-3 
+						py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold
+						rounded-xl shadow transition-colors"
           >
             <span>Trade Offers</span>
             {pendingIncomingCount > 0 && (
@@ -168,7 +145,8 @@ export default function GameRoom({
           discardTopCard={gameState.discardTopCard}
           currentTurnPlayerId={gameState.playerTurn}
           gamePhase={gameState.phase}
-          cardsPerTurn={gameState.cardsPerTurn}
+          cardsPerTurn={cardsPerTurn}
+          cardLookup={cardLookup}
           onPlantBean={handlePlantBean}
           onHarvestField={handleHarvestField}
           onTurnOverBean={handleTurnOverBean}

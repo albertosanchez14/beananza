@@ -101,17 +101,16 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 	}
 
 	snapshot := map[string]any{
-		"room_id":        s.gameState.RoomID,
-		"phase":          s.gameState.Phase,
-		"player":         playerData,
-		"turn_order":     s.gameState.TurnOrder,
-		"current_turn":   s.gameState.CurrentTurn,
-		"center_cards":   s.gameState.CenterCards,
-		"offers":         s.gameState.Offers,
-		"started_at":     s.gameState.StartedAt,
-		"ended_at":       s.gameState.EndedAt,
-		"updated_at":     s.gameState.UpdatedAt,
-		"cards_per_turn": s.gameState.CardsPerTurn,
+		"room_id":      s.gameState.RoomID,
+		"phase":        s.gameState.Phase,
+		"player":       playerData,
+		"turn_order":   s.gameState.TurnOrder,
+		"current_turn": s.gameState.CurrentTurn,
+		"center_cards": s.gameState.CenterCards,
+		"offers":       s.gameState.Offers,
+		"started_at":   s.gameState.StartedAt,
+		"ended_at":     s.gameState.EndedAt,
+		"updated_at":   s.gameState.UpdatedAt,
 	}
 
 	// Include deck size but not the actual deck contents

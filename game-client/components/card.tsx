@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { CardType } from "@/schemas/types";
+import { BaseCard, CardType } from "@/schemas/types";
 
 type CardProp = {
-  card: CardType;
+  card: BaseCard | CardType;
   isSelected?: boolean;
   draggable?: boolean;
   flipped?: boolean;
@@ -45,9 +45,11 @@ export default function Card({
     setIsDragging(false);
   };
 
+  const fullCard = "cardId" in card ? (card as CardType) : null;
+
   const rates =
-    card.money_exchange && Object.keys(card.money_exchange).length > 0
-      ? sortedRates(card.money_exchange)
+    fullCard?.money_exchange && Object.keys(fullCard.money_exchange).length > 0
+      ? sortedRates(fullCard.money_exchange)
       : null;
 
   return (
@@ -85,11 +87,11 @@ export default function Card({
         >
           {/* Image area — takes all space above the exchange strip */}
           <div className="relative flex-1 min-h-0 rounded-t-xl overflow-hidden">
-            {card.frontImage ? (
+            {fullCard?.frontImage ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={card.frontImage}
-                alt={card.cardName}
+                src={fullCard.frontImage}
+                alt={fullCard.cardName}
                 className="w-full h-full object-cover"
                 draggable={false}
               />
@@ -97,13 +99,13 @@ export default function Card({
               /* Fallback: coloured block */
               <div className="w-full h-full bg-blue-200 flex items-end justify-center pb-1">
                 <span className="text-black text-center text-[9px] font-semibold leading-tight px-1">
-                  {card.cardName}
+                  {fullCard?.cardName ?? ""}
                 </span>
               </div>
             )}
 
             {/* Card name overlay — dark gradient band at the bottom of the image */}
-            {card.frontImage && (
+            {fullCard?.frontImage && (
               <div
                 className="absolute bottom-0 left-0 right-0 flex items-end justify-center px-1 pb-0.5"
                 style={{
@@ -113,7 +115,7 @@ export default function Card({
                 }}
               >
                 <span className="text-white text-[9px] font-bold text-center leading-tight drop-shadow">
-                  {card.cardName}
+                  {fullCard.cardName}
                 </span>
               </div>
             )}

@@ -1,9 +1,31 @@
-export type CardType = {
+export type BaseCard = {
+  backImage: string;
+};
+
+export type CardType = BaseCard & {
   cardId: string;
   cardName: string;
   frontImage?: string;
-  backImage?: string;
   money_exchange?: Record<string, number>;
+};
+
+/** A single card type as returned by GET /config */
+export type CardTypeConfig = {
+  name: string;
+  count: number;
+  front_image: string;
+  back_image: string;
+  exchange_rates: Record<string, number>;
+};
+
+/** Full game configuration returned by GET /config */
+export type GameConfig = {
+  max_players: number;
+  min_players: number;
+  cards_per_turn: number;
+  cards: {
+    card_types: CardTypeConfig[];
+  };
 };
 
 export type Slot = {

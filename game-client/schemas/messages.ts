@@ -38,7 +38,6 @@ export type GameStateResponsePayload = {
   started_at: string;
   turn_order: Array<string>;
   updated_at: string;
-  cards_per_turn?: number;
 };
 
 /** Sent by the server after a successful join, carrying the session token. */
