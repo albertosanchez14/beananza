@@ -29,6 +29,7 @@ export type GameState = {
   deckSize: number;
   discardPileSize: number;
   discardTopCard: CardType | null;
+  coins: number;
 };
 
 export type WaitingLobbyState = {
@@ -55,6 +56,7 @@ const DEFAULT_GAME_STATE: GameState = {
   deckSize: 0,
   discardPileSize: 0,
   discardTopCard: null,
+  coins: 0,
 };
 
 const DEFAULT_LOBBY_STATE: WaitingLobbyState = {
@@ -101,6 +103,7 @@ export function useGameState(lastMessage: WebSocketMessage | null): GameState {
       deckSize: payload.deck_size ?? state.deckSize,
       discardPileSize: payload.discard_pile_size ?? state.discardPileSize,
       discardTopCard: payload.discard_top_card ?? state.discardTopCard,
+      coins: payload.player?.coins ?? state.coins,
     };
 
     setState(next);

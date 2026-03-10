@@ -12,6 +12,8 @@ type CardProp = {
   style?: React.CSSProperties;
   className?: string;
   cardRef?: (el: HTMLDivElement | null) => void;
+  /** Suppresses all CSS transitions on the card inner — use for static display contexts. */
+  noTransition?: boolean;
 };
 
 /** Sort exchange rate entries by card count (ascending). */
@@ -32,6 +34,7 @@ export default function Card({
   style,
   className,
   cardRef,
+  noTransition = false,
 }: CardProp) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -59,7 +62,7 @@ export default function Card({
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
       onDragEnd={draggable ? handleDragEnd : undefined}
-      style={{ perspective: "600px", ...style }}
+      style={{ perspective: noTransition ? undefined : "600px", ...style }}
       className={`w-24 h-36
         ${draggable ? "cursor-grab active:cursor-grabbing" : ""}
         ${onClick && !draggable ? "cursor-pointer" : ""}
@@ -70,12 +73,13 @@ export default function Card({
       {/* Inner wrapper — rotates on Y axis to flip between faces */}
       <div
         className={`card-inner rounded-2xl w-full h-full
-          transition-all duration-150
+          ${noTransition ? "transition-none" : "transition-all duration-150"}
           ${isSelected ? "shadow-xl -translate-y-4" : ""}
           ${isDragging ? "opacity-40 scale-105" : ""}
           ${onClick && !draggable ? "hover:shadow-lg hover:-translate-y-3" : ""}
           ${onClick && draggable ? "hover:shadow-lg hover:-translate-y-3" : ""}
         `}
+        style={noTransition ? { transition: "none", transformStyle: "flat" } : undefined}
       >
         {/* ── FRONT FACE ─────────────────────────────────────────────────── */}
         <div

@@ -97,3 +97,9 @@ body {
 .card-back {
   transform: rotateY(180deg);
 }
+
+/* Suppress flip transition for opponent cards — they are statically rotated 180°
+   via a parent transform and should never animate through a Y-axis flip. */
+.card-no-transition .card-inner {
+  transition: none !important;
+}

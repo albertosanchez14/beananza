@@ -1,3 +1,4 @@
+import { GameProvider } from "@/components/game-context";
 import Board from "@/components/board";
 import OfferPanel from "@/components/offer-panel";
 import { GameState } from "@/hooks/state";
@@ -43,7 +44,7 @@ export default function GameRoom({
   playerId,
   gameState,
   cardsPerTurn,
-  cardLookup,
+  cardLookup: cardLookupFromConfig,
   plantBean,
   harvestField,
   turnOverBean,
@@ -54,6 +55,16 @@ export default function GameRoom({
 }: GameRoomProp) {
   const [offerPanelOpen, setOfferPanelOpen] = useState(false);
   const [prevPhase, setPrevPhase] = useState<string>(gameState.phase);
+
+  // Build a name→CardType lookup.
+  // Start from the config-sourced catalog so every card type always has images,
+  // then overlay live cards (which carry real cardIds and up-to-date data).
+  const { hand, pickedCards, centerCards, discardTopCard } = gameState;
+  const cardLookup = new Map<string, CardType>(cardLookupFromConfig);
+  for (const c of [...hand, ...pickedCards, ...centerCards]) {
+    cardLookup.set(c.cardName, c);
+  }
+  if (discardTopCard) cardLookup.set(discardTopCard.cardName, discardTopCard);
 
   if (gameState.phase !== prevPhase) {
     setPrevPhase(gameState.phase);
@@ -114,59 +125,52 @@ export default function GameRoom({
   };
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden">
-      <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">
-        {gameState.phase === "turnTrade" && (
-          <button
-            onClick={() => setOfferPanelOpen(true)}
-            className="relative flex items-center justify-between gap-2 px-3 
+    <GameProvider
+      gameState={gameState}
+      cardsPerTurn={cardsPerTurn}
+      cardLookup={cardLookup}
+      onPlantBean={handlePlantBean}
+      onHarvestField={handleHarvestField}
+      onTurnOverBean={handleTurnOverBean}
+      onDrawCards={handleDrawCards}
+    >
+      <div className="flex flex-col h-full w-full overflow-hidden">
+        <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">
+          {gameState.phase === "turnTrade" && (
+            <button
+              onClick={() => setOfferPanelOpen(true)}
+              className="relative flex items-center justify-between gap-2 px-3 
 						py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold
 						rounded-xl shadow transition-colors"
-          >
-            <span>Trade Offers</span>
-            {pendingIncomingCount > 0 && (
-              <span className="px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full leading-none">
-                {pendingIncomingCount}
-              </span>
-            )}
-          </button>
-        )}
-      </div>
+            >
+              <span>Trade Offers</span>
+              {pendingIncomingCount > 0 && (
+                <span className="px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full leading-none">
+                  {pendingIncomingCount}
+                </span>
+              )}
+            </button>
+          )}
+        </div>
 
-      <div className="flex-1 min-h-0">
-        <Board
+        <div className="flex-1 min-h-0">
+          <Board />
+        </div>
+
+        <OfferPanel
+          isOpen={offerPanelOpen}
+          onClose={() => setOfferPanelOpen(false)}
+          offers={gameState.offers}
           myHand={gameState.hand}
-          myPickedCards={gameState.pickedCards}
-          myField={gameState.field}
-          players={gameState.players}
           centerCards={gameState.centerCards}
-          deckSize={gameState.deckSize}
-          discardPileSize={gameState.discardPileSize}
-          discardTopCard={gameState.discardTopCard}
-          currentTurnPlayerId={gameState.playerTurn}
+          myPlayerId={playerId}
+          players={gameState.players}
           gamePhase={gameState.phase}
-          cardsPerTurn={cardsPerTurn}
-          cardLookup={cardLookup}
-          onPlantBean={handlePlantBean}
-          onHarvestField={handleHarvestField}
-          onTurnOverBean={handleTurnOverBean}
-          onDrawCards={handleDrawCards}
+          onCreateOffer={handleCreateOffer}
+          onCounterOffer={handleCounterOffer}
+          onRespondOffer={handleRespondOffer}
         />
       </div>
-
-      <OfferPanel
-        isOpen={offerPanelOpen}
-        onClose={() => setOfferPanelOpen(false)}
-        offers={gameState.offers}
-        myHand={gameState.hand}
-        centerCards={gameState.centerCards}
-        myPlayerId={playerId}
-        players={gameState.players}
-        gamePhase={gameState.phase}
-        onCreateOffer={handleCreateOffer}
-        onCounterOffer={handleCounterOffer}
-        onRespondOffer={handleRespondOffer}
-      />
-    </div>
+    </GameProvider>
   );
 }
