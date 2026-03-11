@@ -7,13 +7,27 @@ import {
   WaitingPlayer,
 } from "@/schemas/types";
 
+/**
+ * Active game phases — only meaningful when the session is in the "playing"
+ * state. "waiting" and "loading" have been moved to SessionState.
+ */
 export type Phases =
   | "plantHand"
   | "turnTrade"
   | "plantTrade"
   | "drawCards"
-  | "waiting"
   | "finished";
+
+/**
+ * Top-level session states that mirror the server's SessionState enum.
+ * "connecting" is a client-only state used before the first "joined" message.
+ */
+export type SessionState =
+  | "connecting"
+  | "waiting"
+  | "playing"
+  | "pause"
+  | "gameAlreadyStarted";
 
 export type WaitingLobbyResponsePayload = {
   can_start: boolean;
@@ -40,10 +54,12 @@ export type GameStateResponsePayload = {
   updated_at: string;
 };
 
-/** Sent by the server after a successful join, carrying the session token. */
+/** Sent by the server after a successful join or reconnect. */
 export type JoinedResponsePayload = {
   player_id: string;
   session_token: string;
+  /** Current session state — use this to route to the correct view. */
+  session_state: "waiting" | "playing" | "pause";
 };
 
 /** Sent by the server as a broadcast event when a player joins or leaves. */

@@ -130,6 +130,7 @@ export interface WebSocketMessage {
   type: MessageType;
   room_id: string;
   player_id: string;
+  auth_token?: string;
   payload: Record<string, unknown>;
   timestamp: string;
 }
@@ -163,6 +164,7 @@ export type { JoinedResponsePayload };
 export interface UseActionsOptions {
   wsUrl: string;
   playerId: string;
+  authToken?: string;
   onMessage?: (message: WebSocketMessage) => void;
   onError?: (error: ErrorPayload) => void;
   shouldReconnect?: boolean;
@@ -236,6 +238,7 @@ export interface UseActionsReturn {
 export function useActions({
   wsUrl,
   playerId,
+  authToken,
   onMessage,
   onError,
   shouldReconnect = true,
@@ -278,10 +281,11 @@ export function useActions({
       type,
       room_id: roomId,
       player_id: playerId,
+      ...(authToken ? { auth_token: authToken } : {}),
       payload,
       timestamp: new Date().toISOString(),
     }),
-    [playerId],
+    [playerId, authToken],
   );
 
   // -------------------------------------------------------------------------

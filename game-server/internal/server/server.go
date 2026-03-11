@@ -65,6 +65,8 @@ func (s *Server) Start() error {
 
 	mux.HandleFunc("/ws", s.handleWebSocket)
 
+	mux.HandleFunc("/register", s.handleRegister)
+
 	mux.HandleFunc("/rooms", s.handleRooms)
 
 	mux.HandleFunc("/config", s.handleConfig)
@@ -117,6 +119,94 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Start client goroutines
 	go client.WritePump()
 	go client.ReadPump()
+}
+
+// handleRegister creates a new player profile, generates a server-side
+// player_id and a long-lived auth_token, persists them in Redis, and returns
+// them to the client so they can be stored in localStorage.
+//
+// POST /register
+//
+//	Body: { "name": "<display name, max 24 chars>" }
+//	Response: { "player_id": "...", "auth_token": "..." }
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if len(s.config.Server.AllowedOrigins) == 0 {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	} else {
+		for _, allowed := range s.config.Server.AllowedOrigins {
+			if strings.EqualFold(origin, allowed) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				break
+			}
+		}
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.repo == nil {
+		http.Error(w, "registration not available without storage", http.StatusServiceUnavailable)
+		return
+	}
+
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if len(name) > 24 {
+		http.Error(w, "name must be 24 characters or fewer", http.StatusBadRequest)
+		return
+	}
+
+	playerID := uuid.NewString()
+	authToken := uuid.NewString()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	profile := storage.PlayerProfile{
+		PlayerID:   playerID,
+		PlayerName: name,
+	}
+	if err := s.repo.SavePlayerAuth(ctx, authToken, profile); err != nil {
+		s.logger.Error("failed to save player auth", zap.Error(err))
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	s.logger.Info("player registered",
+		zap.String("player_id", playerID),
+		zap.String("player_name", name),
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"player_id":  playerID,
+		"auth_token": authToken,
+	}); err != nil {
+		s.logger.Error("failed to encode register response", zap.Error(err))
+	}
 }
 
 // loggingMiddleware logs incoming HTTP requests

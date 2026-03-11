@@ -37,6 +37,7 @@ type Message struct {
 	Type      MessageType     `json:"type"`
 	RoomID    string          `json:"room_id,omitempty"`
 	PlayerID  string          `json:"player_id,omitempty"`
+	AuthToken string          `json:"auth_token,omitempty"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
 	Timestamp time.Time       `json:"timestamp"`
 }
@@ -93,10 +94,12 @@ type CounterOfferPayload struct {
 }
 
 // JoinedPayload is sent by the server back to a client after a successful join,
-// carrying the session token the client must present to reconnect.
+// carrying the session token the client must present to reconnect and the
+// current session state so the client can route to the correct view immediately.
 type JoinedPayload struct {
 	PlayerID     string `json:"player_id"`
 	SessionToken string `json:"session_token"`
+	SessionState string `json:"session_state"` // "waiting" | "playing" | "pause"
 }
 
 // ReconnectPayload is sent by a client to resume a game session after a

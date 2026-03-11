@@ -38,8 +38,14 @@ export default function Board() {
   const deckRef = useRef<HTMLDivElement>(null);
 
   // A representative card for the draw deck back image.
-  const backCard: CardType = centerCards[0] ??
-    discardTopCard ?? { cardId: "__deck__", cardName: "" };
+  // Prefer a real card from the live game state (which carries backImage from the server),
+  // but fall back to the first entry in cardLookup so the back image is always available
+  // even before any cards have been dealt/discarded.
+  const anyCardWithBack: CardType =
+    centerCards[0] ??
+    discardTopCard ??
+    [...cardLookup.values()][0] ??
+    { cardId: "__deck__", cardName: "", backImage: "" };
 
   return (
     <div
@@ -57,7 +63,7 @@ export default function Board() {
           <CardPile
             label="Draw"
             count={deckSize}
-            topCard={backCard}
+            topCard={anyCardWithBack}
             onClickAction={handleDrawDeckClick}
             deckRef={deckRef}
           />

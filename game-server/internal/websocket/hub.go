@@ -89,10 +89,23 @@ func (h *Hub) Run() {
 			)
 
 		case client := <-h.unregister:
+			var disconnectedRoomID string
 			h.clientsMu.Lock()
 			if _, ok := h.clients[client]; ok {
 				if client.room != nil {
+					disconnectedRoomID = client.room.ID
 					client.room.Leave(client)
+					// Also remove the player from the game session so the lobby
+					// state stays consistent after an unexpected disconnect.
+					if session, ok := h.gameManager.GetSession(client.room.ID); ok {
+						if err := session.HandlePlayerLeave(client.PlayerId); err != nil {
+							h.logger.Warn("failed to remove player from session on disconnect",
+								zap.String("player_id", client.PlayerId),
+								zap.String("room_id", client.room.ID),
+								zap.Error(err),
+							)
+						}
+					}
 				}
 				delete(h.clients, client)
 				close(client.send)
@@ -102,6 +115,11 @@ func (h *Hub) Run() {
 				)
 			}
 			h.clientsMu.Unlock()
+
+			// SyncRoomRegistry acquires roomsMu — must be called outside clientsMu.
+			if disconnectedRoomID != "" {
+				h.SyncRoomRegistry(disconnectedRoomID)
+			}
 
 			h.cleanupEmptyRooms()
 
@@ -431,6 +449,24 @@ func (h *Hub) SyncRoomRegistry(roomID string) {
 		MaxPlayers:   h.config.Game.MaxNumberPlayers,
 		SessionState: string(state),
 	})
+}
+
+// SendWaitingLobbyToClient sends a fresh waitingLobbyState snapshot to a
+// single client. The session must already be loaded before calling this.
+func (h *Hub) SendWaitingLobbyToClient(c *Client, roomID string) {
+	session := h.gameManager.GetOrCreateSession(roomID)
+	snapshot := session.GetWaitingLobbySnapshot()
+	msg, err := protocol.NewMessage(protocol.WaitingLobbyState, roomID, c.PlayerId, snapshot)
+	if err != nil {
+		h.logger.Error("failed to create waitingLobbyState message for client", zap.Error(err))
+		return
+	}
+	data, err := msg.ToJSON()
+	if err != nil {
+		h.logger.Error("failed to marshal waitingLobbyState message for client", zap.Error(err))
+		return
+	}
+	c.Send(data)
 }
 
 // BroadcastWaitingLobbyToRoom reloads the session from Redis then sends a

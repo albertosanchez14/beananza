@@ -13,6 +13,8 @@ import (
 
 // handleJoin processes a "join" message: binds the player to a room and
 // session, then signals all instances via pub/sub to push fresh lobby state.
+// By the time this is called, ReadPump has already authenticated the message
+// and populated c.PlayerId / c.PlayerName from the server-side profile.
 func (c *Client) handleJoin(msg *protocol.Message) {
 	var payload protocol.JoinPayload
 	if err := msg.ParsePayload(&payload); err != nil {
@@ -20,25 +22,41 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 		return
 	}
 
-	// TODO: PlayerId should be obtained by auth
-	c.PlayerName = payload.PlayerName
 	if c.PlayerId == "" {
-		c.PlayerId = c.ID // Use client ID as player ID if not set
+		c.PlayerId = c.ID // fallback for dev mode (no Redis / no auth)
 	}
 
 	room := c.hub.GetOrCreateRoom(msg.RoomID)
+
+	// Check whether a session already exists and what state it is in.
 	if existingSession, ok := c.hub.gameManager.GetSession(msg.RoomID); ok {
-		if existingSession.IsPlaying() {
-			c.sendError(game.ErrCodeGameAlreadyStarted, "Cannot join: game is already in progress")
+		sessionState := existingSession.GetSessionState()
+		if sessionState == game.SessionStatePlaying || sessionState == game.SessionStatePause {
+			// Game is running. Only let the player back in if they are already a
+			// member of this game (i.e. they disconnected and are rejoining).
+			if !existingSession.HasPlayer(c.PlayerId) {
+				c.sendError(game.ErrCodeGameAlreadyStarted, "Cannot join: game is already in progress")
+				return
+			}
+			// Recognised player — bind them to the room and push their state.
+			room.Join(c)
+			c.room = room
+			c.sendJoined(msg.RoomID, string(sessionState))
+			c.hub.EnqueueFanout(msg.RoomID, existingSession)
 			return
 		}
 	}
+
 	room.Join(c)
 	c.room = room
 
 	session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
 	if err := session.HandlePlayerJoin(c.PlayerId, c.PlayerName); err != nil {
-		c.logger.Error("failed to add player to game session", zap.Error(err))
+		// Most likely WAITING_ROOM_FULL — report it and leave the room.
+		c.sendGameError(err)
+		room.Leave(c)
+		c.room = nil
+		return
 	}
 
 	c.logger.Info("player joined room",
@@ -65,6 +83,7 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 				protocol.JoinedPayload{
 					PlayerID:     c.PlayerId,
 					SessionToken: token,
+					SessionState: string(game.SessionStateWaiting),
 				},
 			)
 			if err == nil {
@@ -73,6 +92,28 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 				}
 			}
 		}
+	}
+
+	// Push the current waiting lobby state directly to this client so they
+	// see the lobby immediately without waiting for the next broadcast event.
+	c.hub.SendWaitingLobbyToClient(c, msg.RoomID)
+
+	// Broadcast player_joined to the rest of the room.
+	playerJoinedMsg, err := protocol.NewMessage(
+		protocol.MessageTypeBroadcast,
+		msg.RoomID,
+		c.PlayerId,
+		protocol.BroadcastPayload{
+			Event: protocol.EventPlayerJoined,
+			Data: map[string]any{
+				"player_id":   c.PlayerId,
+				"player_name": c.PlayerName,
+				"ready":       false,
+			},
+		},
+	)
+	if err == nil {
+		c.room.Broadcast(playerJoinedMsg, c)
 	}
 }
 
@@ -293,8 +334,19 @@ func (c *Client) handleReconnect(msg *protocol.Message) {
 		zap.String("player_id", playerID),
 	)
 
+	// Send a joined message with the current session state so the client
+	// can route to the correct view immediately on reconnect.
+	c.sendJoined(msg.RoomID, string(session.GetSessionState()))
+
 	// Send the player their current game state immediately.
 	c.hub.EnqueueFanout(msg.RoomID, session)
+
+	// If the game hasn't started yet, also push the waiting lobby state so the
+	// reconnecting client doesn't see an empty lobby while waiting for the next
+	// broadcast event.
+	if !session.IsPlaying() {
+		c.hub.SendWaitingLobbyToClient(c, msg.RoomID)
+	}
 }
 
 // ----------------------------------------------------------------------------

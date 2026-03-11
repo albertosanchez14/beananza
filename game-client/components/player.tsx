@@ -39,7 +39,7 @@ function getFanStyle(index: number, total: number): React.CSSProperties {
 }
 
 // A fan of N face-down cards rendered at reduced scale.
-function OpponentCardFan({ count }: { count: number }) {
+function OpponentCardFan({ count, backImage }: { count: number; backImage: string }) {
   const capped = Math.min(count, 12);
   if (capped === 0) return null;
 
@@ -64,7 +64,7 @@ function OpponentCardFan({ count }: { count: number }) {
       {Array.from({ length: capped }).map((_, index) => (
         <Card
           key={index}
-          card={{ backImage: "" }}
+          card={{ backImage }}
           flipped={true}
           style={getFanStyle(index, capped)}
         />
@@ -296,7 +296,7 @@ export default function Player({
           className="absolute left-1/2"
           style={{ bottom: -6, transform: "translateX(-50%)", zIndex: 10 }}
         >
-          <OpponentCardFan count={player.playerHandSize} />
+          <OpponentCardFan count={player.playerHandSize} backImage={[...cardLookup?.values() ?? []][0]?.backImage ?? ""} />
         </div>
       </div>
 

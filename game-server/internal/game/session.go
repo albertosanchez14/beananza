@@ -53,6 +53,21 @@ func (s *Session) IsPlaying() bool {
 	return s.state == SessionStatePlaying
 }
 
+func (s *Session) GetSessionState() SessionState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state
+}
+
+// HasPlayer reports whether the given player is a member of the active game.
+// This is meaningful only when the session is in the playing or pause state.
+func (s *Session) HasPlayer(playerID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.gameState.Players[playerID]
+	return ok
+}
+
 // GetFullSnapshot returns a complete snapshot of the session including all game data
 func (s *Session) GetFullSnapshot() map[string]any {
 	s.mu.RLock()
@@ -204,7 +219,9 @@ func (s *Session) HandlePlayerJoin(playerID, playerName string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.waitingLobby.AddPlayer(playerID, playerName)
+	if err := s.waitingLobby.AddPlayer(playerID, playerName); err != nil {
+		return err
+	}
 
 	s.logger.Info("player joined game",
 		zap.String("player_id", playerID),
@@ -493,6 +510,17 @@ func (s *Session) LoadFromStorage(ctx context.Context) error {
 		return err
 	}
 	s.gameState = &state
+
+	// Infer the in-memory session state from the persisted game phase so that
+	// IsPlaying() returns the correct answer after a reload or cross-instance load.
+	switch s.gameState.Phase {
+	case PhaseTypeWaiting:
+		s.state = SessionStateWaiting
+	case PhaseTypeFinished:
+		s.state = SessionStatePause
+	default: // plantHand, turnTrade, plantTrade, drawCards — game is active
+		s.state = SessionStatePlaying
+	}
 
 	// Also reload the waiting lobby so cross-instance joins are visible.
 	var lobby WaitingLobby

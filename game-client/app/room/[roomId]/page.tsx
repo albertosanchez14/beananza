@@ -2,7 +2,11 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useActions, BroadcastPayload } from "@/hooks/useActions";
-import { useGameState, useWaitingLobbyState } from "@/hooks/state";
+import {
+  useGameState,
+  useSessionState,
+  useWaitingLobbyState,
+} from "@/hooks/state";
 import { useGameConfig } from "@/hooks/useGameConfig";
 import { JoinedResponsePayload } from "@/schemas/messages";
 import WaitingRoom from "./waiting-room";
@@ -15,8 +19,14 @@ function loadProfile() {
   try {
     const raw = localStorage.getItem("playerProfile");
     const profile = raw ? JSON.parse(raw) : null;
-    if (!profile?.playerId || !profile?.name) return null;
-    return { id: profile.playerId as string, name: profile.name as string };
+    // Require all three fields — a missing authToken means the profile was
+    // created before auth was introduced and the user must re-register.
+    if (!profile?.playerId || !profile?.name || !profile?.authToken) return null;
+    return {
+      id: profile.playerId as string,
+      name: profile.name as string,
+      authToken: profile.authToken as string,
+    };
   } catch {
     return null;
   }
@@ -26,23 +36,24 @@ export default function Page() {
   const params = useParams();
   const router = useRouter();
   const roomId = params.roomId as string;
-  const [profile, setProfile] = useState<{ id: string; name: string } | null>(
-    null,
-  );
-  const [errorPhase, setErrorPhase] = useState<string | null>(null);
+  const [profile, setProfile] = useState<{
+    id: string;
+    name: string;
+    authToken: string;
+  } | null>(null);
 
-  // Resolve profile on the client; redirect to /identify if missing
   useEffect(() => {
     const p = loadProfile();
     if (!p) {
-      router.replace("/identify");
+      router.replace(`/identify?returnTo=/room/${roomId}`);
     } else {
       setProfile(p);
     }
-  }, [router]);
+  }, [router, roomId]);
 
   const playerId = profile?.id ?? "";
   const playerName = profile?.name ?? "";
+  const authToken = profile?.authToken ?? "";
 
   const {
     sendJoin,
@@ -62,17 +73,25 @@ export default function Page() {
   } = useActions({
     wsUrl: WS_URL,
     playerId,
+    authToken,
     onMessage: (message) => {
       console.log("Room received message:", message);
 
       if (message.type === "joined") {
-        // Store the session token for reconnect support
+        // Store the session token for reconnect support.
         const joined = message.payload as unknown as JoinedResponsePayload;
         if (joined?.session_token) {
           sessionStorage.setItem(
             `session_token:${roomId}`,
             joined.session_token,
           );
+        }
+        // If the session is already playing or paused, pull our game state.
+        if (
+          joined.session_state === "playing" ||
+          joined.session_state === "pause"
+        ) {
+          myState(roomId);
         }
         return;
       }
@@ -91,21 +110,25 @@ export default function Page() {
     },
     onError: (error) => {
       console.error("Room WebSocket error:", error);
-      if (error.code === "gameAlreadyStarted") {
-        setErrorPhase("gameAlreadyStarted");
+      if (error.code === "unauthorized") {
+        // Stale or missing auth token — wipe the profile and force re-registration,
+        // then return the user directly back to this room.
+        localStorage.removeItem("playerProfile");
+        router.replace(`/identify?returnTo=/room/${roomId}`);
       }
+      // Other errors are surfaced reactively via useSessionState reading lastMessage.
     },
   });
+
+  const sessionState = useSessionState(lastMessage);
   const waitingLobbyState = useWaitingLobbyState(lastMessage, playerId);
   const gameState = useGameState(lastMessage);
   const { config, cardLookup } = useGameConfig();
-  const gamePhase = errorPhase ?? gameState.phase;
 
-  // Send join once connected and profile is loaded
+  // Send join once connected and profile is loaded.
   const joinedRef = useRef(false);
   useEffect(() => {
     if (isConnected && playerId && playerName && !joinedRef.current) {
-      // Attempt to reconnect with a stored session token first
       const storedToken = sessionStorage.getItem(`session_token:${roomId}`);
       if (storedToken) {
         joinedRef.current = true;
@@ -120,15 +143,25 @@ export default function Page() {
     }
   }, [isConnected, playerId, playerName, roomId, sendJoin, sendReconnect]);
 
-  // Don't render until the profile check completes (avoids flash with empty playerId)
+  // Don't render until the profile check completes.
   if (!profile) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-zinc-50 font-sans dark:bg-black">
+    <div className="flex h-screen overflow-hidden bg-zinc-50 dark:bg-black">
       <main className="relative flex h-screen w-full flex-col bg-white dark:bg-black">
-        {gamePhase === "gameAlreadyStarted" ? (
+        {sessionState === "connecting" && (
+          <div className="flex h-full items-center justify-center">
+            <span className="text-sm text-zinc-400 dark:text-zinc-600">
+              Connecting...
+            </span>
+          </div>
+        )}
+
+        {sessionState === "gameAlreadyStarted" && (
           <RunningRoom roomId={roomId} />
-        ) : gameState.phase === "waiting" ? (
+        )}
+
+        {sessionState === "waiting" && (
           <WaitingRoom
             roomId={roomId}
             playerId={playerId}
@@ -136,7 +169,9 @@ export default function Page() {
             setReady={setReady}
             sendLeave={sendLeave}
           />
-        ) : (
+        )}
+
+        {(sessionState === "playing" || sessionState === "pause") && (
           <GameRoom
             roomId={roomId}
             playerId={playerId}

@@ -83,7 +83,6 @@ func (r *Repository) AddPlayerToRoom(ctx context.Context, roomID, playerID strin
 		return fmt.Errorf("failed to add player to room: %w", err)
 	}
 
-	// Set expiry
 	r.client.Expire(ctx, key, 24*time.Hour)
 
 	r.logger.Debug("player added to room",
@@ -209,6 +208,53 @@ func (r *Repository) GetAllRooms(ctx context.Context) ([]RoomMeta, error) {
 	}
 
 	return rooms, nil
+}
+
+// ----------------------------------------------------------------------------
+// Player authentication — long-lived auth tokens
+// ----------------------------------------------------------------------------
+
+const authTokenTTL = 30 * 24 * time.Hour // 30 days
+
+// PlayerProfile holds the server-assigned identity for a registered player.
+type PlayerProfile struct {
+	PlayerID   string `json:"player_id"`
+	PlayerName string `json:"player_name"`
+}
+
+// SavePlayerAuth stores a long-lived mapping from auth_token to a player
+// profile so the server can verify identity on every WebSocket message.
+func (r *Repository) SavePlayerAuth(ctx context.Context, token string, profile PlayerProfile) error {
+	key := fmt.Sprintf("auth:%s", token)
+	data, err := json.Marshal(profile)
+	if err != nil {
+		return fmt.Errorf("failed to marshal player profile: %w", err)
+	}
+	if err := r.client.Set(ctx, key, data, authTokenTTL).Err(); err != nil {
+		return fmt.Errorf("failed to save player auth: %w", err)
+	}
+	r.logger.Debug("player auth saved",
+		zap.String("player_id", profile.PlayerID),
+	)
+	return nil
+}
+
+// GetPlayerByToken retrieves the player profile associated with an auth token.
+// Returns nil (no error) when the token does not exist or has expired.
+func (r *Repository) GetPlayerByToken(ctx context.Context, token string) (*PlayerProfile, error) {
+	key := fmt.Sprintf("auth:%s", token)
+	data, err := r.client.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, nil // token not found
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get player auth: %w", err)
+	}
+	var profile PlayerProfile
+	if err := json.Unmarshal(data, &profile); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal player profile: %w", err)
+	}
+	return &profile, nil
 }
 
 // ----------------------------------------------------------------------------

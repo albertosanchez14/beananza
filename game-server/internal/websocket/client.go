@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
@@ -115,10 +116,36 @@ func (c *Client) ReadPump() {
 			continue
 		}
 
-		// Bind the player ID carried in the message envelope the first time we
-		// see it — before auth is in place the client sends its own ID.
-		if c.PlayerId == "" && msg.PlayerID != "" {
-			c.PlayerId = msg.PlayerID
+		// Authenticate the message using the auth token carried in the envelope.
+		// When Redis is available every message must present a valid token; the
+		// server-side profile is the authoritative source for player identity.
+		// In dev mode (no Redis) we fall back to trusting the client-supplied ID.
+		if c.hub.repo != nil {
+			if msg.AuthToken == "" {
+				c.sendError("unauthorized", "Missing auth token")
+				continue
+			}
+			authCtx, authCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			profile, err := c.hub.repo.GetPlayerByToken(authCtx, msg.AuthToken)
+			authCancel()
+			if err != nil || profile == nil {
+				c.sendError("unauthorized", "Invalid or expired auth token")
+				continue
+			}
+			// First message: bind identity from the server-side record.
+			if c.PlayerId == "" {
+				c.PlayerId = profile.PlayerID
+				c.PlayerName = profile.PlayerName
+			} else if c.PlayerId != profile.PlayerID {
+				// Token belongs to a different player — reject.
+				c.sendError("unauthorized", "Auth token does not match player")
+				continue
+			}
+		} else {
+			// No storage configured — trust the client-supplied player_id (dev only).
+			if c.PlayerId == "" && msg.PlayerID != "" {
+				c.PlayerId = msg.PlayerID
+			}
 		}
 
 		c.handleMessage(msg)
@@ -346,6 +373,50 @@ func (c *Client) sendPlayerSnapshotToAll(session *game.Session) {
 
 		client.Send(data)
 	}
+}
+
+// sendJoined sends a "joined" message to this client carrying the session token
+// and current session state. It is a no-op when Redis is not configured.
+func (c *Client) sendJoined(roomID, sessionState string) {
+	if c.hub.repo == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	token := ""
+	// Try to issue a fresh session token; failures are non-fatal.
+	if newToken, err := func() (string, error) {
+		t := uuid.NewString()
+		return t, c.hub.repo.SaveSessionToken(ctx, t, c.PlayerId)
+	}(); err == nil {
+		token = newToken
+	} else {
+		c.logger.Warn("failed to save session token for joined message", zap.Error(err))
+		return
+	}
+
+	joinedMsg, err := protocol.NewMessage(
+		protocol.MessageTypeJoined,
+		roomID,
+		c.PlayerId,
+		protocol.JoinedPayload{
+			PlayerID:     c.PlayerId,
+			SessionToken: token,
+			SessionState: sessionState,
+		},
+	)
+	if err != nil {
+		c.logger.Error("failed to create joined message", zap.Error(err))
+		return
+	}
+	data, err := joinedMsg.ToJSON()
+	if err != nil {
+		c.logger.Error("failed to marshal joined message", zap.Error(err))
+		return
+	}
+	c.Send(data)
 }
 
 // Send queues data for delivery to the client.
