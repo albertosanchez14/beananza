@@ -1,19 +1,12 @@
-import { CardType, ExternalPlayer } from "@/schemas/types";
-import Player from "@/components/player";
+import { Children, ReactNode } from "react";
 
 type OpponetsProps = {
-  players: Array<ExternalPlayer>;
-  currentTurnPlayerId: string | undefined;
-  gamePhase: string | undefined;
-  cardLookup: Map<string, CardType>;
+  children: ReactNode;
 };
 
-function Opponets({
-  players,
-  currentTurnPlayerId,
-  cardLookup,
-  gamePhase,
-}: OpponetsProps) {
+function Opponets({ children }: OpponetsProps) {
+  const items = Children.toArray(children);
+
   const getPlayerPosition = (index: number, total: number) => {
     const centerDeg = 90;
     const maxSpread = 160;
@@ -36,20 +29,15 @@ function Opponets({
 
   return (
     <div>
-      {players.map((player, index) => {
-        const position = getPlayerPosition(index, players.length);
+      {items.map((child, index) => {
+        const position = getPlayerPosition(index, items.length);
         return (
           <div
-            key={player.playerId}
+            key={index}
             className="absolute"
             style={{ ...position, zIndex: 10 }}
           >
-            <Player
-              player={player}
-              isCurrentTurn={player.playerId === currentTurnPlayerId}
-              gamePhase={gamePhase}
-              cardLookup={cardLookup}
-            />
+            {child}
           </div>
         );
       })}

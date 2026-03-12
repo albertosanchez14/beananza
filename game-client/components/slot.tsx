@@ -1,55 +1,71 @@
 "use client";
 
-import { ReactNode, useContext } from "react";
-import { Slot } from "@/schemas/types";
-import { GameContext } from "./game-context";
+import { ReactNode } from "react";
+import { CardType, SlotType } from "@/schemas/types";
 
 type SlotProp = {
-  slot: Slot;
+  slot?: SlotType | null;
   index: number;
   children?: ReactNode;
-  /** When false, renders as a read-only display slot (no click/drag). Default true. */
   interactive?: boolean;
-  /** When true, rotates the slot 180° (opponent perspective). Default false. */
   rotated?: boolean;
+  dragOverSlot?: string | null;
+  animatingSlot?: string | null;
+  highlightEmpty?: boolean;
+  handleDragOver?: (e: React.DragEvent, slotId: string) => void;
+  handleDragLeave?: (e: React.DragEvent) => void;
+  handleFieldDrop?: (slotId: string, slotIndex: number, card: CardType) => void;
+  handleSlotClick?: (slotId: string, slotIndex: number) => void;
 };
 
-export default function NewSlot({ slot, index, children, interactive = true, rotated = false }: SlotProp) {
-  // Always call unconditionally — rules of hooks. Will be null outside GameProvider.
-  const ctx = useContext(GameContext);
+export default function Slot({
+  slot,
+  index,
+  children,
+  interactive = true,
+  rotated = false,
+  dragOverSlot = null,
+  animatingSlot = null,
+  highlightEmpty = false,
+  handleDragOver,
+  handleDragLeave,
+  handleFieldDrop,
+  handleSlotClick,
+}: SlotProp) {
+  const isInteractive = interactive;
 
-  const isInteractive = interactive && ctx !== null;
+  const cardQuantity = slot?.cardIds.length ?? 0;
 
-  const dragOverSlot = isInteractive ? ctx!.dragOverSlot : null;
-  const animatingSlot = isInteractive ? ctx!.animatingSlot : null;
-  const highlightEmpty = isInteractive ? ctx!.highlightEmpty : false;
-
-  const filled = !!(slot.cardName && slot.cardQuantity > 0);
-  const isDragOver = dragOverSlot === slot.slotId;
-  const isAnimating = animatingSlot === slot.slotId;
+  const filled = !!(slot?.cardName && cardQuantity > 0);
+  const isDragOver = dragOverSlot === slot?.slotId;
+  const isAnimating = animatingSlot === slot?.slotId;
 
   const onDrop = (e: React.DragEvent) => {
-    if (!isInteractive) return;
+    if (!isInteractive || !slot) return;
     e.preventDefault();
     const raw = e.dataTransfer.getData("application/card");
     if (!raw) return;
     try {
       const card = JSON.parse(raw);
-      ctx!.handleFieldDrop(slot.slotId, index, card);
+      handleFieldDrop?.(slot.slotId, index, card);
     } catch {
       // ignore malformed payload
     }
   };
 
-  const sharedDragProps = isInteractive ? {
-    onDragOver: (e: React.DragEvent) => ctx!.handleDragOver(e, slot.slotId),
-    onDragLeave: ctx!.handleDragLeave,
-    onDrop,
-  } : {};
+  const sharedDragProps =
+    isInteractive && slot
+      ? {
+          onDragOver: (e: React.DragEvent) => handleDragOver?.(e, slot.slotId),
+          onDragLeave: handleDragLeave,
+          onDrop,
+        }
+      : {};
 
-  const handleClick = isInteractive
-    ? () => ctx!.handleFieldSlotClick(slot.slotId, index)
-    : undefined;
+  const handleClick =
+    isInteractive && slot
+      ? () => handleSlotClick?.(slot.slotId, index)
+      : undefined;
 
   // Filled slot — card provided as children
   if (filled && children) {
@@ -70,7 +86,7 @@ export default function NewSlot({ slot, index, children, interactive = true, rot
                      text-xs font-bold rounded-full border-2 border-white
                      shadow-md z-10 pointer-events-none"
         >
-          {slot.cardQuantity}
+          {cardQuantity}
         </div>
       </div>
     );
@@ -85,14 +101,18 @@ export default function NewSlot({ slot, index, children, interactive = true, rot
           isInteractive
             ? "bg-white border-gray-300 shadow-md hover:shadow-xl hover:-translate-y-1 cursor-pointer"
             : "bg-white border-gray-300 shadow-md",
-          isAnimating ? "animate-plant" : rotated ? "transition-none" : "transition-all duration-150",
-          rotated ? "[transform:rotate(180deg)] card-no-transition" : "",
+          isAnimating
+            ? "animate-plant"
+            : rotated
+              ? "transition-none"
+              : "transition-all duration-150",
+          rotated ? "transform-[rotate(180deg)] card-no-transition" : "",
         ].join(" ")}
         onClick={handleClick}
         {...sharedDragProps}
       >
         <div className="text-xs font-semibold text-center px-2 text-gray-800 line-clamp-2">
-          {slot.cardName}
+          {slot?.cardName}
         </div>
         <div
           className="absolute -top-2 -right-2 flex items-center
@@ -100,7 +120,7 @@ export default function NewSlot({ slot, index, children, interactive = true, rot
                      text-xs font-bold rounded-full border-2 border-white
                      shadow-md pointer-events-none"
         >
-          {slot.cardQuantity}
+          {cardQuantity}
         </div>
       </div>
     );

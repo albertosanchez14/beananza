@@ -1,5 +1,14 @@
+"use client";
+
 import { WaitingLobbyState } from "@/hooks/state";
+import Player from "@/components/player";
+import Table from "@/components/table";
 import { useRouter } from "next/navigation";
+import Center from "@/components/center";
+import { CardPile } from "@/components/card-pile";
+import Opponents from "@/components/opponents";
+import Field from "@/components/field";
+import NewSlot from "@/components/slot";
 
 type WaitingRoomProps = {
   roomId: string;
@@ -9,6 +18,26 @@ type WaitingRoomProps = {
   sendLeave: (roomId: string) => void;
 };
 
+function GhostSeat({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-1 opacity-30">
+      {/* Dashed circle */}
+      <div
+        className="rounded-full border-2 border-dashed border-gray-400 flex items-center justify-center"
+        style={{ width: 56, height: 56 }}
+      >
+        <span className="text-gray-400 text-xs font-medium">{label}</span>
+      </div>
+      <span
+        className="text-[10px] text-gray-400 font-medium"
+        style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}
+      >
+        Empty
+      </span>
+    </div>
+  );
+}
+
 export default function WaitingRoom({
   roomId,
   playerId,
@@ -17,147 +46,172 @@ export default function WaitingRoom({
   sendLeave,
 }: WaitingRoomProps) {
   const router = useRouter();
+
   const playerList = Object.values(waitingLobbyState.allPlayers);
   const playerCount = playerList.length;
   const readyCount = playerList.filter((p) => p.ready).length;
   const needMorePlayers = playerCount < waitingLobbyState.minPlayers;
 
-  const handleSetReady = (ready: boolean) => {
-    setReady(roomId, ready);
-  };
+  const me = waitingLobbyState.allPlayers[playerId];
+  const opponents = playerList.filter((p) => p.id !== playerId);
 
+  const emptyOpponentSlots = Math.max(
+    0,
+    waitingLobbyState.maxPlayers - 1 - opponents.length,
+  );
+
+  const handleSetReady = (ready: boolean) => setReady(roomId, ready);
   const handleLeaveRoom = () => {
     sendLeave(roomId);
-    router.push("/");
+    router.push("/room");
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
-      {/* Header Section */}
-      <div className="bg-linear-to-r from-blue-500 to-purple-600 rounded-lg p-6 mb-6 text-white">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-bold">Waiting Room</h2>
-            <p className="text-sm opacity-90">Room ID: {roomId}</p>
-          </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold">
-              {playerCount}/{waitingLobbyState.maxPlayers}
-            </div>
-            <div className="text-xs opacity-90">Players</div>
-          </div>
-        </div>
+    <div
+      className="relative w-full h-full overflow-hidden"
+      style={{ background: "#1a1008" }}
+    >
+      <Table>
+        <Opponents>
+          {opponents.map((player) => (
+            <Player
+              key={player.id}
+              playerId={player.id}
+              playerName={player.name}
+              playerReady={player.ready}
+              playerStatus={"waiting"}
+              field={
+                <Field>
+                  {Array.from({ length: 2 }).map((_, index) => {
+                    return (
+                      <NewSlot
+                        key={index}
+                        index={index}
+                        interactive={false}
+                        rotated={true}
+                      />
+                    );
+                  })}
+                </Field>
+              }
+            />
+          ))}
+          {Array.from({ length: emptyOpponentSlots }).map((_, i) => (
+            <GhostSeat
+              key={`ghost-${i}`}
+              label={`${opponents.length + i + 2}`}
+            />
+          ))}
+        </Opponents>
 
-        {/* Game Start Status */}
-        <div className="bg-white/20 rounded-lg p-3 backdrop-blur-sm">
-          {waitingLobbyState.canStart ? (
-            <div className="flex items-center gap-2 text-green-300">
-              <span className="text-xl">✓</span>
-              <span className="font-semibold">
-                Game will start automatically!
+        <Center>
+          <CardPile label="Draw" count={0} topCard={null} />
+          <div
+            className="flex flex-col self-center items-center gap-2 px-5 py-3 rounded-2xl"
+            style={{
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(6px)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              minWidth: 140,
+            }}
+          >
+            <span
+              className="font-mono text-xs tracking-widest text-gray-300 uppercase"
+              style={{ letterSpacing: "0.18em" }}
+            >
+              {roomId}
+            </span>
+
+            <div className="w-full h-px bg-white/10" />
+
+            {waitingLobbyState.canStart ? (
+              <span
+                className="flex items-center gap-1.5 text-green-400 
+							font-semibold text-xs"
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-green-400 
+								animate-pulse inline-block"
+                />
+                Game starting…
               </span>
-            </div>
-          ) : needMorePlayers ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xl">⏳</span>
-              <span>
-                Waiting for {waitingLobbyState.minPlayers - playerCount} more
-                player
-                {waitingLobbyState.minPlayers - playerCount !== 1 ? "s" : ""}...
-                (minimum {waitingLobbyState.minPlayers})
-              </span>
-            </div>
+            ) : needMorePlayers ? (
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-white font-bold text-lg tabular-nums leading-none">
+                  {playerCount}
+                  <span className="text-gray-400 font-normal text-sm">
+                    /{waitingLobbyState.maxPlayers}
+                  </span>
+                </span>
+                <span className="text-gray-400 text-[10px] text-center leading-tight">
+                  need {waitingLobbyState.minPlayers - playerCount} more
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-white font-bold text-lg tabular-nums leading-none">
+                  {readyCount}
+                  <span className="text-gray-400 font-normal text-sm">
+                    /{playerCount}
+                  </span>
+                </span>
+                <span className="text-gray-400 text-[10px]">ready</span>
+              </div>
+            )}
+          </div>
+          <CardPile label="Discard" count={0} topCard={null} />
+        </Center>
+
+        <div
+          className="absolute bottom-16 left-1/2"
+          style={{ transform: "translateX(-50%)", zIndex: 15 }}
+        >
+          {me ? (
+            <Player
+              playerId={me.id}
+              playerName={me.name}
+              playerReady={me.ready}
+              playerStatus={"waiting"}
+              field={<></>}
+            />
           ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-xl">⏳</span>
-              <span>
-                Waiting for players to ready up ({readyCount}/{playerCount}{" "}
-                ready)
-              </span>
-            </div>
+            <GhostSeat label="?" />
           )}
         </div>
-      </div>
+      </Table>
 
-      {/* Player List */}
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6 mb-6">
-        <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-100">
-          Players
-        </h3>
-        <div className="space-y-3">
-          {playerList.map((player) => {
-            const isMe = player.id === playerId;
-            return (
-              <div
-                key={player.id}
-                className={`flex items-center justify-between p-4 rounded-lg border-2 transition-all ${
-                  isMe
-                    ? "bg-blue-50 dark:bg-blue-900/20 border-blue-400"
-                    : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${
-                      player.ready
-                        ? "bg-green-500"
-                        : "bg-gray-400 dark:bg-gray-600"
-                    }`}
-                  >
-                    {player.ready ? "✓" : "○"}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-800 dark:text-gray-100">
-                        {player.name}
-                      </span>
-                      {isMe && (
-                        <span className="text-xs px-2 py-1 bg-blue-500 text-white rounded-full">
-                          You
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {player.ready ? "Ready" : "Waiting"}
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  {player.ready ? (
-                    <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-sm font-semibold">
-                      Ready
-                    </span>
-                  ) : (
-                    <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full text-sm">
-                      Not Ready
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+      <div
+        className="absolute bottom-0 left-0 right-0 z-30"
+        style={{
+          background:
+            "linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.60) 70%, transparent 100%)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+        }}
+      >
+        <div className="flex flex-col items-center gap-3 px-6 pb-4 pt-6">
+          {/* Action buttons */}
+          <div className="flex gap-3 w-full max-w-sm">
+            <button
+              onClick={() => handleSetReady(!waitingLobbyState.myReadyState)}
+              disabled={needMorePlayers}
+              className={`flex-1 py-3 px-5 rounded-xl font-bold text-sm transition-all shadow-lg ${
+                waitingLobbyState.myReadyState
+                  ? "bg-yellow-500 hover:bg-yellow-400 text-black"
+                  : "bg-green-500 hover:bg-green-400 text-white"
+              } disabled:opacity-40 disabled:cursor-not-allowed`}
+            >
+              {waitingLobbyState.myReadyState ? "Not Ready" : "Ready Up"}
+            </button>
+            <button
+              onClick={handleLeaveRoom}
+              className="px-5 py-3 bg-white/10 hover:bg-white/20 text-white
+							rounded-xl font-semibold text-sm transition-all disabled:opacity-40 
+							disabled:cursor-not-allowed"
+            >
+              Leave
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex gap-4">
-        <button
-          onClick={() => handleSetReady(!waitingLobbyState.myReadyState)}
-          disabled={needMorePlayers}
-          className={`flex-1 py-4 px-6 rounded-lg font-bold text-lg transition-all ${
-            waitingLobbyState.myReadyState
-              ? "bg-yellow-500 hover:bg-yellow-600 text-white"
-              : "bg-green-500 hover:bg-green-600 text-white"
-          } disabled:bg-gray-400 disabled:cursor-not-allowed disabled:hover:bg-gray-400`}
-        >
-          {waitingLobbyState.myReadyState ? "Not Ready" : "Ready Up"}
-        </button>
-        <button
-          onClick={handleLeaveRoom}
-          className="px-6 py-4 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-all"
-        >
-          Leave Room
-        </button>
       </div>
     </div>
   );

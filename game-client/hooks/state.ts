@@ -97,8 +97,7 @@ export function useSessionState(
     setPrevMessage(lastMessage);
 
     if (lastMessage.type === "joined") {
-      const payload =
-        lastMessage.payload as unknown as JoinedResponsePayload;
+      const payload = lastMessage.payload as unknown as JoinedResponsePayload;
       const serverState = payload.session_state;
       if (
         serverState === "waiting" ||

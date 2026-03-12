@@ -28,17 +28,15 @@ export type GameConfig = {
   };
 };
 
-export type Slot = {
+export type SlotType = {
   slotId: string;
-  cardName: string;
-  cardQuantity: number;
+  cardName: string | null;
   cardIds: string[];
 };
 
 export type FieldType = {
-  // Matches the server's JSON key "fieldID" (uppercase D)
   fieldID: string;
-  slots: Array<Slot>;
+  slots: Array<SlotType>;
 };
 
 export type ExternalPlayer = {

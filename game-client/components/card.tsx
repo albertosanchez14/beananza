@@ -11,12 +11,9 @@ type CardProp = {
   onClick?: () => void;
   style?: React.CSSProperties;
   className?: string;
-  cardRef?: (el: HTMLDivElement | null) => void;
-  /** Suppresses all CSS transitions on the card inner — use for static display contexts. */
   noTransition?: boolean;
 };
 
-/** Sort exchange rate entries by card count (ascending). */
 function sortedRates(
   money_exchange: Record<string, number>,
 ): { cards: number; coins: number }[] {
@@ -33,7 +30,6 @@ export default function Card({
   onClick,
   style,
   className,
-  cardRef,
   noTransition = false,
 }: CardProp) {
   const [isDragging, setIsDragging] = useState(false);
@@ -57,7 +53,6 @@ export default function Card({
 
   return (
     <div
-      ref={cardRef}
       onClick={onClick}
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
@@ -79,7 +74,11 @@ export default function Card({
           ${onClick && !draggable ? "hover:shadow-lg hover:-translate-y-3" : ""}
           ${onClick && draggable ? "hover:shadow-lg hover:-translate-y-3" : ""}
         `}
-        style={noTransition ? { transition: "none", transformStyle: "flat" } : undefined}
+        style={
+          noTransition
+            ? { transition: "none", transformStyle: "flat" }
+            : undefined
+        }
       >
         {/* ── FRONT FACE ─────────────────────────────────────────────────── */}
         <div
