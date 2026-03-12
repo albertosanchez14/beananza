@@ -87,7 +87,7 @@ export function GameProvider({
         setSelectedCard(null);
       }
     } else {
-      if (slot && slot.cardName && slot.cardQuantity > 0) {
+      if (slot && slot.cardName && slot.slotId.length > 0) {
         onHarvestField(slot.slotId);
       }
     }

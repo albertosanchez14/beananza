@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import Card from "@/components/card";
 import { BaseCard, CardType } from "@/schemas/types";
+import { Children, ReactNode } from "react";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
 const MAX_CARDS = 60;
 const CARD_W = 96;
-const CARD_H = 144; // full card height
+const CARD_H = 144;
 const LAYER_H = 4;
 const MAX_LAYERS = 7;
 // Fixed container height used by both CardPile and CenterCards so all three
@@ -43,7 +43,6 @@ export function CardPile({
   count,
   topCard,
   onClickAction,
-  deckRef,
 }: CardPileProps) {
   if (!topCard) {
     return (
@@ -70,7 +69,10 @@ export function CardPile({
   const faceBottom = layers * LAYER_H;
 
   return (
-    <div className="relative select-none" style={{ width: CARD_W, height: PILE_CONTAINER_H }}>
+    <div
+      className="relative select-none"
+      style={{ width: CARD_W, height: PILE_CONTAINER_H }}
+    >
       {/* Top card — always full h-36, bottom edge anchored above the layer slabs.
           The card shrinks visually because faceH controls how far *up* the layers
           reach, not by clipping the card image itself. */}
@@ -81,17 +83,7 @@ export function CardPile({
           zIndex: layers + 1,
         }}
       >
-        <Card
-          card={topCard}
-          flipped={true}
-          onClick={onClickAction}
-          cardRef={(el) => {
-            if (deckRef) {
-              const ref = deckRef as { current: HTMLDivElement | null };
-              ref.current = el;
-            }
-          }}
-        />
+        <Card card={topCard} flipped={true} onClick={onClickAction} />
       </div>
 
       {/* Depth layers — peek out below the face card */}
@@ -117,7 +109,11 @@ export function CardPile({
         className="absolute flex items-center justify-center w-6 h-6
                    bg-black/60 text-white text-xs font-bold rounded-full
                    border-2 border-white/60 shadow-md pointer-events-none"
-        style={{ bottom: faceBottom + CARD_H - 30, left: 6, zIndex: layers + 2 }}
+        style={{
+          bottom: faceBottom + CARD_H - 30,
+          left: 6,
+          zIndex: layers + 2,
+        }}
       >
         {count}
       </div>
@@ -131,82 +127,24 @@ export function CardPile({
 // plays a fly-in animation from the deck position when new cards appear.
 
 type CenterCardsProps = {
-  /** The face-up cards currently on the table. */
-  cards: CardType[];
-  /** How many slots to reserve (from /config). Falls back to cards.length. */
-  slots?: number;
-  /** The currently selected card (to highlight matching center card). */
-  selectedCard?: CardType | null;
-  /** Ref to the draw deck element, used to measure the deal animation offset. */
-  deckRef: React.RefObject<HTMLDivElement | null>;
-  /** Called when a center card is clicked. */
-  onCardClickAction: (card: CardType) => void;
+  slots: number;
+  children: ReactNode;
 };
 
-export function CenterCards({
-  cards,
-  slots,
-  selectedCard,
-  deckRef,
-  onCardClickAction,
-}: CenterCardsProps) {
-  const [dealingCardIds, setDealingCardIds] = useState<Set<string>>(new Set());
-  const prevCountRef = useRef<number>(cards.length);
-  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const dealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    const prev = prevCountRef.current;
-    const curr = cards.length;
-    prevCountRef.current = curr;
-
-    if (curr <= prev) return; // cards removed or unchanged — no deal anim
-
-    const newCards = cards.slice(prev);
-    const newIds = new Set(newCards.map((c) => c.cardId));
-
-    // Measure deck→card offset in a rAF so new cards are in the DOM.
-    requestAnimationFrame(() => {
-      const deckEl = deckRef.current;
-      if (!deckEl) return;
-      const deckRect = deckEl.getBoundingClientRect();
-      const deckCx = deckRect.left + deckRect.width / 2;
-      const deckCy = deckRect.top + deckRect.height / 2;
-
-      newIds.forEach((id) => {
-        const cardEl = cardRefs.current.get(id);
-        if (!cardEl) return;
-        const cardRect = cardEl.getBoundingClientRect();
-        const cardCx = cardRect.left + cardRect.width / 2;
-        const cardCy = cardRect.top + cardRect.height / 2;
-        cardEl.style.setProperty("--deck-dx", `${deckCx - cardCx}px`);
-        cardEl.style.setProperty("--deck-dy", `${deckCy - cardCy}px`);
-      });
-
-      setDealingCardIds(new Set(newIds));
-
-      if (dealTimeoutRef.current) clearTimeout(dealTimeoutRef.current);
-      dealTimeoutRef.current = setTimeout(
-        () => setDealingCardIds(new Set()),
-        520,
-      );
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards]);
-
-  const slotCount = slots ?? cards.length;
-  if (slotCount === 0) return null;
+export function CenterCards({ slots, children }: CenterCardsProps) {
+  const items = Children.toArray(children);
+  if (slots === 0) return null;
 
   return (
     <div
       className="flex items-end gap-2"
       style={{
-        width: slotCount * CARD_W + (slotCount - 1) * 8,
+        width: slots * CARD_W + (slots - 1) * 8,
         height: PILE_CONTAINER_H,
       }}
     >
-      {Array.from({ length: slotCount }).map((_, i) => {
-        const card = cards[i];
+      {Array.from({ length: slots }).map((_, i) => {
+        const card = items[i];
         if (!card) {
           return (
             <div
@@ -215,21 +153,7 @@ export function CenterCards({
             />
           );
         }
-        const isDealing = dealingCardIds.has(card.cardId);
-        return (
-          <Card
-            key={card.cardId}
-            card={card}
-            isSelected={selectedCard?.cardId === card.cardId}
-            draggable
-            onClick={() => onCardClickAction(card)}
-            cardRef={(el) => {
-              if (el) cardRefs.current.set(card.cardId, el);
-              else cardRefs.current.delete(card.cardId);
-            }}
-            className={isDealing ? "animate-deal" : undefined}
-          />
-        );
+        return card;
       })}
     </div>
   );

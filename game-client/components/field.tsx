@@ -6,7 +6,7 @@ type NewFieldProps = {
   children: ReactNode;
 };
 
-export default function NewField({ children }: NewFieldProps) {
+export default function Field({ children }: NewFieldProps) {
   return (
     <div
       className="relative flex gap-2 px-4 py-3

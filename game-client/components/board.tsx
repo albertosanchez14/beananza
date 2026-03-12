@@ -1,16 +1,17 @@
-import { CardType, Slot } from "@/schemas/types";
-import Table from "./table";
-import { useRef } from "react";
+import { CardType, SlotType } from "@/schemas/types";
+import { useGameContext } from "@/components/game-context";
+
+import Table from "@/components/table";
 import { CardPile, CenterCards } from "@/components/card-pile";
 import Opponents from "@/components/opponents";
 import Center from "@/components/center";
-import CurrentPlayer from "./current-player";
-import NewSlot from "./new-slot";
-import NewField from "./new-field";
+import CurrentPlayer from "@/components/current-player";
+import Slot from "@/components/slot";
+import Field from "@/components/field";
 import TradedCards from "./traded-cards";
-import PlayerHand from "./player-hand";
-import { useGameContext } from "./game-context";
-import Card from "./card";
+import FanLayout from "@/components/fan-layout";
+import Card from "@/components/card";
+import Player from "@/components/player";
 
 export default function Board() {
   const {
@@ -20,6 +21,13 @@ export default function Board() {
     cardLookup,
     handleCardClick,
     handleDrawDeckClick,
+    handleFieldSlotClick,
+    handleFieldDrop,
+    handleDragOver,
+    handleDragLeave,
+    dragOverSlot,
+    animatingSlot,
+    highlightEmpty,
   } = useGameContext();
 
   const {
@@ -27,6 +35,7 @@ export default function Board() {
     discardTopCard,
     deckSize,
     discardPileSize,
+    hand,
     players,
     playerTurn,
     phase,
@@ -34,18 +43,18 @@ export default function Board() {
     coins,
   } = gameState;
 
-  // Ref forwarded to DrawDeck so CenterCards can measure deal animation offset.
-  const deckRef = useRef<HTMLDivElement>(null);
-
   // A representative card for the draw deck back image.
   // Prefer a real card from the live game state (which carries backImage from the server),
   // but fall back to the first entry in cardLookup so the back image is always available
   // even before any cards have been dealt/discarded.
-  const anyCardWithBack: CardType =
-    centerCards[0] ??
+  const anyCardWithBack: CardType = centerCards[0] ??
     discardTopCard ??
-    [...cardLookup.values()][0] ??
-    { cardId: "__deck__", cardName: "", backImage: "" };
+    [...cardLookup.values()][0] ?? {
+      cardId: "__deck__",
+      cardName: "",
+      backImage: "",
+    };
+  const backImage = [...(cardLookup?.values() ?? [])][0]?.backImage ?? "";
 
   return (
     <div
@@ -53,27 +62,73 @@ export default function Board() {
       style={{ background: "#1a1008" }}
     >
       <Table>
-        <Opponents
-          players={players}
-          currentTurnPlayerId={playerTurn}
-          cardLookup={cardLookup}
-          gamePhase={phase}
-        />
+        <Opponents>
+          {players.map((player) => (
+            <Player
+              key={player.playerId}
+              playerId={player.playerId}
+              playerName={player.playerName}
+              playerStatus="active"
+              playerCoins={player.playerCoins}
+              playerPickedCardsCount={player.playerPickedCardsCount}
+              isCurrentTurn={player.playerId === playerTurn}
+              gamePhase={phase}
+              field={
+                <Field>
+                  {player.playerField.slots.map((slot, index) => {
+                    const cardForSlot = slot.cardName
+                      ? (cardLookup?.get(slot.cardName) ?? null)
+                      : null;
+                    return (
+                      <Slot
+                        key={slot.slotId}
+                        slot={slot}
+                        index={index}
+                        interactive={false}
+                        rotated={true}
+                      >
+                        {cardForSlot && (
+                          <Card
+                            card={cardForSlot}
+                            flipped={false}
+                            noTransition={true}
+                          />
+                        )}
+                      </Slot>
+                    );
+                  })}
+                </Field>
+              }
+              hand={
+                <FanLayout variant="opponent" maxCards={12}>
+                  {Array.from({ length: player.playerHandSize }).map(
+                    (_, index) => (
+                      <Card key={index} card={{ backImage }} flipped={true} />
+                    ),
+                  )}
+                </FanLayout>
+              }
+            />
+          ))}
+        </Opponents>
         <Center>
           <CardPile
             label="Draw"
             count={deckSize}
             topCard={anyCardWithBack}
             onClickAction={handleDrawDeckClick}
-            deckRef={deckRef}
           />
-          <CenterCards
-            cards={centerCards}
-            slots={cardsPerTurn}
-            selectedCard={selectedCard}
-            deckRef={deckRef}
-            onCardClickAction={(card) => handleCardClick(card, "center")}
-          />
+          <CenterCards slots={cardsPerTurn ?? 3}>
+            {centerCards.map((card) => (
+              <Card
+                key={card.cardId}
+                card={card}
+                isSelected={selectedCard?.cardId === card.cardId}
+                draggable
+                onClick={() => handleCardClick(card, "center")}
+              />
+            ))}
+          </CenterCards>
           <CardPile
             label="Discard"
             count={discardPileSize}
@@ -83,19 +138,47 @@ export default function Board() {
         <CurrentPlayer
           coinCount={coins}
           field={
-            <NewField>
-              {field.slots.map((s: Slot, index: number) => {
-                const cardForSlot = cardLookup.get(s.cardName) ?? null;
+            <Field>
+              {field.slots.map((s: SlotType, index: number) => {
+                const cardForSlot = s.cardName
+                  ? (cardLookup.get(s.cardName) ?? null)
+                  : null;
                 return (
-                  <NewSlot key={s.slotId} slot={s} index={index}>
+                  <Slot
+                    key={s.slotId}
+                    slot={s}
+                    index={index}
+                    dragOverSlot={dragOverSlot}
+                    animatingSlot={animatingSlot}
+                    highlightEmpty={highlightEmpty}
+                    handleDragOver={handleDragOver}
+                    handleDragLeave={handleDragLeave}
+                    handleFieldDrop={handleFieldDrop}
+                    handleSlotClick={handleFieldSlotClick}
+                  >
                     {cardForSlot && <Card card={cardForSlot} flipped={false} />}
-                  </NewSlot>
+                  </Slot>
                 );
               })}
-            </NewField>
+            </Field>
           }
           tradedCards={<TradedCards />}
-          hand={<PlayerHand />}
+          hand={
+            <FanLayout phase={phase}>
+              {hand.map((card) => {
+                const isSelected = selectedCard?.cardId === card.cardId;
+                return (
+                  <Card
+                    key={card.cardId}
+                    card={card}
+                    isSelected={isSelected}
+                    draggable={phase !== "plantTrade"}
+                    onClick={() => handleCardClick(card, "hand")}
+                  />
+                );
+              })}
+            </FanLayout>
+          }
         />
       </Table>
     </div>

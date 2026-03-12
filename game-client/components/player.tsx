@@ -1,8 +1,5 @@
-import { CardType, ExternalPlayer } from "@/schemas/types";
-import NewField from "@/components/new-field";
-import NewSlot from "@/components/new-slot";
-import Card from "@/components/card";
 import { Coins, Leaf } from "lucide-react";
+import { ReactNode } from "react";
 
 // ---------------------------------------------------------------------------
 // Deterministic hash from a string (djb2)
@@ -17,60 +14,6 @@ function hash(str: string): number {
 
 function pick<T>(arr: T[], seed: number): T {
   return arr[seed % arr.length];
-}
-
-// ---------------------------------------------------------------------------
-// Fan helpers (adapted from player-hand.tsx)
-// ---------------------------------------------------------------------------
-function getFanStyle(index: number, total: number): React.CSSProperties {
-  if (total === 0) return {};
-  const center = (total - 1) / 2;
-  const offset = index - center;
-  const rotateDeg = offset * 5;
-  const arcDrop = Math.abs(offset) ** 1.5 * 3;
-
-  return {
-    transform: `rotate(${rotateDeg}deg) translateY(${arcDrop}px)`,
-    transformOrigin: "bottom center",
-    zIndex: total - index,
-    marginLeft: index === 0 ? 0 : -52,
-    position: "relative",
-  };
-}
-
-// A fan of N face-down cards rendered at reduced scale.
-function OpponentCardFan({ count, backImage }: { count: number; backImage: string }) {
-  const capped = Math.min(count, 12);
-  if (capped === 0) return null;
-
-  return (
-    <div
-      className="flex items-end justify-center"
-      style={{
-        // The cards are w-24 (96px) scaled to 0.42 ≈ 40px wide, so reserve
-        // enough width for the widest spread (12 cards with -14px overlap each).
-        minWidth: 60,
-        // Scale the whole fan down; keep it anchored at the bottom so it
-        // visually sits "in hand" in front of the avatar torso.
-        transform: "scale(0.28)",
-        transformOrigin: "bottom center",
-        // Compensate for the space the unscaled cards would occupy above
-        // (h-36 = 144px at full scale → 144*0.42 ≈ 60px visual height).
-        // We pull the container up with a negative margin so the fan overlaps
-        // the bottom of the avatar SVG naturally.
-        marginTop: -8,
-      }}
-    >
-      {Array.from({ length: capped }).map((_, index) => (
-        <Card
-          key={index}
-          card={{ backImage }}
-          flipped={true}
-          style={getFanStyle(index, capped)}
-        />
-      ))}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +35,7 @@ const HAIR_COLORS = ["#2c1810", "#1a1a1a", "#7b3f00", "#c8a96e", "#5c3317"];
 // ---------------------------------------------------------------------------
 // MiiAvatar — inline SVG character
 // ---------------------------------------------------------------------------
-function MiiAvatar({
+export function MiiAvatar({
   name,
   isCurrentTurn,
 }: {
@@ -224,51 +167,146 @@ function MiiAvatar({
 // ---------------------------------------------------------------------------
 // Player component
 // ---------------------------------------------------------------------------
-type PlayerProps = {
-  player: ExternalPlayer;
-  isCurrentTurn?: boolean;
-  gamePhase?: string;
-  cardLookup?: Map<string, CardType>;
+
+type WaitingPlayerProps = {
+  playerId: string;
+  playerName: string;
+  playerStatus: "waiting";
+  playerReady: boolean;
+  isMe?: boolean;
+  field?: ReactNode;
 };
 
-export default function Player({
-  player,
+type ActivePlayerProps = {
+  playerId: string;
+  playerName: string;
+  playerStatus: "active";
+  playerCoins?: number;
+  playerPickedCardsCount?: number;
+  isCurrentTurn?: boolean;
+  gamePhase?: string;
+  field?: ReactNode;
+  hand?: ReactNode;
+};
+
+type PlayerProps = WaitingPlayerProps | ActivePlayerProps;
+
+export default function Player(props: PlayerProps) {
+  if (props.playerStatus === "waiting") {
+    return <WaitingPlayer {...props} />;
+  }
+
+  return <ActivePlayer {...props} />;
+}
+
+function WaitingPlayer({
+  playerName,
+  playerReady = false,
+  isMe = false,
+  field,
+}: WaitingPlayerProps) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 transition-all duration-200">
+      <div className="relative">
+        <div
+          className="absolute inset-0 rounded-full"
+          style={{
+            border: playerReady ? "2.5px solid #4ade80" : "2.5px solid #9ca3af",
+            boxShadow: playerReady ? "0 0 0 0 rgba(74,222,128,0.4)" : undefined,
+            animation: !playerReady
+              ? "pulse-ring 2s ease-in-out infinite"
+              : undefined,
+            margin: -4,
+            width: "calc(100% + 8px)",
+            height: "calc(100% + 8px)",
+          }}
+        />
+        <MiiAvatar name={playerName} isCurrentTurn={false} />
+      </div>
+
+      <p
+        className="text-[10px] font-bold text-white leading-tight max-w-[72px] text-center truncate"
+        style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}
+      >
+        {playerName}
+        {isMe && (
+          <span className="ml-0.5 text-blue-300 font-normal">(you)</span>
+        )}
+      </p>
+
+      <span
+        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${
+          playerReady
+            ? "bg-green-500/80 text-white"
+            : "bg-gray-700/80 text-gray-300"
+        }`}
+      >
+        {playerReady ? "Ready" : "Waiting"}
+      </span>
+
+      {field && (
+        <div
+          className="scale-75 origin-top"
+          style={{ marginTop: 12, perspective: "700px" }}
+        >
+          <div
+            style={{
+              transform: "rotateX(25deg) scaleX(1.08)",
+              transformOrigin: "bottom center",
+            }}
+          >
+            {field}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivePlayer({
+  playerName,
+  playerStatus,
+  playerCoins,
+  playerPickedCardsCount,
   isCurrentTurn = false,
   gamePhase,
-  cardLookup,
-}: PlayerProps) {
+  field,
+  hand,
+}: ActivePlayerProps) {
   const showPickedCards =
-    gamePhase === "plantTrade" && (player.playerPickedCardsCount ?? 0) > 0;
+    gamePhase === "plantTrade" && (playerPickedCardsCount ?? 0) > 0;
 
   return (
     <div className="flex flex-col items-center gap-1 transition-all duration-200">
-      {/* Avatar block — name/stats on top, avatar in middle, fan in front */}
       <div
         className="relative flex flex-col items-center"
         style={{ width: 64 }}
       >
-        {/* Name + stats above the avatar */}
         <div className="flex flex-col items-center gap-0.5 mb-1">
           <p
             className="text-xs font-bold text-white leading-tight"
             style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}
           >
-            {player.playerName}
+            {playerName}
           </p>
+
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 text-[10px] text-gray-200">
-              <Coins
-                size={9}
-                strokeWidth={2}
-                className="text-yellow-300 shrink-0"
-              />
-              <span
-                className="font-medium tabular-nums"
-                style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}
-              >
-                {player.playerCoins}
-              </span>
-            </div>
+            {playerCoins !== undefined && (
+              <div className="flex items-center gap-1 text-[10px] text-gray-200">
+                <Coins
+                  size={9}
+                  strokeWidth={2}
+                  className="text-yellow-300 shrink-0"
+                />
+                <span
+                  className="font-medium tabular-nums"
+                  style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}
+                >
+                  {playerCoins}
+                </span>
+              </div>
+            )}
+
             {showPickedCards && (
               <div className="flex items-center gap-1 text-[10px] text-emerald-300 font-semibold">
                 <Leaf size={9} strokeWidth={2} className="shrink-0" />
@@ -276,65 +314,46 @@ export default function Player({
                   className="tabular-nums"
                   style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}
                 >
-                  {player.playerPickedCardsCount}
+                  {playerPickedCardsCount}
                 </span>
               </div>
             )}
           </div>
-          {player.playerStatus !== "active" && (
+
+          {playerStatus !== "active" && (
             <span className="text-[8px] px-1 py-px rounded-full text-gray-400 border border-gray-600/60 tracking-wide uppercase">
-              {player.playerStatus}
+              {playerStatus}
             </span>
           )}
         </div>
 
-        {/* Mii avatar */}
-        <MiiAvatar name={player.playerName} isCurrentTurn={isCurrentTurn} />
+        <MiiAvatar name={playerName} isCurrentTurn={isCurrentTurn} />
 
-        {/* Card fan — in front of the avatar torso */}
-        <div
-          className="absolute left-1/2"
-          style={{ bottom: -6, transform: "translateX(-50%)", zIndex: 10 }}
-        >
-          <OpponentCardFan count={player.playerHandSize} backImage={[...cardLookup?.values() ?? []][0]?.backImage ?? ""} />
-        </div>
+        {hand && (
+          <div
+            className="absolute left-1/2"
+            style={{ bottom: -6, transform: "translateX(-50%)", zIndex: 10 }}
+          >
+            {hand}
+          </div>
+        )}
       </div>
 
-      {/* Compact field below — margin to clear the fan overhang */}
-      <div
-        className="scale-75 origin-top"
-        style={{ marginTop: 18, perspective: "700px" }}
-      >
+      {field && (
         <div
-          style={{
-            transform: "rotateX(25deg) scaleX(1.08)",
-            transformOrigin: "bottom center",
-          }}
+          className="scale-75 origin-top"
+          style={{ marginTop: 18, perspective: "700px" }}
         >
-          <NewField>
-            {player.playerField.slots.map((slot, index) => {
-              const cardForSlot = cardLookup?.get(slot.cardName) ?? null;
-              return (
-                <NewSlot
-                  key={slot.slotId}
-                  slot={slot}
-                  index={index}
-                  interactive={false}
-                  rotated={true}
-                >
-                  {cardForSlot && (
-                    <Card
-                      card={cardForSlot}
-                      flipped={false}
-                      noTransition={true}
-                    />
-                  )}
-                </NewSlot>
-              );
-            })}
-          </NewField>
+          <div
+            style={{
+              transform: "rotateX(25deg) scaleX(1.08)",
+              transformOrigin: "bottom center",
+            }}
+          >
+            {field}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

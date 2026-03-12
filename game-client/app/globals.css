@@ -103,3 +103,34 @@ body {
 .card-no-transition .card-inner {
   transition: none !important;
 }
+
+/* ── Waiting-room deal animation ─────────────────────────────────────────────
+   Cards fly from the center of the board to each player's seat position.
+   --deal-dx / --deal-dy: pixel offset (target from center of viewport).
+   The card starts at translate(0,0) (center) and travels to (--deal-dx, --deal-dy).
+─────────────────────────────────────────────────────────────────────────────── */
+@keyframes deal-to-player {
+  0% {
+    transform: translate(-50%, -50%) scale(0.7) rotateZ(-8deg);
+    opacity: 0.5;
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1) rotateZ(0deg);
+  }
+  100% {
+    transform: translate(
+        calc(-50% + var(--deal-dx, 0px)),
+        calc(-50% + var(--deal-dy, 0px))
+      )
+      scale(0.9) rotateZ(4deg);
+    opacity: 0.85;
+  }
+}
+
+/* Pulsing ring for not-ready player avatars in the waiting room */
+@keyframes pulse-ring {
+  0%   { opacity: 0.5; transform: scale(1); }
+  50%  { opacity: 1;   transform: scale(1.08); }
+  100% { opacity: 0.5; transform: scale(1); }
+}

@@ -2,11 +2,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useActions, BroadcastPayload } from "@/hooks/useActions";
-import {
-  useGameState,
-  useSessionState,
-  useWaitingLobbyState,
-} from "@/hooks/state";
+import { useGameState, useWaitingLobbyState } from "@/hooks/state";
 import { useGameConfig } from "@/hooks/useGameConfig";
 import { JoinedResponsePayload } from "@/schemas/messages";
 import WaitingRoom from "./waiting-room";
@@ -15,13 +11,25 @@ import RunningRoom from "./running-room";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost/ws";
 
+// ---------------------------------------------------------------------------
+// View state — single source of truth for what to render.
+// "dealing" is a client-only transient between "waiting" and "playing" that
+// shows the deal animation overlaid on top of the already-mounted GameRoom.
+// ---------------------------------------------------------------------------
+type ViewState =
+  | "connecting"
+  | "waiting"
+  | "dealing"
+  | "playing"
+  | "pause"
+  | "gameAlreadyStarted";
+
 function loadProfile() {
   try {
     const raw = localStorage.getItem("playerProfile");
     const profile = raw ? JSON.parse(raw) : null;
-    // Require all three fields — a missing authToken means the profile was
-    // created before auth was introduced and the user must re-register.
-    if (!profile?.playerId || !profile?.name || !profile?.authToken) return null;
+    if (!profile?.playerId || !profile?.name || !profile?.authToken)
+      return null;
     return {
       id: profile.playerId as string,
       name: profile.name as string,
@@ -55,6 +63,12 @@ export default function Page() {
   const playerName = profile?.name ?? "";
   const authToken = profile?.authToken ?? "";
 
+  // Single view-state enum — updated synchronously inside onMessage so there
+  // is never a frame where state is inconsistent.
+  const [viewState, setViewState] = useState<ViewState>("connecting");
+  // Prevent multiple game_started events from re-triggering the deal anim.
+  const dealTriggeredRef = useRef(false);
+
   const {
     sendJoin,
     sendLeave,
@@ -78,7 +92,6 @@ export default function Page() {
       console.log("Room received message:", message);
 
       if (message.type === "joined") {
-        // Store the session token for reconnect support.
         const joined = message.payload as unknown as JoinedResponsePayload;
         if (joined?.session_token) {
           sessionStorage.setItem(
@@ -86,11 +99,17 @@ export default function Page() {
             joined.session_token,
           );
         }
-        // If the session is already playing or paused, pull our game state.
-        if (
-          joined.session_state === "playing" ||
-          joined.session_state === "pause"
-        ) {
+        const s = joined.session_state;
+        if (s === "waiting") {
+          setViewState("waiting");
+        } else if (s === "playing") {
+          // Reconnect / refresh straight into a live game — skip deal anim.
+          dealTriggeredRef.current = true;
+          setViewState("playing");
+          myState(roomId);
+        } else if (s === "pause") {
+          dealTriggeredRef.current = true;
+          setViewState("pause");
           myState(roomId);
         }
         return;
@@ -102,25 +121,41 @@ export default function Page() {
           case "player_joined":
           case "player_left":
           case "player_ready":
-          case "game_started":
             myState(roomId);
             break;
+          case "game_started":
+            // Fetch game state immediately so GameRoom is ready underneath.
+            myState(roomId);
+            if (!dealTriggeredRef.current) {
+              dealTriggeredRef.current = true;
+              // Transition to "dealing" — GameRoom will mount underneath the
+              // overlay so it has real state by the time the anim finishes.
+              setViewState("dealing");
+            }
+            break;
+        }
+      }
+
+      if (message.type === "error") {
+        const errorPayload = message.payload as { code: string };
+        if (errorPayload.code === "GAME_ALREADY_STARTED") {
+          setViewState("gameAlreadyStarted");
+        }
+        if (errorPayload.code === "unauthorized") {
+          localStorage.removeItem("playerProfile");
+          router.replace(`/identify?returnTo=/room/${roomId}`);
         }
       }
     },
     onError: (error) => {
       console.error("Room WebSocket error:", error);
       if (error.code === "unauthorized") {
-        // Stale or missing auth token — wipe the profile and force re-registration,
-        // then return the user directly back to this room.
         localStorage.removeItem("playerProfile");
         router.replace(`/identify?returnTo=/room/${roomId}`);
       }
-      // Other errors are surfaced reactively via useSessionState reading lastMessage.
     },
   });
 
-  const sessionState = useSessionState(lastMessage);
   const waitingLobbyState = useWaitingLobbyState(lastMessage, playerId);
   const gameState = useGameState(lastMessage);
   const { config, cardLookup } = useGameConfig();
@@ -143,13 +178,15 @@ export default function Page() {
     }
   }, [isConnected, playerId, playerName, roomId, sendJoin, sendReconnect]);
 
-  // Don't render until the profile check completes.
   if (!profile) return null;
+
+  const showGame =
+    viewState === "playing" || viewState === "pause" || viewState === "dealing";
 
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-50 dark:bg-black">
       <main className="relative flex h-screen w-full flex-col bg-white dark:bg-black">
-        {sessionState === "connecting" && (
+        {viewState === "connecting" && (
           <div className="flex h-full items-center justify-center">
             <span className="text-sm text-zinc-400 dark:text-zinc-600">
               Connecting...
@@ -157,11 +194,9 @@ export default function Page() {
           </div>
         )}
 
-        {sessionState === "gameAlreadyStarted" && (
-          <RunningRoom roomId={roomId} />
-        )}
+        {viewState === "gameAlreadyStarted" && <RunningRoom roomId={roomId} />}
 
-        {sessionState === "waiting" && (
+        {viewState === "waiting" && (
           <WaitingRoom
             roomId={roomId}
             playerId={playerId}
@@ -171,7 +206,8 @@ export default function Page() {
           />
         )}
 
-        {(sessionState === "playing" || sessionState === "pause") && (
+        {/* GameRoom — mounted as soon as game starts (underneath deal overlay) */}
+        {showGame && (
           <GameRoom
             roomId={roomId}
             playerId={playerId}

@@ -95,17 +95,9 @@ func (h *Hub) Run() {
 				if client.room != nil {
 					disconnectedRoomID = client.room.ID
 					client.room.Leave(client)
-					// Also remove the player from the game session so the lobby
-					// state stays consistent after an unexpected disconnect.
-					if session, ok := h.gameManager.GetSession(client.room.ID); ok {
-						if err := session.HandlePlayerLeave(client.PlayerId); err != nil {
-							h.logger.Warn("failed to remove player from session on disconnect",
-								zap.String("player_id", client.PlayerId),
-								zap.String("room_id", client.room.ID),
-								zap.Error(err),
-							)
-						}
-					}
+					// NOTE: We do NOT call HandlePlayerLeave here because disconnects
+					// should be temporary - players should be able to reconnect.
+					// Only explicit "leave" messages should remove players from the game.
 				}
 				delete(h.clients, client)
 				close(client.send)
