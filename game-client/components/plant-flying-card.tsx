@@ -12,7 +12,10 @@ type PlantFlyingCardProps = {
   onComplete: () => void;
   targetRotateX?: number;
   targetScaleX?: number;
+  initialRotate?: number;
   targetRotate?: number;
+  initialScale?: number;
+  targetScale?: number;
 };
 
 export function PlantFlyingCard({
@@ -24,12 +27,20 @@ export function PlantFlyingCard({
   onComplete,
   targetRotateX = 0,
   targetScaleX = 1,
-  targetRotate = 0,
+  initialRotate = 0,
+  targetRotate,
+  initialScale = 1,
+  targetScale = 1,
 }: PlantFlyingCardProps) {
   const dx = targetX - startX;
   const dy = targetY - startY;
+  const effectiveTargetRotate = targetRotate ?? initialRotate;
   const hasTilt = targetRotateX !== 0 || targetScaleX !== 1;
-  const hasRotate = targetRotate !== 0;
+  const hasRotate = effectiveTargetRotate !== initialRotate;
+  const hasScale = initialScale !== 1 || targetScale !== 1;
+  // Defer the tilt to the second half only for CurrentPlayer-style animations
+  // (no scale change, no 2D spin). Hand plants start the tilt immediately.
+  const deferTilt = hasTilt && !hasRotate && !hasScale;
 
   return (
     <div
@@ -54,9 +65,9 @@ export function PlantFlyingCard({
           height: "100%",
           ...(hasTilt ? { perspective: "700px" } : {}),
         }}
-        initial={{ x: 0, y: 0 }}
-        animate={{ x: dx, y: dy }}
-        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+        initial={{ x: 0, y: 0, ...(hasScale ? { scale: initialScale } : {}) }}
+        animate={{ x: dx, y: dy, ...(hasScale ? { scale: targetScale } : {}) }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         onAnimationComplete={onComplete}
       >
         {/*
@@ -74,21 +85,23 @@ export function PlantFlyingCard({
           initial={{ rotateX: 0, scaleX: 1 }}
           animate={
             hasTilt
-              ? { rotateX: [0, 0, targetRotateX], scaleX: [1, 1, targetScaleX] }
+              ? deferTilt
+                ? { rotateX: [0, 0, targetRotateX], scaleX: [1, 1, targetScaleX] }
+                : { rotateX: targetRotateX, scaleX: targetScaleX }
               : undefined
           }
           transition={
             hasTilt
               ? {
                   rotateX: {
-                    duration: 0.45,
+                    duration: 0.55,
                     ease: [0.22, 1, 0.36, 1],
-                    times: [0, 0.45, 1],
+                    ...(deferTilt ? { times: [0, 0.45, 1] } : {}),
                   },
                   scaleX: {
-                    duration: 0.45,
+                    duration: 0.55,
                     ease: [0.22, 1, 0.36, 1],
-                    times: [0, 0.45, 1],
+                    ...(deferTilt ? { times: [0, 0.45, 1] } : {}),
                   },
                 }
               : undefined
@@ -98,18 +111,18 @@ export function PlantFlyingCard({
             Inner: applies a 2D rotation (e.g. 180° for opponent slots).
             Uses default transformOrigin "center" so the flip is around
             the card's own centre, independent of the tilt above.
+            Rotation spans the full flight duration (no initial hold).
           */}
           <motion.div
             style={{ width: "100%", height: "100%" }}
-            initial={{ rotate: 0 }}
-            animate={hasRotate ? { rotate: [0, 0, targetRotate] } : undefined}
+            initial={{ rotate: initialRotate }}
+            animate={hasRotate ? { rotate: effectiveTargetRotate } : undefined}
             transition={
               hasRotate
                 ? {
                     rotate: {
-                      duration: 0.45,
-                      ease: [0.22, 1, 0.36, 1],
-                      times: [0, 0.45, 1],
+                      duration: 0.55,
+                      ease: [0.42, 0, 0.58, 1],
                     },
                   }
                 : undefined

@@ -8,6 +8,7 @@ type FanLayoutProps = {
   phase?: Phases;
   variant?: "player" | "opponent";
   maxCards?: number;
+  containerRef?: React.Ref<HTMLDivElement>;
 };
 
 function getPlayerFanStyle(
@@ -57,6 +58,7 @@ export default function FanLayout({
   phase,
   variant = "player",
   maxCards,
+  containerRef,
 }: FanLayoutProps) {
   const items = Children.toArray(children);
 
@@ -98,6 +100,7 @@ export default function FanLayout({
 
   return (
     <div
+      ref={containerRef}
       className="flex items-end justify-center"
       style={{
         minWidth: 60,

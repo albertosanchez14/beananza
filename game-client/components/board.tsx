@@ -38,7 +38,11 @@ type PlantFlyingCardEntry = {
   targetY: number;
   targetRotateX?: number;
   targetScaleX?: number;
+  initialRotate?: number;
   targetRotate?: number;
+  initialScale?: number;
+  targetScale?: number;
+  opponentSlotId?: string;
 };
 
 export default function Board() {
@@ -76,6 +80,7 @@ export default function Board() {
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const slotRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const opponentSlotRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const opponentHandContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // Maps slotId → { card, cardId, startX, startY } for actions awaiting server
   // confirmation. Animation starts only after the server accepts the action.
   const pendingAnimations = useRef<
@@ -83,6 +88,8 @@ export default function Board() {
   >(new Map());
   const prevHandRef = useRef<CardType[]>(hand);
   const prevPlayersRef = useRef(players);
+  const prevCenterCardsRef = useRef<CardType[]>(centerCards);
+  const prevCenterCardRectsRef = useRef<Map<string, { left: number; top: number }>>(new Map());
 
   const [flyingCards, setFlyingCards] = useState<FlyingCardEntry[]>([]);
   const [hiddenCardIds, setHiddenCardIds] = useState<Set<string>>(new Set());
@@ -94,6 +101,9 @@ export default function Board() {
   );
   // Slots whose card should be hidden while the flying card is in transit.
   const [animatingSlotIds, setAnimatingSlotIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [animatingOpponentSlotIds, setAnimatingOpponentSlotIds] = useState<Set<string>>(
     new Set(),
   );
 
@@ -156,47 +166,117 @@ export default function Board() {
   }, [hand]);
 
   useLayoutEffect(() => {
-    const prev = prevPlayersRef.current;
+    const prevPlayers = prevPlayersRef.current;
+    const prevCenterCards = prevCenterCardsRef.current;
+    const prevCenterRects = prevCenterCardRectsRef.current;
+
+    // Which center card names were removed this update?
+    const currentCenterIds = new Set(centerCards.map((c) => c.cardId));
+    const removedCenterNames = new Set(
+      prevCenterCards
+        .filter((c) => !currentCenterIds.has(c.cardId))
+        .map((c) => c.cardName),
+    );
+
     const newFlying: PlantFlyingCardEntry[] = [];
 
     players.forEach((player) => {
-      const prevPlayer = prev.find((p) => p.playerId === player.playerId);
+      const prevPlayer = prevPlayers.find((p) => p.playerId === player.playerId);
       player.playerField.slots.forEach((slot) => {
         const prevSlot = prevPlayer?.playerField.slots.find(
           (s) => s.slotId === slot.slotId,
         );
         const prevCount = prevSlot?.cardIds.length ?? 0;
-        if (slot.cardIds.length > prevCount && slot.cardName) {
-          const slotEl = opponentSlotRefs.current.get(slot.slotId);
-          if (!slotEl || !deckRef.current) return;
-          const deckRect = deckRef.current.getBoundingClientRect();
-          const slotRect = slotEl.getBoundingClientRect();
-          newFlying.push({
-            id: `${slot.slotId}-${slot.cardIds.length}`,
-            card: cardLookup.get(slot.cardName) ?? {
-              cardId: slot.cardIds.at(-1)!,
-              cardName: slot.cardName,
-              backImage: "",
-            },
-            startX: deckRect.left + (deckRect.width - 96) / 2,
-            startY: deckRect.top + (deckRect.height - 144) / 2,
-            // Opponent slots are scale(0.75) so their bounding rect is
-            // smaller than 96×144 — centre the flying card on the slot
-            // rather than using the bottom-anchor correction.
-            targetX: slotRect.left + (slotRect.width - 96) / 2,
-            targetY: slotRect.top + (slotRect.height - 144) / 2,
-            targetRotate: 180,
-          });
+        if (slot.cardIds.length <= prevCount || !slot.cardName) return;
+
+        const slotEl = opponentSlotRefs.current.get(slot.slotId);
+        if (!slotEl) return;
+        const slotRect = slotEl.getBoundingClientRect();
+
+        let startX: number;
+        let startY: number;
+        let initialScale = 1;
+
+        if (removedCenterNames.has(slot.cardName)) {
+          // Card came from center — use its last-known position
+          const centerPos = prevCenterRects.get(slot.cardName);
+          if (centerPos) {
+            startX = centerPos.left;
+            startY = centerPos.top;
+          } else {
+            // Fallback: deck position
+            const deckRect = deckRef.current?.getBoundingClientRect();
+            startX = (deckRect?.left ?? 0) + ((deckRect?.width ?? 96) - 96) / 2;
+            startY = (deckRect?.top ?? 0) + ((deckRect?.height ?? 144) - 144) / 2;
+          }
+        } else {
+          // Card came from hand — use hand container center
+          const handEl = opponentHandContainerRefs.current.get(player.playerId);
+          if (handEl) {
+            const handRect = handEl.getBoundingClientRect();
+            startX = handRect.left + handRect.width / 2 - 48;
+            startY = handRect.top + handRect.height / 2 - 72;
+          } else {
+            const deckRect = deckRef.current?.getBoundingClientRect();
+            startX = (deckRect?.left ?? 0) + ((deckRect?.width ?? 96) - 96) / 2;
+            startY = (deckRect?.top ?? 0) + ((deckRect?.height ?? 144) - 144) / 2;
+          }
+          initialScale = 0.28;
         }
+
+        const fromHand = initialScale === 0.28;
+        // Only hide the slot while animating when the slot was previously empty.
+        const slotWasEmpty = prevCount === 0;
+        newFlying.push({
+          id: `${slot.slotId}-${slot.cardIds.length}`,
+          card: cardLookup.get(slot.cardName) ?? {
+            cardId: slot.cardIds.at(-1)!,
+            cardName: slot.cardName,
+            backImage: "",
+          },
+          startX,
+          startY,
+          targetX: slotRect.left + (slotRect.width - 96) / 2,
+          targetY: slotRect.top + (slotRect.height - 144) / 2,
+          // Center plants: 2D spin to match the rotated slot orientation.
+          // Hand plants: rotateX flip (bottom axis) scaling to match slot size;
+          // no 2D spin since the flip itself provides the visual.
+          ...(!fromHand
+            ? { targetRotate: 180 }
+            : { initialRotate: 180, targetRotateX: 25, targetScaleX: 1.08, targetScale: 0.75 }),
+          initialScale,
+          ...(slotWasEmpty ? { opponentSlotId: slot.slotId } : {}),
+        });
       });
     });
 
     if (newFlying.length > 0) {
       setPlantFlyingCards((prev) => [...prev, ...newFlying]);
+      const toHide = newFlying
+        .filter((e) => e.opponentSlotId)
+        .map((e) => e.opponentSlotId!);
+      if (toHide.length > 0) {
+        setAnimatingOpponentSlotIds((prev) => {
+          const next = new Set(prev);
+          toHide.forEach((id) => next.add(id));
+          return next;
+        });
+      }
     }
 
+    // Update snapshots for next run
     prevPlayersRef.current = players;
-  }, [players, cardLookup]);
+    prevCenterCardsRef.current = centerCards;
+    const newRects = new Map<string, { left: number; top: number }>();
+    centerCards.forEach((card) => {
+      const el = cardRefs.current.get(card.cardId);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        newRects.set(card.cardName, { left: r.left, top: r.top });
+      }
+    });
+    prevCenterCardRectsRef.current = newRects;
+  }, [players, centerCards, cardLookup]);
 
   // When the server confirms a slot is filled, start the flying card animation
   // for any pending plant action targeting that slot.
@@ -302,20 +382,27 @@ export default function Board() {
     [selectedCard, handleFieldSlotClick],
   );
 
-  const handlePlantComplete = useCallback((slotId: string) => {
-    setPlantFlyingCards((prev) => prev.filter((fc) => fc.id !== slotId));
+  const handlePlantComplete = useCallback((id: string, opponentSlotId?: string) => {
+    setPlantFlyingCards((prev) => prev.filter((fc) => fc.id !== id));
     // Reveal the slot card and clear suppression atomically so the card
     // appears in-place without the entrance spring animation.
     setAnimatingSlotIds((prev) => {
       const next = new Set(prev);
-      next.delete(slotId);
+      next.delete(id);
       return next;
     });
     setSuppressedSlotIds((prev) => {
       const next = new Set(prev);
-      next.delete(slotId);
+      next.delete(id);
       return next;
     });
+    if (opponentSlotId) {
+      setAnimatingOpponentSlotIds((prev) => {
+        const next = new Set(prev);
+        next.delete(opponentSlotId);
+        return next;
+      });
+    }
   }, []);
 
   // A representative card for the draw deck back image.
@@ -343,8 +430,11 @@ export default function Board() {
           targetY={fc.targetY}
           targetRotateX={fc.targetRotateX}
           targetScaleX={fc.targetScaleX}
+          initialRotate={fc.initialRotate}
           targetRotate={fc.targetRotate}
-          onComplete={() => handlePlantComplete(fc.id)}
+          initialScale={fc.initialScale}
+          targetScale={fc.targetScale}
+          onComplete={() => handlePlantComplete(fc.id, fc.opponentSlotId)}
         />
       ))}
       <Table>
@@ -384,6 +474,7 @@ export default function Board() {
                               card={cardForSlot}
                               flipped={false}
                               noTransition={true}
+                              hidden={animatingOpponentSlotIds.has(slot.slotId)}
                             />
                           )}
                         </Slot>
@@ -393,7 +484,14 @@ export default function Board() {
                 </Field>
               }
               hand={
-                <FanLayout variant="opponent" maxCards={12}>
+                <FanLayout
+                  variant="opponent"
+                  maxCards={12}
+                  containerRef={(el) => {
+                    if (el) opponentHandContainerRefs.current.set(player.playerId, el);
+                    else opponentHandContainerRefs.current.delete(player.playerId);
+                  }}
+                >
                   {Array.from({ length: player.playerHandSize }).map(
                     (_, index) => (
                       <Card key={index} card={{ backImage }} flipped={true} />
