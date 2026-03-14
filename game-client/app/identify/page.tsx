@@ -1,8 +1,7 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost";
+import { apiBaseUrl } from "@/lib/config";
 
 const AVATAR_COLORS = [
   { label: "Blue", value: "bg-blue-500" },
@@ -15,7 +14,7 @@ const AVATAR_COLORS = [
   { label: "Orange", value: "bg-orange-500" },
 ];
 
-export default function IdentifyPage() {
+function IdentifyForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo") ?? "/room";
@@ -32,7 +31,7 @@ export default function IdentifyPage() {
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/register`, {
+      const res = await fetch(`${apiBaseUrl}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: trimmedName }),
@@ -148,5 +147,13 @@ export default function IdentifyPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function IdentifyPage() {
+  return (
+    <Suspense>
+      <IdentifyForm />
+    </Suspense>
   );
 }

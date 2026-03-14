@@ -57,8 +57,7 @@ services:
       context: ./game-client
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_WS_URL=ws://localhost/ws
-        - NEXT_PUBLIC_API_BASE=http://localhost
+        - NEXT_PUBLIC_HOST=${HOST:-localhost}
     environment:
       - PORT=3000
     expose:

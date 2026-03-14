@@ -1,8 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost";
+import { apiBaseUrl } from "@/lib/config";
 
 type RoomSessionState = "waiting" | "playing" | "pause";
 
@@ -67,7 +66,7 @@ export default function Page() {
 
     const fetchRooms = async () => {
       try {
-        const res = await fetch(`${API_BASE}/rooms`);
+        const res = await fetch(`${apiBaseUrl}/rooms`);
         if (!res.ok) throw new Error(`Server responded with ${res.status}`);
         const data: Room[] = await res.json();
         if (!cancelled) {

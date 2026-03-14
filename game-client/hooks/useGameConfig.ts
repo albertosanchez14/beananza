@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CardType, CardTypeConfig, GameConfig } from "@/schemas/types";
+import { apiBaseUrl } from "@/lib/config";
 
 export type { GameConfig, CardTypeConfig };
 
@@ -12,21 +13,6 @@ export type GameConfigState = {
   loading: boolean;
   error: string | null;
 };
-
-/**
- * Derives the base HTTP URL for the game-server API from the WebSocket URL
- * configured in NEXT_PUBLIC_WS_URL.
- *
- * e.g. "ws://localhost/ws" → "http://localhost"
- *      "wss://game.example.com/ws" → "https://game.example.com"
- */
-function getApiBaseUrl(): string {
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost/ws";
-  return wsUrl
-    .replace(/^wss:\/\//, "https://")
-    .replace(/^ws:\/\//, "http://")
-    .replace(/\/ws$/, "");
-}
 
 /** Converts a CardTypeConfig from /config into the CardType shape used by UI components. */
 function toCardType(ct: CardTypeConfig): CardType {
@@ -57,8 +43,7 @@ export function useGameConfig(): GameConfigState {
 
     const fetchConfig = async () => {
       try {
-        const base = getApiBaseUrl();
-        const res = await fetch(`${base}/config`);
+        const res = await fetch(`${apiBaseUrl}/config`);
         if (!res.ok) {
           throw new Error(`GET /config returned ${res.status}`);
         }

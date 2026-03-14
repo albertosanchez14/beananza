@@ -5,11 +5,10 @@ import { useActions, BroadcastPayload } from "@/hooks/useActions";
 import { useGameState, useWaitingLobbyState } from "@/hooks/state";
 import { useGameConfig } from "@/hooks/useGameConfig";
 import { JoinedResponsePayload } from "@/schemas/messages";
+import { wsUrl } from "@/lib/config";
 import WaitingRoom from "./waiting-room";
 import GameRoom from "./game-room";
 import RunningRoom from "./running-room";
-
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost/ws";
 
 // ---------------------------------------------------------------------------
 // View state — single source of truth for what to render.
@@ -85,7 +84,7 @@ export default function Page() {
     counterOffer,
     respondOffer,
   } = useActions({
-    wsUrl: WS_URL,
+    wsUrl,
     playerId,
     authToken,
     onMessage: (message) => {
