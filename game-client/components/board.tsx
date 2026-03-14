@@ -38,6 +38,7 @@ type PlantFlyingCardEntry = {
   targetY: number;
   targetRotateX?: number;
   targetScaleX?: number;
+  targetRotate?: number;
 };
 
 export default function Board() {
@@ -54,6 +55,7 @@ export default function Board() {
     handleDragLeave,
     dragOverSlot,
     highlightEmpty,
+    actionErrorSignal,
   } = useGameContext();
 
   const {
@@ -74,7 +76,11 @@ export default function Board() {
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const slotRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const opponentSlotRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const pendingPlantActions = useRef<Map<string, number>>(new Map());
+  // Maps slotId → { card, cardId, startX, startY } for actions awaiting server
+  // confirmation. Animation starts only after the server accepts the action.
+  const pendingAnimations = useRef<
+    Map<string, { card: CardType; cardId: string; startX: number; startY: number }>
+  >(new Map());
   const prevHandRef = useRef<CardType[]>(hand);
   const prevPlayersRef = useRef(players);
 
@@ -84,6 +90,10 @@ export default function Board() {
     PlantFlyingCardEntry[]
   >([]);
   const [suppressedSlotIds, setSuppressedSlotIds] = useState<Set<string>>(
+    new Set(),
+  );
+  // Slots whose card should be hidden while the flying card is in transit.
+  const [animatingSlotIds, setAnimatingSlotIds] = useState<Set<string>>(
     new Set(),
   );
 
@@ -170,10 +180,12 @@ export default function Board() {
             },
             startX: deckRect.left + (deckRect.width - 96) / 2,
             startY: deckRect.top + (deckRect.height - 144) / 2,
+            // Opponent slots are scale(0.75) so their bounding rect is
+            // smaller than 96×144 — centre the flying card on the slot
+            // rather than using the bottom-anchor correction.
             targetX: slotRect.left + (slotRect.width - 96) / 2,
-            targetY: slotRect.bottom - 144,
-            targetRotateX: 25,
-            targetScaleX: 1.08,
+            targetY: slotRect.top + (slotRect.height - 144) / 2,
+            targetRotate: 180,
           });
         }
       });
@@ -186,19 +198,66 @@ export default function Board() {
     prevPlayersRef.current = players;
   }, [players, cardLookup]);
 
-  // Remove slot suppression only once the card is confirmed in the game
-  // state — the server round-trip means the card can appear well after the
-  // requestAnimationFrame window, so we watch field directly.
+  // When the server confirms a slot is filled, start the flying card animation
+  // for any pending plant action targeting that slot.
   useLayoutEffect(() => {
-    setSuppressedSlotIds((prev) => {
-      if (prev.size === 0) return prev;
-      const next = new Set(prev);
-      field.slots.forEach((s) => {
-        if (s.cardName && prev.has(s.slotId)) next.delete(s.slotId);
-      });
-      return next.size === prev.size ? prev : next;
+    const newFlying: PlantFlyingCardEntry[] = [];
+    const startedSlotIds = new Set<string>();
+
+    field.slots.forEach((s) => {
+      const pending = pendingAnimations.current.get(s.slotId);
+      if (pending && s.cardName) {
+        const slotEl = slotRefs.current.get(s.slotId);
+        if (!slotEl) {
+          pendingAnimations.current.delete(s.slotId);
+          return;
+        }
+        const slotRect = slotEl.getBoundingClientRect();
+        newFlying.push({
+          id: s.slotId,
+          card: pending.card,
+          startX: pending.startX,
+          startY: pending.startY,
+          targetX: slotRect.left + (slotRect.width - 96) / 2,
+          targetY: slotRect.bottom - 144,
+          targetRotateX: 25,
+          targetScaleX: 1.08,
+        });
+        startedSlotIds.add(s.slotId);
+        pendingAnimations.current.delete(s.slotId);
+      }
     });
+
+    if (newFlying.length > 0) {
+      setPlantFlyingCards((prev) => [...prev, ...newFlying]);
+      setAnimatingSlotIds((prev) => {
+        const next = new Set(prev);
+        startedSlotIds.forEach((id) => next.add(id));
+        return next;
+      });
+    }
   }, [field]);
+
+  // Roll back pending plant actions when the server returns an error.
+  // Because the animation only starts after server confirmation, no flying
+  // card has been spawned yet — we just restore hidden/suppressed state.
+  useLayoutEffect(() => {
+    if (actionErrorSignal === 0) return;
+    if (pendingAnimations.current.size === 0) return;
+    // Restore visibility of cards hidden while waiting for server.
+    setHiddenCardIds((prev) => {
+      const next = new Set(prev);
+      pendingAnimations.current.forEach(({ cardId }) => next.delete(cardId));
+      return next;
+    });
+    // Remove suppression from slots whose action was rejected.
+    setSuppressedSlotIds((prev) => {
+      const next = new Set(prev);
+      pendingAnimations.current.forEach((_, slotId) => next.delete(slotId));
+      return next;
+    });
+    pendingAnimations.current.clear();
+  }, [actionErrorSignal]);
 
   const handleFlyComplete = useCallback((cardId: string) => {
     setFlyingCards((prev) => prev.filter((fc) => fc.id !== cardId));
@@ -217,50 +276,47 @@ export default function Board() {
       }
 
       const cardEl = cardRefs.current.get(selectedCard.cardId);
-      const slotEl = slotRefs.current.get(slotId);
-      if (!cardEl || !slotEl) {
+      if (!cardEl) {
         handleFieldSlotClick(slotId, slotIndex);
         return;
       }
 
       const cardRect = cardEl.getBoundingClientRect();
-      const slotRect = slotEl.getBoundingClientRect();
 
-      setSuppressedSlotIds((prev) => new Set(prev).add(slotId));
+      // Hide the card immediately so it doesn't remain in hand during flight.
       setHiddenCardIds((prev) => new Set(prev).add(selectedCard.cardId));
+      // Suppress the slot entrance animation for when the card appears.
+      setSuppressedSlotIds((prev) => new Set(prev).add(slotId));
 
-      pendingPlantActions.current.set(slotId, slotIndex);
+      // Store start position — animation starts only after server confirms.
+      pendingAnimations.current.set(slotId, {
+        card: selectedCard,
+        cardId: selectedCard.cardId,
+        startX: cardRect.left,
+        startY: cardRect.top,
+      });
 
-      setPlantFlyingCards((prev) => [
-        ...prev,
-        {
-          id: slotId,
-          slotIndex,
-          card: selectedCard,
-          startX: cardRect.left,
-          startY: cardRect.top,
-          targetX: slotRect.left + (slotRect.width - 96) / 2,
-          targetY: slotRect.bottom - 144,
-          targetRotateX: 25,
-          targetScaleX: 1.08,
-        },
-      ]);
+      // Send the action to the server immediately.
+      handleFieldSlotClick(slotId, slotIndex);
     },
     [selectedCard, handleFieldSlotClick],
   );
 
-  const handlePlantComplete = useCallback(
-    (slotId: string) => {
-      // Fire the game action first so the card appears in the slot.
-      const slotIndex = pendingPlantActions.current.get(slotId);
-      if (slotIndex !== undefined) {
-        handleFieldSlotClick(slotId, slotIndex);
-        pendingPlantActions.current.delete(slotId);
-      }
-      setPlantFlyingCards((prev) => prev.filter((fc) => fc.id !== slotId));
-    },
-    [handleFieldSlotClick],
-  );
+  const handlePlantComplete = useCallback((slotId: string) => {
+    setPlantFlyingCards((prev) => prev.filter((fc) => fc.id !== slotId));
+    // Reveal the slot card and clear suppression atomically so the card
+    // appears in-place without the entrance spring animation.
+    setAnimatingSlotIds((prev) => {
+      const next = new Set(prev);
+      next.delete(slotId);
+      return next;
+    });
+    setSuppressedSlotIds((prev) => {
+      const next = new Set(prev);
+      next.delete(slotId);
+      return next;
+    });
+  }, []);
 
   // A representative card for the draw deck back image.
   const anyCardWithBack: CardType = centerCards[0] ??
@@ -287,6 +343,7 @@ export default function Board() {
           targetY={fc.targetY}
           targetRotateX={fc.targetRotateX}
           targetScaleX={fc.targetScaleX}
+          targetRotate={fc.targetRotate}
           onComplete={() => handlePlantComplete(fc.id)}
         />
       ))}
@@ -406,7 +463,11 @@ export default function Board() {
                       suppressAnimation={suppressedSlotIds.has(s.slotId)}
                     >
                       {cardForSlot && (
-                        <Card card={cardForSlot} flipped={false} />
+                        <Card
+                          card={cardForSlot}
+                          flipped={false}
+                          hidden={animatingSlotIds.has(s.slotId)}
+                        />
                       )}
                     </Slot>
                   </div>

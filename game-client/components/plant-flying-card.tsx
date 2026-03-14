@@ -12,6 +12,7 @@ type PlantFlyingCardProps = {
   onComplete: () => void;
   targetRotateX?: number;
   targetScaleX?: number;
+  targetRotate?: number;
 };
 
 export function PlantFlyingCard({
@@ -23,10 +24,12 @@ export function PlantFlyingCard({
   onComplete,
   targetRotateX = 0,
   targetScaleX = 1,
+  targetRotate = 0,
 }: PlantFlyingCardProps) {
   const dx = targetX - startX;
   const dy = targetY - startY;
   const hasTilt = targetRotateX !== 0 || targetScaleX !== 1;
+  const hasRotate = targetRotate !== 0;
 
   return (
     <div
@@ -41,10 +44,9 @@ export function PlantFlyingCard({
       }}
     >
       {/*
-        Outer motion div: translates the card to the target position.
-        Also acts as the perspective container so the vanishing point
-        stays centred on the card throughout the flight — matching the
-        field's own perspective: 700px context.
+        Outer: translates to target position.
+        Also the perspective container so the vanishing point stays
+        centred on the card throughout the flight.
       */}
       <motion.div
         style={{
@@ -58,9 +60,10 @@ export function PlantFlyingCard({
         onAnimationComplete={onComplete}
       >
         {/*
-          Inner motion div: applies the tilt in the second half of the
-          flight so the card appears to "settle" into the perspective
-          of the field as it lands.
+          Middle: applies the 3D perspective tilt (rotateX + scaleX) in
+          the second half of the flight. transformOrigin "bottom center"
+          keeps the slot's bottom edge anchored, matching the field row's
+          own transformOrigin.
         */}
         <motion.div
           style={{
@@ -91,7 +94,29 @@ export function PlantFlyingCard({
               : undefined
           }
         >
-          <CardFrontFace card={card} />
+          {/*
+            Inner: applies a 2D rotation (e.g. 180° for opponent slots).
+            Uses default transformOrigin "center" so the flip is around
+            the card's own centre, independent of the tilt above.
+          */}
+          <motion.div
+            style={{ width: "100%", height: "100%" }}
+            initial={{ rotate: 0 }}
+            animate={hasRotate ? { rotate: [0, 0, targetRotate] } : undefined}
+            transition={
+              hasRotate
+                ? {
+                    rotate: {
+                      duration: 0.45,
+                      ease: [0.22, 1, 0.36, 1],
+                      times: [0, 0.45, 1],
+                    },
+                  }
+                : undefined
+            }
+          >
+            <CardFrontFace card={card} />
+          </motion.div>
         </motion.div>
       </motion.div>
     </div>
