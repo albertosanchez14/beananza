@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { CardType, SlotType } from "@/schemas/types";
 
 type SlotProp = {
@@ -10,12 +11,12 @@ type SlotProp = {
   interactive?: boolean;
   rotated?: boolean;
   dragOverSlot?: string | null;
-  animatingSlot?: string | null;
   highlightEmpty?: boolean;
   handleDragOver?: (e: React.DragEvent, slotId: string) => void;
   handleDragLeave?: (e: React.DragEvent) => void;
   handleFieldDrop?: (slotId: string, slotIndex: number, card: CardType) => void;
   handleSlotClick?: (slotId: string, slotIndex: number) => void;
+  suppressAnimation?: boolean;
 };
 
 export default function Slot({
@@ -25,12 +26,12 @@ export default function Slot({
   interactive = true,
   rotated = false,
   dragOverSlot = null,
-  animatingSlot = null,
   highlightEmpty = false,
   handleDragOver,
   handleDragLeave,
   handleFieldDrop,
   handleSlotClick,
+  suppressAnimation = false,
 }: SlotProp) {
   const isInteractive = interactive;
 
@@ -38,7 +39,6 @@ export default function Slot({
 
   const filled = !!(slot?.cardName && cardQuantity > 0);
   const isDragOver = dragOverSlot === slot?.slotId;
-  const isAnimating = animatingSlot === slot?.slotId;
 
   const onDrop = (e: React.DragEvent) => {
     if (!isInteractive || !slot) return;
@@ -73,13 +73,25 @@ export default function Slot({
       <div
         className={`relative select-none
           ${isInteractive ? "cursor-pointer" : ""}
-          ${isAnimating ? "animate-plant" : rotated ? "transition-none" : "transition-all duration-150"}
-          ${rotated ? "[transform:rotate(180deg)] card-no-transition" : ""}
+          ${rotated ? "transform-[rotate(180deg)]" : ""}
         `}
         onClick={handleClick}
         {...sharedDragProps}
       >
-        {children}
+        <AnimatePresence>
+          <motion.div
+            key={`${slot?.slotId}-${slot?.cardName}`}
+            initial={
+              rotated || suppressAnimation
+                ? false
+                : { scale: 1.25, y: -16, rotate: -2 }
+            }
+            animate={{ scale: 1, y: 0, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 480, damping: 24 }}
+          >
+            {children}
+          </motion.div>
+        </AnimatePresence>
         <div
           className="absolute -top-2 -right-2 flex items-center
                      justify-center w-6 h-6 bg-blue-500 text-white
@@ -101,12 +113,9 @@ export default function Slot({
           isInteractive
             ? "bg-white border-gray-300 shadow-md hover:shadow-xl hover:-translate-y-1 cursor-pointer"
             : "bg-white border-gray-300 shadow-md",
-          isAnimating
-            ? "animate-plant"
-            : rotated
-              ? "transition-none"
-              : "transition-all duration-150",
-          rotated ? "transform-[rotate(180deg)] card-no-transition" : "",
+          rotated
+            ? "transform-[rotate(180deg)]"
+            : "transition-all duration-150",
         ].join(" ")}
         onClick={handleClick}
         {...sharedDragProps}
@@ -131,8 +140,7 @@ export default function Slot({
     <div
       onClick={handleClick}
       className={[
-        "relative flex flex-col items-center justify-center w-24 h-36 rounded-md border-2",
-        isAnimating ? "animate-plant" : "transition-all duration-150",
+        "relative flex flex-col items-center justify-center w-24 h-36 rounded-md border-2 transition-all duration-150",
         isDragOver
           ? "bg-green-500/40 border-green-300 border-solid scale-105 shadow-lg shadow-green-400/40 cursor-copy"
           : "bg-green-700/50 border-dashed " +

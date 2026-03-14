@@ -43,6 +43,7 @@ export function CardPile({
   count,
   topCard,
   onClickAction,
+  deckRef,
 }: CardPileProps) {
   if (!topCard) {
     return (
@@ -70,6 +71,7 @@ export function CardPile({
 
   return (
     <div
+      ref={deckRef}
       className="relative select-none"
       style={{ width: CARD_W, height: PILE_CONTAINER_H }}
     >

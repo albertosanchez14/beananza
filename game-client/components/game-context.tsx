@@ -1,11 +1,10 @@
-import { createContext, useContext, useState, useRef, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 import { CardType } from "@/schemas/types";
 import { GameState } from "@/hooks/state";
 
 type GameContextValue = {
   // UI state
   selectedCard: CardType | null;
-  animatingSlot: string | null;
   dragOverSlot: string | null;
   // Data
   gameState: GameState;
@@ -56,15 +55,7 @@ export function GameProvider({
   onDrawCards,
 }: GameProviderProps) {
   const [selectedCard, setSelectedCard] = useState<CardType | null>(null);
-  const [animatingSlot, setAnimatingSlot] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
-  const animTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const triggerSlotAnim = (slotId: string) => {
-    if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
-    setAnimatingSlot(slotId);
-    animTimeoutRef.current = setTimeout(() => setAnimatingSlot(null), 350);
-  };
 
   const handleCardClick = (
     card: CardType,
@@ -82,7 +73,6 @@ export function GameProvider({
     const slot = gameState.field.slots[slotIndex];
     if (selectedCard) {
       if (!slot || !slot.cardName || slot.cardName === selectedCard.cardName) {
-        triggerSlotAnim(slotId);
         onPlantBean(selectedCard.cardId, slotId);
         setSelectedCard(null);
       }
@@ -101,7 +91,6 @@ export function GameProvider({
     setDragOverSlot(null);
     const slot = gameState.field.slots[slotIndex];
     if (!slot || !slot.cardName || slot.cardName === card.cardName) {
-      triggerSlotAnim(slotId);
       onPlantBean(card.cardId, slotId);
       setSelectedCard(null);
     }
@@ -131,7 +120,6 @@ export function GameProvider({
     gameState,
     cardsPerTurn,
     selectedCard,
-    animatingSlot,
     dragOverSlot,
     cardLookup,
     highlightEmpty: !!selectedCard,

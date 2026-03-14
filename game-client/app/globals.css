@@ -22,18 +22,6 @@ body {
   color: var(--foreground);
 }
 
-/* Card plant animation — slam down with a bounce */
-@keyframes plant-card {
-  0%   { transform: scale(1.35) translateY(-12px); box-shadow: 0 16px 32px rgba(0,0,0,0.45); }
-  45%  { transform: scale(0.93) translateY(3px);   box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
-  70%  { transform: scale(1.05) translateY(-2px);  box-shadow: 0 6px 14px rgba(0,0,0,0.25); }
-  100% { transform: scale(1)    translateY(0);     box-shadow: none; }
-}
-
-.animate-plant {
-  animation: plant-card 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
 /* Deal-from-deck animation
    --deck-dx / --deck-dy: pixel offset from the card's resting position to the deck.
    The card starts AT the deck (translated there, face-down / rotated), then
@@ -67,25 +55,12 @@ body {
   animation: deal-from-deck 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-/* ── 3D flip card ────────────────────────────────────────────────────────────
-   .card-inner     — preserves 3D context and transitions the Y-axis rotation
-   .card-flipped   — toggled on the outer wrapper to trigger the flip
+/* ── Card face/back ──────────────────────────────────────────────────────────
    .card-face      — front face (rotateY 0°), hidden when flipped
    .card-back      — back face (rotateY 180°), hidden when not flipped
    backface-visibility: hidden ensures only one face is visible at a time.
+   transformStyle: preserve-3d is set as inline style on the motion.div.
 ───────────────────────────────────────────────────────────────────────────── */
-.card-inner {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  transform-style: preserve-3d;
-  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.card-flipped .card-inner {
-  transform: rotateY(180deg);
-}
-
 .card-face,
 .card-back {
   position: absolute;
@@ -96,12 +71,6 @@ body {
 
 .card-back {
   transform: rotateY(180deg);
-}
-
-/* Suppress flip transition for opponent cards — they are statically rotated 180°
-   via a parent transform and should never animate through a Y-axis flip. */
-.card-no-transition .card-inner {
-  transition: none !important;
 }
 
 /* ── Waiting-room deal animation ─────────────────────────────────────────────
