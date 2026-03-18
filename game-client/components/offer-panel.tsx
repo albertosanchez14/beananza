@@ -20,6 +20,7 @@ type OfferPanelProps = {
   myPlayerId: string;
   players: ExternalPlayer[];
   gamePhase: string;
+  playerTurn: string;
   onCreateOffer: (
     cardsOffered: OfferCard[],
     cardsRequested: OfferCard[],
@@ -42,10 +43,12 @@ export default function OfferPanel({
   myPlayerId,
   players,
   gamePhase,
+  playerTurn,
   onCreateOffer,
   onCounterOffer,
   onRespondOffer,
 }: OfferPanelProps) {
+  const isTurnPlayer = myPlayerId === playerTurn;
   const [activeTab, setActiveTab] = useState<FilterTab>("incoming");
   const [wizard, setWizard] = useState<WizardState | null>(null);
 
@@ -149,9 +152,11 @@ export default function OfferPanel({
             <OfferWizard
               mode={wizard.mode}
               myHand={myHand}
-              centerCards={wizard.mode === "create" ? centerCards : []}
+              centerCards={isTurnPlayer ? centerCards : []}
               players={players}
               myPlayerId={myPlayerId}
+              isTurnPlayer={isTurnPlayer}
+              turnPlayerId={playerTurn}
               parentOfferId={wizard.mode === "counter" ? wizard.parentOfferId : undefined}
               parentOfferCreatorId={
                 wizard.mode === "counter" ? wizard.parentOfferCreatorId : undefined
@@ -192,8 +197,10 @@ export default function OfferPanel({
                 filter={activeTab}
                 myPlayerId={myPlayerId}
                 myHand={myHand}
+                centerCards={centerCards}
                 players={players}
                 gamePhase={gamePhase}
+                playerTurn={playerTurn}
                 onAccept={(id) => onRespondOffer(id, "accept")}
                 onReject={(id) => onRespondOffer(id, "reject")}
                 onCancel={(id) => onRespondOffer(id, "cancel")}

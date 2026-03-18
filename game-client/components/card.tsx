@@ -8,7 +8,8 @@ type CardProp = {
   isSelected?: boolean;
   draggable?: boolean;
   flipped?: boolean;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onContextMenu?: (e: React.MouseEvent<HTMLDivElement>) => void;
   style?: React.CSSProperties;
   className?: string;
   noTransition?: boolean;
@@ -28,6 +29,7 @@ export default function Card({
   draggable = false,
   flipped = false,
   onClick,
+  onContextMenu,
   style,
   className,
   noTransition = false,
@@ -54,6 +56,7 @@ export default function Card({
   return (
     <div
       onClick={onClick}
+      onContextMenu={onContextMenu}
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
       onDragEnd={draggable ? handleDragEnd : undefined}

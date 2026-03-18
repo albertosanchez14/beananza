@@ -10,8 +10,10 @@ type OfferListProps = {
   filter: FilterType;
   myPlayerId: string;
   myHand: CardType[];
+  centerCards: CardType[];
   players: ExternalPlayer[];
   gamePhase: string;
+  playerTurn: string;
   onAccept: (offerId: string) => void;
   onReject: (offerId: string) => void;
   onCancel: (offerId: string) => void;
@@ -23,8 +25,10 @@ export default function OfferList({
   filter,
   myPlayerId,
   myHand,
+  centerCards,
   players,
   gamePhase,
+  playerTurn,
   onAccept,
   onReject,
   onCancel,
@@ -86,8 +90,10 @@ export default function OfferList({
           allOffers={offers}
           myPlayerId={myPlayerId}
           myHand={myHand}
+          centerCards={centerCards}
           players={players}
           gamePhase={gamePhase}
+          playerTurn={playerTurn}
           onAccept={onAccept}
           onReject={onReject}
           onCancel={onCancel}

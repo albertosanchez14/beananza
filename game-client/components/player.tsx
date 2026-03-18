@@ -187,6 +187,10 @@ type ActivePlayerProps = {
   gamePhase?: string;
   field?: ReactNode;
   hand?: ReactNode;
+  isDragTarget?: boolean;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
 };
 
 type PlayerProps = WaitingPlayerProps | ActivePlayerProps;
@@ -272,12 +276,21 @@ function ActivePlayer({
   gamePhase,
   field,
   hand,
+  isDragTarget = false,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: ActivePlayerProps) {
   const showPickedCards =
     gamePhase === "plantTrade" && (playerPickedCardsCount ?? 0) > 0;
 
   return (
-    <div className="flex flex-col items-center gap-1 transition-all duration-200">
+    <div
+      className="flex flex-col items-center gap-1 transition-all duration-200"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div
         className="relative flex flex-col items-center"
         style={{ width: 64 }}
@@ -327,7 +340,9 @@ function ActivePlayer({
           )}
         </div>
 
-        <MiiAvatar name={playerName} isCurrentTurn={isCurrentTurn} />
+        <div style={isDragTarget ? { filter: "drop-shadow(0 0 8px #4ade80) drop-shadow(0 0 3px #4ade80)", transition: "filter 0.15s" } : undefined}>
+          <MiiAvatar name={playerName} isCurrentTurn={isCurrentTurn} />
+        </div>
 
         {hand && (
           <div

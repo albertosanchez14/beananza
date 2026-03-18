@@ -1,9 +1,11 @@
 import { GameProvider } from "@/components/game-context";
 import Board from "@/components/board";
 import OfferPanel from "@/components/offer-panel";
+import GiveCardsModal from "@/components/give-cards-modal";
+import RequestCardsModal from "@/components/request-cards-modal";
 import { GameState } from "@/hooks/state";
-import { CardType, OfferCard } from "@/schemas/types";
-import { useState } from "react";
+import { CardType, ExternalPlayer, OfferCard } from "@/schemas/types";
+import { useState, useEffect } from "react";
 
 type GameRoomProp = {
   roomId: string;
@@ -55,6 +57,25 @@ export default function GameRoom({
 }: GameRoomProp) {
   const [offerPanelOpen, setOfferPanelOpen] = useState(false);
   const [prevPhase, setPrevPhase] = useState<string>(gameState.phase);
+  const [giveModal, setGiveModal] = useState<{
+    player: ExternalPlayer;
+    cardsToGive: CardType[];
+  } | null>(null);
+  const [requestModal, setRequestModal] = useState<{
+    cardsRequested: CardType[];
+  } | null>(null);
+  const [rightClickModal, setRightClickModal] = useState<{
+    cardRequested: CardType;
+    targetPlayerId: string | undefined;
+  } | null>(null);
+
+  // Suppress the browser context menu during trade so right-click opens our modal.
+  useEffect(() => {
+    if (gameState.phase !== "turnTrade") return;
+    const handler = (e: MouseEvent) => e.preventDefault();
+    document.addEventListener("contextmenu", handler);
+    return () => document.removeEventListener("contextmenu", handler);
+  }, [gameState.phase]);
 
   // Build a name→CardType lookup.
   // Start from the config-sourced catalog so every card type always has images,
@@ -129,10 +150,16 @@ export default function GameRoom({
       gameState={gameState}
       cardsPerTurn={cardsPerTurn}
       cardLookup={cardLookup}
+      myPlayerId={playerId}
       onPlantBean={handlePlantBean}
       onHarvestField={handleHarvestField}
       onTurnOverBean={handleTurnOverBean}
       onDrawCards={handleDrawCards}
+      onGiveDrop={(player, cardsToGive) => setGiveModal({ player, cardsToGive })}
+      onRequestDrop={(cardsRequested) => setRequestModal({ cardsRequested })}
+      onCardRightClick={(card, targetPlayerId) =>
+        setRightClickModal({ cardRequested: card, targetPlayerId })
+      }
     >
       <div className="flex flex-col h-full w-full overflow-hidden">
         <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">
@@ -166,10 +193,62 @@ export default function GameRoom({
           myPlayerId={playerId}
           players={gameState.players}
           gamePhase={gameState.phase}
+          playerTurn={gameState.playerTurn}
           onCreateOffer={handleCreateOffer}
           onCounterOffer={handleCounterOffer}
           onRespondOffer={handleRespondOffer}
         />
+
+        {requestModal && (
+          <RequestCardsModal
+            cardsRequested={requestModal.cardsRequested}
+            myHand={gameState.hand}
+            onSubmit={(cardsOffered) => {
+              const reqCards = requestModal.cardsRequested.map((c) => ({
+                card_type: c.cardName,
+                card_id: c.cardId,
+              }));
+              handleCreateOffer(cardsOffered, reqCards, gameState.playerTurn);
+              setRequestModal(null);
+            }}
+            onClose={() => setRequestModal(null)}
+          />
+        )}
+
+        {rightClickModal && (
+          <RequestCardsModal
+            cardsRequested={[rightClickModal.cardRequested]}
+            myHand={gameState.hand}
+            centerCards={
+              playerId === gameState.playerTurn ? gameState.centerCards : undefined
+            }
+            onSubmit={(cardsOffered) => {
+              const reqCards = [{
+                card_type: rightClickModal.cardRequested.cardName,
+                card_id: rightClickModal.cardRequested.cardId,
+              }];
+              handleCreateOffer(cardsOffered, reqCards, rightClickModal.targetPlayerId);
+              setRightClickModal(null);
+            }}
+            onClose={() => setRightClickModal(null)}
+          />
+        )}
+
+        {giveModal && (
+          <GiveCardsModal
+            player={giveModal.player}
+            cardsToGive={giveModal.cardsToGive}
+            onSubmit={(cardsRequested) => {
+              const cardsOffered = giveModal.cardsToGive.map((c) => ({
+                card_type: c.cardName,
+                card_id: c.cardId,
+              }));
+              handleCreateOffer(cardsOffered, cardsRequested, giveModal.player.playerId);
+              setGiveModal(null);
+            }}
+            onClose={() => setGiveModal(null)}
+          />
+        )}
       </div>
     </GameProvider>
   );
