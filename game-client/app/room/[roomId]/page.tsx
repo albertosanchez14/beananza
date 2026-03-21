@@ -65,6 +65,7 @@ export default function Page() {
   // Single view-state enum — updated synchronously inside onMessage so there
   // is never a frame where state is inconsistent.
   const [viewState, setViewState] = useState<ViewState>("connecting");
+  const [joinRetry, setJoinRetry] = useState(0);
   // Prevent multiple game_started events from re-triggering the deal anim.
   const dealTriggeredRef = useRef(false);
 
@@ -144,6 +145,11 @@ export default function Page() {
           localStorage.removeItem("playerProfile");
           router.replace(`/identify?returnTo=/room/${roomId}`);
         }
+        if (errorPayload.code === "invalid_token") {
+          sessionStorage.removeItem(`session_token:${roomId}`);
+          joinedRef.current = false;
+          setJoinRetry((n) => n + 1);
+        }
       }
     },
     onError: (error) => {
@@ -175,7 +181,7 @@ export default function Page() {
         sendJoin(roomId, { player_name: playerName });
       }
     }
-  }, [isConnected, playerId, playerName, roomId, sendJoin, sendReconnect]);
+  }, [isConnected, playerId, playerName, roomId, sendJoin, sendReconnect, joinRetry]);
 
   if (!profile) return null;
 

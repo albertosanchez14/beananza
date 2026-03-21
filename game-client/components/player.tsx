@@ -83,8 +83,8 @@ export function MiiAvatar({
   return (
     <svg
       viewBox="0 0 64 80"
-      width={64}
-      height={80}
+      width={80}
+      height={100}
       xmlns="http://www.w3.org/2000/svg"
       style={{
         filter: isCurrentTurn
@@ -175,6 +175,7 @@ type WaitingPlayerProps = {
   playerReady: boolean;
   isMe?: boolean;
   field?: ReactNode;
+  fieldRotation?: number;
 };
 
 type ActivePlayerProps = {
@@ -191,6 +192,7 @@ type ActivePlayerProps = {
   onDragOver?: (e: React.DragEvent) => void;
   onDragLeave?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
+  fieldRotation?: number;
 };
 
 type PlayerProps = WaitingPlayerProps | ActivePlayerProps;
@@ -208,7 +210,9 @@ function WaitingPlayer({
   playerReady = false,
   isMe = false,
   field,
+  fieldRotation,
 }: WaitingPlayerProps) {
+  // "Me" player: normal vertical layout
   return (
     <div className="flex flex-col items-center gap-0.5 transition-all duration-200">
       <div className="relative">
@@ -247,22 +251,6 @@ function WaitingPlayer({
       >
         {playerReady ? "Ready" : "Waiting"}
       </span>
-
-      {field && (
-        <div
-          className="scale-75 origin-top"
-          style={{ marginTop: 12, perspective: "700px" }}
-        >
-          <div
-            style={{
-              transform: "rotateX(25deg) scaleX(1.08)",
-              transformOrigin: "bottom center",
-            }}
-          >
-            {field}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -280,24 +268,27 @@ function ActivePlayer({
   onDragOver,
   onDragLeave,
   onDrop,
+  fieldRotation,
 }: ActivePlayerProps) {
   const showPickedCards =
     gamePhase === "plantTrade" && (playerPickedCardsCount ?? 0) > 0;
 
   return (
-    <div
-      className="flex flex-col items-center gap-1 transition-all duration-200"
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
+    <div className="flex flex-col items-center gap-0.5 transition-all duration-200">
       <div
         className="relative flex flex-col items-center"
         style={{ width: 64 }}
       >
-        <div className="flex flex-col items-center gap-0.5 mb-1">
+        <div
+          className="absolute left-1/2 flex flex-col items-center gap-0.5"
+          style={{
+            bottom: "100%",
+            transform: "translateX(-50%)",
+            paddingBottom: 2,
+          }}
+        >
           <p
-            className="text-xs font-bold text-white leading-tight"
+            className="text-[10px] font-bold text-white leading-tight max-w-18 text-center truncate"
             style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}
           >
             {playerName}
@@ -332,12 +323,6 @@ function ActivePlayer({
               </div>
             )}
           </div>
-
-          {playerStatus !== "active" && (
-            <span className="text-[8px] px-1 py-px rounded-full text-gray-400 border border-gray-600/60 tracking-wide uppercase">
-              {playerStatus}
-            </span>
-          )}
         </div>
 
         <div style={isDragTarget ? { filter: "drop-shadow(0 0 8px #4ade80) drop-shadow(0 0 3px #4ade80)", transition: "filter 0.15s" } : undefined}>
@@ -354,21 +339,7 @@ function ActivePlayer({
         )}
       </div>
 
-      {field && (
-        <div
-          className="scale-75 origin-top"
-          style={{ marginTop: 18, perspective: "700px" }}
-        >
-          <div
-            style={{
-              transform: "rotateX(25deg) scaleX(1.08)",
-              transformOrigin: "bottom center",
-            }}
-          >
-            {field}
-          </div>
-        </div>
-      )}
+      {field && <div style={{ marginTop: 18 }}>{field}</div>}
     </div>
   );
 }

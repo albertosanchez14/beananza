@@ -1,5 +1,3 @@
-"use client";
-
 import { ReactNode } from "react";
 
 type NewFieldProps = {
@@ -8,10 +6,9 @@ type NewFieldProps = {
 
 export default function Field({ children }: NewFieldProps) {
   return (
-    <div
-      className="relative flex gap-2 px-4 py-3
-                 bg-green-800 border-2 border-green-900 rounded-lg"
-    >
+    <div className="relative flex gap-2 px-0 py-0 rounded">
+      {/* Subtle worn-edge vignette */}
+      <div className="absolute inset-0 rounded pointer-events-none" />
       {children}
     </div>
   );

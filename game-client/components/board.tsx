@@ -75,7 +75,7 @@ export default function Board() {
   return (
     <div
       className="relative w-full h-full overflow-hidden"
-      style={{ background: "#1a1008" }}
+      style={{ background: "#2a1505" }}
     >
       <Table>
         <Opponents>
@@ -149,7 +149,6 @@ export default function Board() {
                         slot={slot}
                         index={index}
                         interactive={false}
-                        rotated={true}
                       >
                         {cardForSlot && (
                           <Card

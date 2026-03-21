@@ -8,7 +8,7 @@ const bohnanzaFont = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Bohnanza",
+  title: "Beananza",
   description: "The bean trading card game",
 };
 
