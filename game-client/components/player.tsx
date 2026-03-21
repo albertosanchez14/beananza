@@ -274,7 +274,12 @@ function ActivePlayer({
     gamePhase === "plantTrade" && (playerPickedCardsCount ?? 0) > 0;
 
   return (
-    <div className="flex flex-col items-center gap-0.5 transition-all duration-200">
+    <div
+      className="flex flex-col items-center gap-0.5 transition-all duration-200"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div
         className="relative flex flex-col items-center"
         style={{ width: 64 }}
