@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { BaseCard, CardType } from "@/schemas/types";
 
@@ -67,7 +65,7 @@ export default function Card({
     >
       {/* Inner wrapper — rotates on Y axis to flip between faces */}
       <div
-        className={`card-inner rounded-2xl w-full h-full
+        className={`card-inner rounded-xl w-full h-full
           ${noTransition ? "transition-none" : "transition-all duration-150"}
           ${isSelected ? "shadow-xl -translate-y-4" : ""}
           ${isDragging ? "opacity-40 scale-105" : ""}
@@ -82,7 +80,7 @@ export default function Card({
       >
         {/* ── FRONT FACE ─────────────────────────────────────────────────── */}
         <div
-          className={`card-face rounded-2xl overflow-hidden
+          className={`card-face rounded-xl overflow-hidden
             bg-white border-2
             ${isSelected ? "border-blue-500" : "border-gray-200"}
             flex flex-col
@@ -159,7 +157,7 @@ export default function Card({
         </div>
 
         {/* ── BACK FACE ──────────────────────────────────────────────────── */}
-        <div className="card-back rounded-2xl border-2 border-gray-500 overflow-hidden">
+        <div className="card-back rounded-xl border-2 border-gray-500 overflow-hidden">
           {card.backImage ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img

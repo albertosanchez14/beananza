@@ -28,10 +28,7 @@ export default function TradedCards() {
   if (pickedGroups.length === 0) return null;
 
   return (
-    <div
-      className="flex items-center gap-2 pl-2"
-      style={{ height: CARD_H }}
-    >
+    <div className="flex items-center gap-2 pl-2" style={{ height: CARD_H }}>
       {pickedGroups.map(({ cardName, cards }) => {
         const count = cards.length;
         const topCard = cards[0];
@@ -48,7 +45,7 @@ export default function TradedCards() {
             {Array.from({ length: layers }).map((_, i) => (
               <div
                 key={i}
-                className="absolute rounded-2xl border-2 bg-amber-300 border-amber-500"
+                className="absolute rounded-xl border-2 bg-amber-300 border-amber-500"
                 style={{
                   width: CARD_W,
                   height: CARD_H,
