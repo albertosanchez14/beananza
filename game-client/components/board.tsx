@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { CardType, SlotType } from "@/schemas/types";
 import { useGameContext } from "@/components/game-context";
 
@@ -15,6 +15,7 @@ import Card from "@/components/card";
 import Player from "@/components/player";
 import { FlyingCard } from "@/components/flying-card";
 import { PlantFlyingCard } from "@/components/plant-flying-card";
+import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
 
 type FlyingCardEntry = {
   id: string;
@@ -26,6 +27,16 @@ type FlyingCardEntry = {
   index: number;
   zIndex: number;
   targetRotate: number;
+};
+
+type TurnOverFlyingCardEntry = {
+  id: string;
+  card: CardType;
+  startX: number;
+  startY: number;
+  targetX: number;
+  targetY: number;
+  index: number;
 };
 
 type PlantFlyingCardEntry = {
@@ -59,7 +70,6 @@ export default function Board() {
     handleDragLeave,
     dragOverSlot,
     highlightEmpty,
-    actionErrorSignal,
   } = useGameContext();
 
   const {
@@ -78,31 +88,20 @@ export default function Board() {
   const deckRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const slotRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const opponentSlotRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const opponentHandContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  // Maps slotId → { card, cardId, startX, startY } for actions awaiting server
-  // confirmation. Animation starts only after the server accepts the action.
-  const pendingAnimations = useRef<
-    Map<string, { card: CardType; cardId: string; startX: number; startY: number }>
-  >(new Map());
   const prevHandRef = useRef<CardType[]>(hand);
   const prevPlayersRef = useRef(players);
   const prevCenterCardsRef = useRef<CardType[]>(centerCards);
   const prevCenterCardRectsRef = useRef<Map<string, { left: number; top: number }>>(new Map());
+  // Separate ref for turnOver detection — avoids interfering with opponent animation effect.
+  const prevCenterCardsForTurnRef = useRef<CardType[]>(centerCards);
 
   const [flyingCards, setFlyingCards] = useState<FlyingCardEntry[]>([]);
+  const [turnOverFlyingCards, setTurnOverFlyingCards] = useState<TurnOverFlyingCardEntry[]>([]);
+  const [hiddenCenterCardIds, setHiddenCenterCardIds] = useState<Set<string>>(new Set());
   const [hiddenCardIds, setHiddenCardIds] = useState<Set<string>>(new Set());
-  const [plantFlyingCards, setPlantFlyingCards] = useState<
-    PlantFlyingCardEntry[]
-  >([]);
-  const [suppressedSlotIds, setSuppressedSlotIds] = useState<Set<string>>(
-    new Set(),
-  );
-  // Slots whose card should be hidden while the flying card is in transit.
-  const [animatingSlotIds, setAnimatingSlotIds] = useState<Set<string>>(
-    new Set(),
-  );
+  const [plantFlyingCards, setPlantFlyingCards] = useState<PlantFlyingCardEntry[]>([]);
   const [animatingOpponentSlotIds, setAnimatingOpponentSlotIds] = useState<Set<string>>(
     new Set(),
   );
@@ -164,6 +163,48 @@ export default function Board() {
 
     prevHandRef.current = hand;
   }, [hand]);
+
+  useLayoutEffect(() => {
+    const prevIds = new Set(prevCenterCardsForTurnRef.current.map((c) => c.cardId));
+    const newCards = centerCards.filter((c) => !prevIds.has(c.cardId));
+
+    if (newCards.length > 0 && deckRef.current) {
+      const deckRect = deckRef.current.getBoundingClientRect();
+      const startX = deckRect.left + (deckRect.width - 96) / 2;
+      const startY = deckRect.bottom - 144;
+
+      setHiddenCenterCardIds((prev) => {
+        const next = new Set(prev);
+        newCards.forEach((c) => next.add(c.cardId));
+        return next;
+      });
+
+      setTurnOverFlyingCards((prev) => [
+        ...prev,
+        ...newCards.map((card, i) => {
+          const cardEl = cardRefs.current.get(card.cardId);
+          const cardRect = cardEl?.getBoundingClientRect();
+          return {
+            id: card.cardId,
+            card,
+            startX,
+            startY,
+            // Anchor to the real card's visual bounding rect (already perspective-
+            // projected by the Center container). Bottom-anchor so the flat flying
+            // card's bottom aligns with the tilted slot's bottom. Center X on the
+            // visually wider (scaleX 1.08) card so there's no horizontal jump.
+            targetX: cardRect
+              ? cardRect.left + (cardRect.width - 96) / 2
+              : startX,
+            targetY: cardRect ? cardRect.bottom - 144 : startY,
+            index: i,
+          };
+        }),
+      ]);
+    }
+
+    prevCenterCardsForTurnRef.current = centerCards;
+  }, [centerCards]);
 
   useLayoutEffect(() => {
     const prevPlayers = prevPlayersRef.current;
@@ -242,7 +283,7 @@ export default function Board() {
           // Hand plants: rotateX flip (bottom axis) scaling to match slot size;
           // no 2D spin since the flip itself provides the visual.
           ...(!fromHand
-            ? { targetRotate: 180 }
+            ? { targetRotate: 180, targetRotateX: 25, targetScaleX: 1.08, targetScale: 0.75 }
             : { initialRotate: 180, targetRotateX: 25, targetScaleX: 1.08, targetScale: 0.75 }),
           initialScale,
           ...(slotWasEmpty ? { opponentSlotId: slot.slotId } : {}),
@@ -251,17 +292,23 @@ export default function Board() {
     });
 
     if (newFlying.length > 0) {
-      setPlantFlyingCards((prev) => [...prev, ...newFlying]);
-      const toHide = newFlying
-        .filter((e) => e.opponentSlotId)
-        .map((e) => e.opponentSlotId!);
-      if (toHide.length > 0) {
-        setAnimatingOpponentSlotIds((prev) => {
-          const next = new Set(prev);
-          toHide.forEach((id) => next.add(id));
-          return next;
-        });
-      }
+      // DOM measurements are done above; schedule state updates as a transition
+      // so setState is called inside a callback rather than directly in the
+      // effect body. React batches both updates, so the slot is hidden and the
+      // flying card appears atomically.
+      startTransition(() => {
+        setPlantFlyingCards((prev) => [...prev, ...newFlying]);
+        const toHide = newFlying
+          .filter((e) => e.opponentSlotId)
+          .map((e) => e.opponentSlotId!);
+        if (toHide.length > 0) {
+          setAnimatingOpponentSlotIds((prev) => {
+            const next = new Set(prev);
+            toHide.forEach((id) => next.add(id));
+            return next;
+          });
+        }
+      });
     }
 
     // Update snapshots for next run
@@ -278,67 +325,6 @@ export default function Board() {
     prevCenterCardRectsRef.current = newRects;
   }, [players, centerCards, cardLookup]);
 
-  // When the server confirms a slot is filled, start the flying card animation
-  // for any pending plant action targeting that slot.
-  useLayoutEffect(() => {
-    const newFlying: PlantFlyingCardEntry[] = [];
-    const startedSlotIds = new Set<string>();
-
-    field.slots.forEach((s) => {
-      const pending = pendingAnimations.current.get(s.slotId);
-      if (pending && s.cardName) {
-        const slotEl = slotRefs.current.get(s.slotId);
-        if (!slotEl) {
-          pendingAnimations.current.delete(s.slotId);
-          return;
-        }
-        const slotRect = slotEl.getBoundingClientRect();
-        newFlying.push({
-          id: s.slotId,
-          card: pending.card,
-          startX: pending.startX,
-          startY: pending.startY,
-          targetX: slotRect.left + (slotRect.width - 96) / 2,
-          targetY: slotRect.bottom - 144,
-          targetRotateX: 25,
-          targetScaleX: 1.08,
-        });
-        startedSlotIds.add(s.slotId);
-        pendingAnimations.current.delete(s.slotId);
-      }
-    });
-
-    if (newFlying.length > 0) {
-      setPlantFlyingCards((prev) => [...prev, ...newFlying]);
-      setAnimatingSlotIds((prev) => {
-        const next = new Set(prev);
-        startedSlotIds.forEach((id) => next.add(id));
-        return next;
-      });
-    }
-  }, [field]);
-
-  // Roll back pending plant actions when the server returns an error.
-  // Because the animation only starts after server confirmation, no flying
-  // card has been spawned yet — we just restore hidden/suppressed state.
-  useLayoutEffect(() => {
-    if (actionErrorSignal === 0) return;
-    if (pendingAnimations.current.size === 0) return;
-    // Restore visibility of cards hidden while waiting for server.
-    setHiddenCardIds((prev) => {
-      const next = new Set(prev);
-      pendingAnimations.current.forEach(({ cardId }) => next.delete(cardId));
-      return next;
-    });
-    // Remove suppression from slots whose action was rejected.
-    setSuppressedSlotIds((prev) => {
-      const next = new Set(prev);
-      pendingAnimations.current.forEach((_, slotId) => next.delete(slotId));
-      return next;
-    });
-    pendingAnimations.current.clear();
-  }, [actionErrorSignal]);
-
   const handleFlyComplete = useCallback((cardId: string) => {
     setFlyingCards((prev) => prev.filter((fc) => fc.id !== cardId));
     setHiddenCardIds((prev) => {
@@ -348,54 +334,17 @@ export default function Board() {
     });
   }, []);
 
-  const handleFieldSlotClickWithAnim = useCallback(
-    (slotId: string, slotIndex: number) => {
-      if (!selectedCard) {
-        handleFieldSlotClick(slotId, slotIndex);
-        return;
-      }
-
-      const cardEl = cardRefs.current.get(selectedCard.cardId);
-      if (!cardEl) {
-        handleFieldSlotClick(slotId, slotIndex);
-        return;
-      }
-
-      const cardRect = cardEl.getBoundingClientRect();
-
-      // Hide the card immediately so it doesn't remain in hand during flight.
-      setHiddenCardIds((prev) => new Set(prev).add(selectedCard.cardId));
-      // Suppress the slot entrance animation for when the card appears.
-      setSuppressedSlotIds((prev) => new Set(prev).add(slotId));
-
-      // Store start position — animation starts only after server confirms.
-      pendingAnimations.current.set(slotId, {
-        card: selectedCard,
-        cardId: selectedCard.cardId,
-        startX: cardRect.left,
-        startY: cardRect.top,
-      });
-
-      // Send the action to the server immediately.
-      handleFieldSlotClick(slotId, slotIndex);
-    },
-    [selectedCard, handleFieldSlotClick],
-  );
+  const handleTurnOverComplete = useCallback((id: string) => {
+    setTurnOverFlyingCards((prev) => prev.filter((fc) => fc.id !== id));
+    setHiddenCenterCardIds((prev) => {
+      const n = new Set(prev);
+      n.delete(id);
+      return n;
+    });
+  }, []);
 
   const handlePlantComplete = useCallback((id: string, opponentSlotId?: string) => {
     setPlantFlyingCards((prev) => prev.filter((fc) => fc.id !== id));
-    // Reveal the slot card and clear suppression atomically so the card
-    // appears in-place without the entrance spring animation.
-    setAnimatingSlotIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-    setSuppressedSlotIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
     if (opponentSlotId) {
       setAnimatingOpponentSlotIds((prev) => {
         const next = new Set(prev);
@@ -420,6 +369,18 @@ export default function Board() {
       className="relative w-full h-full overflow-hidden"
       style={{ background: "#1a1008" }}
     >
+      {turnOverFlyingCards.map((fc) => (
+        <TurnOverFlyingCard
+          key={fc.id}
+          card={fc.card}
+          startX={fc.startX}
+          startY={fc.startY}
+          targetX={fc.targetX}
+          targetY={fc.targetY}
+          index={fc.index}
+          onComplete={() => handleTurnOverComplete(fc.id)}
+        />
+      ))}
       {plantFlyingCards.map((fc) => (
         <PlantFlyingCard
           key={fc.id}
@@ -523,6 +484,7 @@ export default function Board() {
                 isSelected={selectedCard?.cardId === card.cardId}
                 draggable
                 onClick={() => handleCardClick(card, "center")}
+                hidden={hiddenCenterCardIds.has(card.cardId)}
               />
             ))}
           </CenterCards>
@@ -542,13 +504,7 @@ export default function Board() {
                   ? (cardLookup.get(s.cardName) ?? null)
                   : null;
                 return (
-                  <div
-                    key={s.slotId}
-                    ref={(el) => {
-                      if (el) slotRefs.current.set(s.slotId, el);
-                      else slotRefs.current.delete(s.slotId);
-                    }}
-                  >
+                  <div key={s.slotId}>
                     <Slot
                       slot={s}
                       index={index}
@@ -557,14 +513,12 @@ export default function Board() {
                       handleDragOver={handleDragOver}
                       handleDragLeave={handleDragLeave}
                       handleFieldDrop={handleFieldDrop}
-                      handleSlotClick={handleFieldSlotClickWithAnim}
-                      suppressAnimation={suppressedSlotIds.has(s.slotId)}
+                      handleSlotClick={handleFieldSlotClick}
                     >
                       {cardForSlot && (
                         <Card
                           card={cardForSlot}
                           flipped={false}
-                          hidden={animatingSlotIds.has(s.slotId)}
                         />
                       )}
                     </Slot>

@@ -11,9 +11,6 @@ type GameContextValue = {
   cardsPerTurn?: number;
   cardLookup: Map<string, CardType>;
   highlightEmpty: boolean;
-  // Increments each time the server returns a game-action error so Board
-  // can roll back in-flight animations.
-  actionErrorSignal: number;
   // Handlers
   handleCardClick: (
     card: CardType,
@@ -45,7 +42,6 @@ type GameProviderProps = {
   onHarvestField: (slotId: string) => void;
   onTurnOverBean: () => void;
   onDrawCards: () => void;
-  actionErrorSignal?: number;
 };
 
 export function GameProvider({
@@ -57,7 +53,6 @@ export function GameProvider({
   onHarvestField,
   onTurnOverBean,
   onDrawCards,
-  actionErrorSignal = 0,
 }: GameProviderProps) {
   const [selectedCard, setSelectedCard] = useState<CardType | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
@@ -128,7 +123,6 @@ export function GameProvider({
     dragOverSlot,
     cardLookup,
     highlightEmpty: !!selectedCard,
-    actionErrorSignal,
     handleCardClick,
     handleFieldSlotClick,
     handleFieldDrop,

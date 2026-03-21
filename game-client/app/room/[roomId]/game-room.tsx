@@ -11,7 +11,6 @@ type GameRoomProp = {
   gameState: GameState;
   cardsPerTurn?: number;
   cardLookup: Map<string, CardType>;
-  actionErrorSignal?: number;
   plantBean: (
     roomId: string,
     playerId: string,
@@ -53,7 +52,6 @@ export default function GameRoom({
   createOffer,
   counterOffer,
   respondOffer,
-  actionErrorSignal,
 }: GameRoomProp) {
   const [offerPanelOpen, setOfferPanelOpen] = useState(false);
   const [prevPhase, setPrevPhase] = useState<string>(gameState.phase);
@@ -135,7 +133,6 @@ export default function GameRoom({
       onHarvestField={handleHarvestField}
       onTurnOverBean={handleTurnOverBean}
       onDrawCards={handleDrawCards}
-      actionErrorSignal={actionErrorSignal}
     >
       <div className="flex flex-col h-full w-full overflow-hidden">
         <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">

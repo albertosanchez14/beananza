@@ -44,20 +44,13 @@ export default function Page() {
   const params = useParams();
   const router = useRouter();
   const roomId = params.roomId as string;
-  const [profile, setProfile] = useState<{
-    id: string;
-    name: string;
-    authToken: string;
-  } | null>(null);
+  const [profile] = useState(() => loadProfile());
 
   useEffect(() => {
-    const p = loadProfile();
-    if (!p) {
+    if (!profile) {
       router.replace(`/identify?returnTo=/room/${roomId}`);
-    } else {
-      setProfile(p);
     }
-  }, [router, roomId]);
+  }, [router, roomId, profile]);
 
   const playerId = profile?.id ?? "";
   const playerName = profile?.name ?? "";
@@ -66,7 +59,6 @@ export default function Page() {
   // Single view-state enum — updated synchronously inside onMessage so there
   // is never a frame where state is inconsistent.
   const [viewState, setViewState] = useState<ViewState>("connecting");
-  const [actionErrorSignal, setActionErrorSignal] = useState(0);
   // Prevent multiple game_started events from re-triggering the deal anim.
   const dealTriggeredRef = useRef(false);
 
@@ -144,10 +136,6 @@ export default function Page() {
         } else if (errorPayload.code === "unauthorized") {
           localStorage.removeItem("playerProfile");
           router.replace(`/identify?returnTo=/room/${roomId}`);
-        } else {
-          // Game-action error (e.g. invalid move) — tell the board to roll
-          // back any in-flight plant animation.
-          setActionErrorSignal((n) => n + 1);
         }
       }
     },
@@ -225,7 +213,6 @@ export default function Page() {
             createOffer={createOffer}
             counterOffer={counterOffer}
             respondOffer={respondOffer}
-            actionErrorSignal={actionErrorSignal}
           />
         )}
       </main>
