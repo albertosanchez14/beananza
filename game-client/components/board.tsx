@@ -59,7 +59,7 @@ export default function Board() {
   return (
     <div
       className="relative w-full h-full overflow-hidden"
-      style={{ background: "#1a1008" }}
+      style={{ background: "#2a1505" }}
     >
       <Table>
         <Opponents>
@@ -85,7 +85,6 @@ export default function Board() {
                         slot={slot}
                         index={index}
                         interactive={false}
-                        rotated={true}
                       >
                         {cardForSlot && (
                           <Card
@@ -135,52 +134,52 @@ export default function Board() {
             topCard={discardTopCard}
           />
         </Center>
-        <CurrentPlayer
-          coinCount={coins}
-          field={
-            <Field>
-              {field.slots.map((s: SlotType, index: number) => {
-                const cardForSlot = s.cardName
-                  ? (cardLookup.get(s.cardName) ?? null)
-                  : null;
-                return (
-                  <Slot
-                    key={s.slotId}
-                    slot={s}
-                    index={index}
-                    dragOverSlot={dragOverSlot}
-                    animatingSlot={animatingSlot}
-                    highlightEmpty={highlightEmpty}
-                    handleDragOver={handleDragOver}
-                    handleDragLeave={handleDragLeave}
-                    handleFieldDrop={handleFieldDrop}
-                    handleSlotClick={handleFieldSlotClick}
-                  >
-                    {cardForSlot && <Card card={cardForSlot} flipped={false} />}
-                  </Slot>
-                );
-              })}
-            </Field>
-          }
-          tradedCards={<TradedCards />}
-          hand={
-            <FanLayout phase={phase}>
-              {hand.map((card) => {
-                const isSelected = selectedCard?.cardId === card.cardId;
-                return (
-                  <Card
-                    key={card.cardId}
-                    card={card}
-                    isSelected={isSelected}
-                    draggable={phase !== "plantTrade"}
-                    onClick={() => handleCardClick(card, "hand")}
-                  />
-                );
-              })}
-            </FanLayout>
-          }
-        />
       </Table>
+      <CurrentPlayer
+        coinCount={coins}
+        field={
+          <Field>
+            {field.slots.map((s: SlotType, index: number) => {
+              const cardForSlot = s.cardName
+                ? (cardLookup.get(s.cardName) ?? null)
+                : null;
+              return (
+                <Slot
+                  key={s.slotId}
+                  slot={s}
+                  index={index}
+                  dragOverSlot={dragOverSlot}
+                  animatingSlot={animatingSlot}
+                  highlightEmpty={highlightEmpty}
+                  handleDragOver={handleDragOver}
+                  handleDragLeave={handleDragLeave}
+                  handleFieldDrop={handleFieldDrop}
+                  handleSlotClick={handleFieldSlotClick}
+                >
+                  {cardForSlot && <Card card={cardForSlot} flipped={false} />}
+                </Slot>
+              );
+            })}
+          </Field>
+        }
+        tradedCards={<TradedCards />}
+        hand={
+          <FanLayout phase={phase}>
+            {hand.map((card) => {
+              const isSelected = selectedCard?.cardId === card.cardId;
+              return (
+                <Card
+                  key={card.cardId}
+                  card={card}
+                  isSelected={isSelected}
+                  draggable={phase !== "plantTrade"}
+                  onClick={() => handleCardClick(card, "hand")}
+                />
+              );
+            })}
+          </FanLayout>
+        }
+      />
     </div>
   );
 }

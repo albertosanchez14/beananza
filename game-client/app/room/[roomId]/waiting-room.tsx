@@ -1,5 +1,3 @@
-"use client";
-
 import { WaitingLobbyState } from "@/hooks/state";
 import Player from "@/components/player";
 import Table from "@/components/table";
@@ -21,7 +19,6 @@ type WaitingRoomProps = {
 function GhostSeat({ label }: { label: string }) {
   return (
     <div className="flex flex-col items-center gap-1 opacity-30">
-      {/* Dashed circle */}
       <div
         className="rounded-full border-2 border-dashed border-gray-400 flex items-center justify-center"
         style={{ width: 56, height: 56 }}
@@ -84,12 +81,7 @@ export default function WaitingRoom({
                 <Field>
                   {Array.from({ length: 2 }).map((_, index) => {
                     return (
-                      <NewSlot
-                        key={index}
-                        index={index}
-                        interactive={false}
-                        rotated={true}
-                      />
+                      <NewSlot key={index} index={index} interactive={false} />
                     );
                   })}
                 </Field>
@@ -107,7 +99,7 @@ export default function WaitingRoom({
         <Center>
           <CardPile label="Draw" count={0} topCard={null} />
           <div
-            className="flex flex-col self-center items-center gap-2 px-5 py-3 rounded-2xl"
+            className="flex flex-col self-center items-center gap-2 px-5 py-3 rounded-xl"
             style={{
               background: "rgba(0,0,0,0.55)",
               backdropFilter: "blur(6px)",
@@ -163,8 +155,13 @@ export default function WaitingRoom({
         </Center>
 
         <div
-          className="absolute bottom-16 left-1/2"
-          style={{ transform: "translateX(-50%)", zIndex: 15 }}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "94%",
+            transform: "translate(-50%, -50%)",
+            zIndex: 15,
+          }}
         >
           {me ? (
             <Player
@@ -180,14 +177,7 @@ export default function WaitingRoom({
         </div>
       </Table>
 
-      <div
-        className="absolute bottom-0 left-0 right-0 z-30"
-        style={{
-          background:
-            "linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.60) 70%, transparent 100%)",
-          paddingBottom: "env(safe-area-inset-bottom)",
-        }}
-      >
+      <div className="absolute bottom-0 left-0 right-0 z-30">
         <div className="flex flex-col items-center gap-3 px-6 pb-4 pt-6">
           {/* Action buttons */}
           <div className="flex gap-3 w-full max-w-sm">
