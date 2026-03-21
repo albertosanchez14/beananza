@@ -8,8 +8,10 @@ type OfferCardProps = {
   allOffers: Offer[]; // needed to render children
   myPlayerId: string;
   myHand: CardType[];
+  centerCards: CardType[];
   players: ExternalPlayer[];
   gamePhase: string;
+  playerTurn: string;
   depth?: number;
   onAccept: (offerId: string) => void;
   onReject: (offerId: string) => void;
@@ -77,17 +79,28 @@ function canCancel(offer: Offer, myPlayerId: string): boolean {
   return offer.status === "pending" && offer.creator_id === myPlayerId;
 }
 
-// Returns true if myHand contains at least the card types+quantities in cards_requested.
-function canFulfillOffer(requested: OfferCard[], myHand: CardType[]): boolean {
+// Returns true if the player has at least the card types+quantities in cards_requested.
+// Turn players may also use center cards to fulfill an offer.
+function canFulfillOffer(
+  requested: OfferCard[],
+  myHand: CardType[],
+  centerCards: CardType[],
+  isTurnPlayer: boolean,
+): boolean {
   // Count required quantities per card type
   const required: Record<string, number> = {};
   for (const c of requested) {
     required[c.card_type] = (required[c.card_type] ?? 0) + 1;
   }
-  // Count available quantities per card type in hand
+  // Count available quantities per card type (hand + center for turn player)
   const available: Record<string, number> = {};
   for (const c of myHand) {
     available[c.cardName] = (available[c.cardName] ?? 0) + 1;
+  }
+  if (isTurnPlayer) {
+    for (const c of centerCards) {
+      available[c.cardName] = (available[c.cardName] ?? 0) + 1;
+    }
   }
   return Object.entries(required).every(
     ([type, qty]) => (available[type] ?? 0) >= qty,
@@ -145,8 +158,10 @@ export default function OfferCardComponent({
   allOffers,
   myPlayerId,
   myHand,
+  centerCards,
   players,
   gamePhase,
+  playerTurn,
   depth = 0,
   onAccept,
   onReject,
@@ -161,7 +176,7 @@ export default function OfferCardComponent({
   const allowAcceptReject = canAcceptOrReject(offer, myPlayerId, allOffers);
   const allowCancel = canCancel(offer, myPlayerId);
   const allowCounter = canCounter(offer, myPlayerId, gamePhase);
-  const canFulfill = allowAcceptReject && canFulfillOffer(offer.cards_requested, myHand);
+  const canFulfill = allowAcceptReject && canFulfillOffer(offer.cards_requested, myHand, centerCards, myPlayerId === playerTurn);
 
   const isOwn = offer.creator_id === myPlayerId;
   const directionLabel = isOwn
@@ -271,8 +286,10 @@ export default function OfferCardComponent({
             allOffers={allOffers}
             myPlayerId={myPlayerId}
             myHand={myHand}
+            centerCards={centerCards}
             players={players}
             gamePhase={gamePhase}
+            playerTurn={playerTurn}
             depth={depth + 1}
             onAccept={onAccept}
             onReject={onReject}

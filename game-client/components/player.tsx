@@ -188,6 +188,10 @@ type ActivePlayerProps = {
   gamePhase?: string;
   field?: ReactNode;
   hand?: ReactNode;
+  isDragTarget?: boolean;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
   fieldRotation?: number;
 };
 
@@ -260,6 +264,10 @@ function ActivePlayer({
   gamePhase,
   field,
   hand,
+  isDragTarget = false,
+  onDragOver,
+  onDragLeave,
+  onDrop,
   fieldRotation,
 }: ActivePlayerProps) {
   const showPickedCards =
@@ -317,7 +325,9 @@ function ActivePlayer({
           </div>
         </div>
 
-        <MiiAvatar name={playerName} isCurrentTurn={isCurrentTurn} />
+        <div style={isDragTarget ? { filter: "drop-shadow(0 0 8px #4ade80) drop-shadow(0 0 3px #4ade80)", transition: "filter 0.15s" } : undefined}>
+          <MiiAvatar name={playerName} isCurrentTurn={isCurrentTurn} />
+        </div>
 
         {hand && (
           <div
