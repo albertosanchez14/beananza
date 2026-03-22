@@ -415,16 +415,21 @@ func (s *Session) HandleDrawCards(playerId string) error {
 
 	// RULE: Can only draw 3 cards from the deck when ending the turn
 	cardsToDraw := 3
-	if err := s.gameState.DrawCards(playerId, cardsToDraw); err != nil {
+	err := s.gameState.DrawCards(playerId, cardsToDraw)
+	// Always persist: the phase may have advanced to plantTrade even if
+	// drawing was deferred (other players still have picked cards to plant).
+	if persistErr := s.persistState(); persistErr != nil {
+		s.logger.Error("failed to persist state after draw cards", zap.Error(persistErr))
+	}
+	if err != nil {
 		return s.logAndReturnError("draw_cards", err)
 	}
 
-	s.logger.Info("cards drawn",
+	s.logger.Info("draw cards action processed",
 		zap.String("player_id", playerId),
-		zap.Int("cards_drawn", cardsToDraw),
 	)
 
-	return s.persistState()
+	return nil
 }
 
 // HandleCreateOffer handles a player creating a new root offer.

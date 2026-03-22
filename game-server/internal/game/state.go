@@ -321,8 +321,13 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 				break
 			}
 		}
-		if allPlanted {
-			s.nextPhase(playerId)
+		if allPlanted && len(s.CenterCards) == 0 {
+			// All traded cards planted and no center cards remaining:
+			// auto-draw for the turn player and advance to the next turn.
+			turnPlayerId := s.TurnOrder[s.CurrentTurn]
+			if err := s.DrawCards(turnPlayerId, 3); err != nil {
+				return err
+			}
 		}
 	} else {
 		player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
@@ -665,9 +670,30 @@ func (s *State) DrawCards(playerId string, cardsToDraw int) error {
 	}
 
 	// RULE: When drawing cards from the DrawPile the turn ends.
-	// endPhases advances from turnTrade/plantTrade to drawCards first.
-	if err := s.endPhases(playerId); err != nil {
-		return err
+	// Advance from turnTrade to plantTrade first (always valid — trading is over).
+	// This is done separately so the transition is marked dirty and persisted even
+	// when plantTrade cannot be skipped yet (other players still have picked cards).
+	if s.Phase == PhaseTypeTurnTrade {
+		_ = s.nextPhase(playerId) // turnTrade → plantTrade; cannot fail
+		s.markDirty()
+	}
+	// Advance from plantTrade to drawCards only if all constraints are met.
+	// If other players still have picked cards, return nil — the draw will be
+	// triggered automatically by PlantBean once everyone has finished planting.
+	if s.Phase == PhaseTypePlantTrade {
+		if len(s.CenterCards) > 0 {
+			return NewCenterCardsRemainingError(len(s.CenterCards))
+		}
+		for _, id := range s.TurnOrder {
+			p, ok := s.GetPlayer(id)
+			if !ok {
+				continue
+			}
+			if len(p.PickedCards) > 0 {
+				return nil
+			}
+		}
+		_ = s.nextPhase(playerId)
 	}
 
 	drawnCards := s.DrawPile.Draw(cardsToDraw)
@@ -737,27 +763,6 @@ func (s *State) nextPhase(playerId string) error {
 	}
 
 	s.Phase.NextPhase()
-
-	return nil
-}
-
-func (s *State) endPhases(playerId string) error {
-	switch s.Phase {
-	case PhaseTypeTurnTrade:
-		err := s.nextPhase(playerId)
-		if err != nil {
-			return err
-		}
-		err = s.nextPhase(playerId)
-		if err != nil {
-			return err
-		}
-	case PhaseTypePlantTrade:
-		err := s.nextPhase(playerId)
-		if err != nil {
-			return err
-		}
-	}
 
 	return nil
 }
