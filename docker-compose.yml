@@ -31,6 +31,8 @@ services:
         condition: service_healthy
     expose:
       - "8080"
+    volumes:
+      - uploads_data:/app/uploads
 
   game-server-2:
     build:
@@ -51,15 +53,18 @@ services:
         condition: service_healthy
     expose:
       - "8080"
+    volumes:
+      - uploads_data:/app/uploads
 
   game-client:
     build:
       context: ./game-client
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_HOST=${HOST:-localhost}
+        - NEXT_PUBLIC_HOST=${APP_HOST:-localhost}
     environment:
       - PORT=3000
+      - INTERNAL_API_URL=http://nginx
     expose:
       - "3000"
     depends_on:
@@ -82,3 +87,4 @@ services:
 
 volumes:
   redis_data:
+  uploads_data:

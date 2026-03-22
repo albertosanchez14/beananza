@@ -1,27 +1,55 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiBaseUrl } from "@/lib/config";
+import { register } from "@/lib/register";
+import { uploadAvatar } from "@/lib/uploadAvatar";
+import { saveProfile } from "@/hooks/usePlayerProfile";
 
-const AVATAR_COLORS = [
-  { label: "Blue", value: "bg-blue-500" },
-  { label: "Green", value: "bg-green-500" },
-  { label: "Red", value: "bg-red-500" },
-  { label: "Amber", value: "bg-amber-400" },
-  { label: "Purple", value: "bg-purple-500" },
-  { label: "Pink", value: "bg-pink-500" },
-  { label: "Cyan", value: "bg-cyan-500" },
-  { label: "Orange", value: "bg-orange-500" },
+const PRESET_AVATARS = [
+  "/avatars/bandit.webp",
+  "/avatars/barman.webp",
+  "/avatars/cowboy.webp",
+  "/avatars/cowgirl.webp",
+  "/avatars/gungirl.webp",
+  "/avatars/ladydress.webp",
+  "/avatars/native.webp",
+  "/avatars/oldman.webp",
+  "/avatars/sheriff.webp",
+  "/avatars/sheriff2.webp",
+  "/avatars/telescopegirl.webp",
+  "/avatars/wantedgirl.webp",
 ];
 
 export function IdentifyForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo") ?? "/room";
+
   const [name, setName] = useState("");
-  const [selectedColor, setSelectedColor] = useState(AVATAR_COLORS[0].value);
+  const [selectedAvatar, setSelectedAvatar] = useState(PRESET_AVATARS[0]);
+  const [customAvatar, setCustomAvatar] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setError(null);
+    try {
+      const fullUrl = await uploadAvatar(file);
+      setCustomAvatar(fullUrl);
+      setSelectedAvatar(fullUrl);
+    } catch {
+      setError("Could not upload image. Please try again.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const handleSave = async () => {
     const trimmedName = name.trim();
@@ -31,33 +59,15 @@ export function IdentifyForm() {
     setError(null);
 
     try {
-      const res = await fetch(`${apiBaseUrl}/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmedName }),
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        setError(text.trim() || "Registration failed. Please try again.");
-        return;
-      }
-
-      const data: { player_id: string; auth_token: string } = await res.json();
-
-      localStorage.setItem(
-        "playerProfile",
-        JSON.stringify({
-          name: trimmedName,
-          playerId: data.player_id,
-          authToken: data.auth_token,
-          color: selectedColor,
-        }),
-      );
-
+      const data = await register(trimmedName);
+      saveProfile(trimmedName, data.player_id, data.auth_token, selectedAvatar);
       router.push(returnTo);
-    } catch {
-      setError("Could not reach the server. Please try again.");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not reach the server. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -66,50 +76,107 @@ export function IdentifyForm() {
   const isValid = name.trim().length > 0;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-zinc-900 via-zinc-800 to-zinc-900 px-4">
-      <div className="w-full max-w-sm rounded-2xl bg-zinc-800 border border-zinc-700 shadow-2xl p-8 flex flex-col gap-7">
-        {/* Header */}
+    <div
+      className="relative flex min-h-screen items-center justify-center px-4 overflow-hidden"
+      style={{
+        backgroundImage: "url('/fields/field6.jpeg')",
+        backgroundSize: "cover",
+        backgroundPosition: "bottom",
+      }}
+    >
+      <div className="absolute inset-0 bg-black/50" />
+      <div
+        className="relative w-full max-w-sm rounded-2xl shadow-2xl p-8 flex flex-col gap-7"
+        style={{
+          background: "rgba(20, 10, 3, 0.82)",
+          backdropFilter: "blur(6px)",
+          border: "1px solid rgba(180,120,60,0.25)",
+        }}
+      >
         <div className="flex flex-col gap-1">
-          <h2 className="text-2xl font-bold text-white">Identify yourself</h2>
-          <p className="text-sm text-zinc-400">
+          <h2 className="text-2xl font-bold text-white uppercase tracking-widest [text-shadow:0_1px_4px_#000]">
+            Identify yourself
+          </h2>
+          <p className="text-sm text-white/60">
             Set your player name before joining a game.
           </p>
         </div>
 
-        {/* Avatar color picker */}
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-zinc-300">
-            Avatar color
-          </p>
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-medium text-white">Avatar</p>
           <div className="flex flex-wrap gap-2">
-            {AVATAR_COLORS.map((c) => (
+            {PRESET_AVATARS.map((src) => (
               <button
-                key={c.value}
-                title={c.label}
-                onClick={() => setSelectedColor(c.value)}
-                className={`w-8 h-8 rounded-full ${c.value} transition-transform duration-100 cursor-pointer
+                key={src}
+                title={src}
+                onClick={() => setSelectedAvatar(src)}
+                className={`w-12 h-12 rounded-full overflow-hidden 
+									transition-transform duration-100 cursor-pointer
                   ${
-                    selectedColor === c.value
-                      ? "ring-2 ring-white ring-offset-2 ring-offset-zinc-800 scale-110"
+                    selectedAvatar === src
+                      ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-transparent scale-110"
                       : "hover:scale-105 opacity-70 hover:opacity-100"
                   }`}
-              />
+              >
+                <img
+                  src={src}
+                  alt=""
+                  className="w-full h-full object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              </button>
             ))}
-          </div>
-          {/* Preview */}
-          <div className="flex items-center gap-3 mt-1">
-            <div
-              className={`w-10 h-10 rounded-full ${selectedColor} flex items-center justify-center text-white font-bold text-lg shadow`}
+
+            {customAvatar && (
+              <button
+                title="Your uploaded avatar"
+                onClick={() => setSelectedAvatar(customAvatar)}
+                className={`w-12 h-12 rounded-full overflow-hidden
+                  transition-transform duration-100 cursor-pointer
+                  ${
+                    selectedAvatar === customAvatar
+                      ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-transparent scale-110"
+                      : "hover:scale-105 opacity-70 hover:opacity-100"
+                  }`}
+              >
+                <img
+                  src={customAvatar}
+                  alt="Custom"
+                  className="w-full h-full object-contain"
+                />
+              </button>
+            )}
+
+            <button
+              title="Upload custom avatar"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="w-12 h-12 rounded-full border-2 border-dashed
+							border-amber-700 hover:border-amber-400 flex items-center
+							justify-center text-white/70 hover:text-white
+							transition-all cursor-pointer disabled:opacity-40
+							disabled:cursor-not-allowed"
             >
-              {name.trim().charAt(0).toUpperCase() || "?"}
-            </div>
-            <span className="text-zinc-400 text-sm">Preview</span>
+              {uploading ? (
+                <span className="text-[10px] font-semibold">...</span>
+              ) : (
+                <span className="text-xl leading-none">+</span>
+              )}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
           </div>
         </div>
 
-        {/* Player name */}
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="name" className="text-sm font-medium text-zinc-300">
+          <label htmlFor="name" className="text-sm font-medium text-white">
             Player name
           </label>
           <input
@@ -119,28 +186,36 @@ export function IdentifyForm() {
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. BeanMaster"
             maxLength={24}
-            className="rounded-lg bg-zinc-700 border border-zinc-600 focus:border-blue-500 focus:outline-none text-white placeholder-zinc-500 px-3 py-2 text-sm transition-colors"
+            className="western-input rounded-lg bg-black/30 border border-amber-800
+						focus:border-amber-500 focus:outline-none text-white
+						px-3 py-2 text-sm transition-colors"
+            style={{
+              WebkitBoxShadow: "0 0 0 1000px rgba(20, 10, 3, 0.9) inset",
+            }}
           />
         </div>
 
-        {/* Error message */}
-        {error && (
-          <p className="text-sm text-red-400 -mt-3">{error}</p>
-        )}
+        {error && <p className="text-sm text-red-400 -mt-3">{error}</p>}
 
-        {/* Actions */}
         <div className="flex gap-3 pt-1">
           <button
             onClick={() => router.back()}
             disabled={loading}
-            className="flex-1 rounded-lg border border-zinc-600 hover:border-zinc-400 bg-transparent hover:bg-zinc-700 text-zinc-300 font-medium py-2.5 text-sm transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex-1 rounded-lg border border-amber-800
+						hover:border-amber-500 bg-transparent hover:bg-amber-900/40
+						text-white font-medium py-2.5 text-sm transition-all
+						duration-150 cursor-pointer disabled:opacity-40
+						disabled:cursor-not-allowed"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={!isValid || loading}
-            className="flex-1 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-2.5 text-sm transition-all duration-150 cursor-pointer"
+            className="flex-1 rounded-lg bg-amber-700 hover:bg-amber-600
+						active:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed
+						text-white font-semibold py-2.5 text-sm transition-all duration-150
+						cursor-pointer"
           >
             {loading ? "Saving..." : "Save"}
           </button>

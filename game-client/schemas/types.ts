@@ -42,6 +42,7 @@ export type FieldType = {
 export type ExternalPlayer = {
   playerId: string;
   playerName: string;
+  playerAvatar?: string;
   playerStatus: string;
   playerReady: boolean;
   playerCoins: number;
@@ -53,6 +54,7 @@ export type ExternalPlayer = {
 export type WaitingPlayer = {
   id: string;
   name: string;
+  avatar?: string;
   ready: boolean;
   joined_at: string;
 };

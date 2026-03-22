@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -70,6 +73,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/rooms", s.handleRooms)
 
 	mux.HandleFunc("/config", s.handleConfig)
+
+	os.MkdirAll("./uploads/avatars", 0755)
+	mux.Handle("/user-avatars/", http.StripPrefix("/user-avatars/", http.FileServer(http.Dir("./uploads/avatars"))))
+	mux.HandleFunc("/upload-avatar", s.handleUploadAvatar)
 
 	addr := fmt.Sprintf("%s:%s", s.config.Server.Host, s.config.Server.Port)
 	s.server = &http.Server{
@@ -206,6 +213,86 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		"auth_token": authToken,
 	}); err != nil {
 		s.logger.Error("failed to encode register response", zap.Error(err))
+	}
+}
+
+// handleUploadAvatar accepts a multipart image upload, saves it to disk and
+// returns the URL path under which the client can retrieve it.
+//
+// POST /upload-avatar
+//
+//	Body: multipart/form-data with field "avatar" containing the image file
+//	Response: { "url": "/avatars/<filename>" }
+func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if len(s.config.Server.AllowedOrigins) == 0 {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	} else {
+		for _, allowed := range s.config.Server.AllowedOrigins {
+			if strings.EqualFold(origin, allowed) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				break
+			}
+		}
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		http.Error(w, "file too large (max 2 MB)", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("avatar")
+	if err != nil {
+		http.Error(w, "missing avatar field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	contentType := header.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") {
+		http.Error(w, "file must be an image", http.StatusBadRequest)
+		return
+	}
+
+	ext := filepath.Ext(header.Filename)
+	if ext == "" {
+		ext = ".webp"
+	}
+
+	filename := uuid.NewString() + ext
+	dst, err := os.Create(filepath.Join("./uploads/avatars", filename))
+	if err != nil {
+		s.logger.Error("failed to create avatar file", zap.Error(err))
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, file); err != nil {
+		s.logger.Error("failed to write avatar file", zap.Error(err))
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"url": "/user-avatars/" + filename,
+	}); err != nil {
+		s.logger.Error("failed to encode upload response", zap.Error(err))
 	}
 }
 

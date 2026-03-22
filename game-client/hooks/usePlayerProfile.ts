@@ -6,7 +6,20 @@ type PlayerProfile = {
   id: string;
   name: string;
   authToken: string;
+  avatar: string;
 };
+
+export function saveProfile(
+  name: string,
+  playerId: string,
+  authToken: string,
+  avatar: string,
+): void {
+  localStorage.setItem(
+    "playerProfile",
+    JSON.stringify({ name, playerId, authToken, avatar }),
+  );
+}
 
 function loadProfile(): PlayerProfile | null {
   try {
@@ -18,6 +31,7 @@ function loadProfile(): PlayerProfile | null {
       id: profile.playerId as string,
       name: profile.name as string,
       authToken: profile.authToken as string,
+      avatar: (profile.avatar as string) ?? "",
     };
   } catch {
     return null;

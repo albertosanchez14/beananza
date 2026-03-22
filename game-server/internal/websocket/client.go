@@ -35,6 +35,7 @@ type Client struct {
 	send       chan []byte
 	PlayerId   string
 	PlayerName string
+	Avatar     string
 	logger     *zap.Logger
 	ctx        context.Context
 	cancel     context.CancelFunc

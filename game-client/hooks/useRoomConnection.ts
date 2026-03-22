@@ -25,6 +25,7 @@ export function useRoomConnection(
   playerId: string,
   playerName: string,
   authToken: string,
+  avatar: string,
   redirectToIdentify: () => void,
 ): UseRoomConnectionResult {
   const [viewState, setViewState] = useState<ViewState>("connecting");
@@ -115,12 +116,13 @@ export function useRoomConnection(
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (isConnected && playerId && playerName && !joinedRef.current) {
+      // avatar intentionally excluded from deps — it's stable from localStorage
       const storedToken = sessionStorage.getItem(`session_token:${roomId}`);
       joinedRef.current = true;
       if (storedToken) {
         reconnect(storedToken, playerName);
       } else {
-        join(playerName);
+        join(playerName, avatar);
       }
     }
   }, [isConnected, playerId, playerName, roomId, join, reconnect, joinRetry]);

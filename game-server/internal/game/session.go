@@ -159,6 +159,7 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 		externalPlayerData := map[string]any{
 			"playerId":               player.ID,
 			"playerName":             player.Name,
+			"playerAvatar":           player.Avatar,
 			"playerStatus":           player.Status,
 			"playerCoins":            player.Coins,
 			"playerHandSize":         len(player.Hand),
@@ -215,11 +216,11 @@ func (s *Session) logAndReturnError(action string, err error) error {
 }
 
 // HandlePlayerJoin handles a player joining the game
-func (s *Session) HandlePlayerJoin(playerID, playerName string) error {
+func (s *Session) HandlePlayerJoin(playerID, playerName, avatar string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.waitingLobby.AddPlayer(playerID, playerName); err != nil {
+	if err := s.waitingLobby.AddPlayer(playerID, playerName, avatar); err != nil {
 		return err
 	}
 
@@ -279,7 +280,7 @@ func (s *Session) HandleStartGame() (bool, error) {
 	}
 
 	for _, player := range s.waitingLobby.Players {
-		s.gameState.AddPlayer(player.ID, player.Name)
+		s.gameState.AddPlayer(player.ID, player.Name, player.Avatar)
 	}
 	s.startGame()
 

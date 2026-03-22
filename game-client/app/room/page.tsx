@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { Metadata } from "next";
 import { getRooms, type Room } from "@/lib/getRooms";
 import FieldGrid from "./field-grid";
 import Link from "next/link";
@@ -6,6 +7,13 @@ import Image from "next/image";
 
 const IMG_W = 1843;
 const IMG_H = 1228;
+
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Beananza — Rooms",
+  description: "Game rooms",
+};
 
 export default function Page() {
   const roomsPromise = getRooms()

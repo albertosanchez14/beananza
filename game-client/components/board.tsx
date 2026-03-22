@@ -423,6 +423,7 @@ export default function Board() {
           onComplete={() => handleTurnOverComplete(fc.id)}
         />
       ))}
+
       {plantFlyingCards.map((fc) => (
         <PlantFlyingCard
           key={fc.id}
@@ -440,6 +441,7 @@ export default function Board() {
           onComplete={() => handlePlantComplete(fc.id, fc.opponentSlotId)}
         />
       ))}
+
       <Table>
         <Opponents>
           {players.map((player) => {
@@ -498,6 +500,7 @@ export default function Board() {
                 key={player.playerId}
                 playerId={player.playerId}
                 playerName={player.playerName}
+                playerAvatar={player.playerAvatar}
                 playerStatus="active"
                 playerCoins={player.playerCoins}
                 playerPickedCardsCount={player.playerPickedCardsCount}
