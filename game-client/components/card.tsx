@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { forwardRef, useState } from "react";
+import { motion } from "motion/react";
 import { BaseCard, CardType } from "@/schemas/types";
+import { CardFrontFace } from "@/components/card-front-face";
 
 type CardProp = {
   card: BaseCard | CardType;
@@ -11,27 +13,24 @@ type CardProp = {
   style?: React.CSSProperties;
   className?: string;
   noTransition?: boolean;
+  hidden?: boolean;
 };
 
-function sortedRates(
-  money_exchange: Record<string, number>,
-): { cards: number; coins: number }[] {
-  return Object.entries(money_exchange)
-    .map(([k, v]) => ({ cards: Number(k), coins: v }))
-    .sort((a, b) => a.cards - b.cards);
-}
-
-export default function Card({
-  card,
-  isSelected = false,
-  draggable = false,
-  flipped = false,
-  onClick,
-  onContextMenu,
-  style,
-  className,
-  noTransition = false,
-}: CardProp) {
+const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
+  {
+    card,
+    isSelected = false,
+    draggable = false,
+    flipped = false,
+    onClick,
+    onContextMenu,
+    style,
+    className,
+    noTransition = false,
+    hidden = false,
+  },
+  ref,
+) {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
@@ -44,138 +43,84 @@ export default function Card({
     setIsDragging(false);
   };
 
-  const fullCard = "cardId" in card ? (card as CardType) : null;
-
-  const rates =
-    fullCard?.money_exchange && Object.keys(fullCard.money_exchange).length > 0
-      ? sortedRates(fullCard.money_exchange)
-      : null;
-
   return (
     <div
+      ref={ref}
       onClick={onClick}
       onContextMenu={onContextMenu}
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
       onDragEnd={draggable ? handleDragEnd : undefined}
-      style={{ perspective: noTransition ? undefined : "600px", ...style }}
+      style={{ opacity: hidden ? 0 : undefined, ...style }}
       className={`w-24 h-36
         ${draggable ? "cursor-grab active:cursor-grabbing" : ""}
         ${onClick && !draggable ? "cursor-pointer" : ""}
-        ${flipped ? "card-flipped" : ""}
         ${className ?? ""}
       `}
     >
-      {/* Inner wrapper — rotates on Y axis to flip between faces */}
-      <div
-        className={`card-inner rounded-xl w-full h-full
-          ${noTransition ? "transition-none" : "transition-all duration-150"}
-          ${isSelected ? "shadow-xl -translate-y-4" : ""}
-          ${isDragging ? "opacity-40 scale-105" : ""}
-          ${onClick && !draggable ? "hover:shadow-lg hover:-translate-y-3" : ""}
-          ${onClick && draggable ? "hover:shadow-lg hover:-translate-y-3" : ""}
-        `}
-        style={
-          noTransition
-            ? { transition: "none", transformStyle: "flat" }
-            : undefined
+      <motion.div
+        onClick={onClick}
+        style={{ perspective: "600px", width: "100%", height: "100%" }}
+        initial={false}
+        animate={{ opacity: isDragging ? 0.4 : 1 }}
+        transition={
+          noTransition ? { duration: 0 } : { opacity: { duration: 0.15 } }
         }
       >
-        {/* ── FRONT FACE ─────────────────────────────────────────────────── */}
-        <div
-          className={`card-face rounded-xl overflow-hidden
-            bg-white border-2
-            ${isSelected ? "border-blue-500" : "border-gray-200"}
-            flex flex-col
-          `}
+        {/* Inner wrapper — rotates on Y axis to flip between faces */}
+        <motion.div
+          className="rounded-xl"
+          style={{
+            transformStyle: "preserve-3d",
+            position: "relative",
+            width: "100%",
+            height: "100%",
+          }}
+          initial={false}
+          animate={{
+            rotateY: flipped ? 180 : 0,
+            y: isSelected ? -16 : 0,
+            scale: isDragging ? 1.05 : 1,
+            boxShadow: isSelected ? "0 20px 25px rgba(0,0,0,0.4)" : "none",
+          }}
+          whileHover={
+            onClick && !isSelected && !isDragging
+              ? { y: -12, boxShadow: "0 10px 20px rgba(0,0,0,0.3)" }
+              : undefined
+          }
+          transition={
+            noTransition
+              ? { duration: 0 }
+              : {
+                  rotateY: { duration: 0.4, ease: [0.22, 1, 0.36, 1] },
+                  y: { type: "spring", stiffness: 400, damping: 28 },
+                  scale: { duration: 0.15 },
+                }
+          }
         >
-          {/* Image area — takes all space above the exchange strip */}
-          <div className="relative flex-1 min-h-0 rounded-t-xl overflow-hidden">
-            {fullCard?.frontImage ? (
+          {/* ── FRONT FACE ─────────────────────────────────────────────────── */}
+          <CardFrontFace card={card} isSelected={isSelected} />
+
+          {/* ── BACK FACE ──────────────────────────────────────────────────── */}
+          <div className="card-back rounded-xl border-2 border-gray-500 overflow-hidden">
+            {card.backImage ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={fullCard.frontImage}
-                alt={fullCard.cardName}
+                src={card.backImage}
+                alt="Card back"
                 className="w-full h-full object-cover"
                 draggable={false}
               />
             ) : (
-              /* Fallback: coloured block */
-              <div className="w-full h-full bg-blue-200 flex items-end justify-center pb-1">
-                <span className="text-black text-center text-[9px] font-semibold leading-tight px-1">
-                  {fullCard?.cardName ?? ""}
-                </span>
-              </div>
-            )}
-
-            {/* Card name overlay — dark gradient band at the bottom of the image */}
-            {fullCard?.frontImage && (
-              <div
-                className="absolute bottom-0 left-0 right-0 flex items-end justify-center px-1 pb-0.5"
-                style={{
-                  background:
-                    "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0) 100%)",
-                  paddingTop: "1rem",
-                }}
-              >
-                <span className="text-white text-[9px] font-bold text-center leading-tight drop-shadow">
-                  {fullCard.cardName}
-                </span>
+              <div className="w-full h-full bg-green-800 flex items-center justify-center">
+                <div className="w-12 h-16 rounded border-2 border-green-600 bg-green-700" />
               </div>
             )}
           </div>
-
-          {/* ── EXCHANGE STRIP ───────────────────────────────────────────── */}
-          {rates ? (
-            <div
-              className="flex flex-row items-stretch justify-around bg-white rounded-b-xl px-0.5 pt-0.5 pb-0.5"
-              style={{ minHeight: "2rem" }}
-            >
-              {rates.map(({ cards, coins }) => (
-                <div
-                  key={cards}
-                  className="flex flex-col items-center justify-between gap-px"
-                >
-                  {/* Coin circle */}
-                  <div
-                    className="flex items-center justify-center rounded-full bg-yellow-400 border border-yellow-600 text-yellow-900 font-bold leading-none"
-                    style={{ width: 15, height: 15, fontSize: 8 }}
-                  >
-                    {coins}
-                  </div>
-                  {/* Card count */}
-                  <span
-                    className="text-gray-700 font-semibold leading-none"
-                    style={{ fontSize: 8 }}
-                  >
-                    {cards}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            /* Thin white footer when no exchange data yet */
-            <div className="bg-white rounded-b-xl" style={{ height: 4 }} />
-          )}
-        </div>
-
-        {/* ── BACK FACE ──────────────────────────────────────────────────── */}
-        <div className="card-back rounded-xl border-2 border-gray-500 overflow-hidden">
-          {card.backImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={card.backImage}
-              alt="Card back"
-              className="w-full h-full object-cover"
-              draggable={false}
-            />
-          ) : (
-            <div className="w-full h-full bg-green-800 flex items-center justify-center">
-              <div className="w-12 h-16 rounded border-2 border-green-600 bg-green-700" />
-            </div>
-          )}
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </div>
   );
-}
+});
+
+export default Card;

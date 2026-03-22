@@ -205,7 +205,7 @@ export default function OfferWizard({
                         Array.from({ length: peekLayers }).map((_, i) => (
                           <div
                             key={i}
-                            className="absolute rounded-2xl border-2"
+                            className="absolute rounded-xl border-2"
                             style={{
                               width: 96,
                               height: CARD_H,
@@ -231,7 +231,7 @@ export default function OfferWizard({
                           />
                         ) : (
                           <div
-                            className="w-24 h-36 rounded-2xl border-2 border-dashed 
+                            className="w-24 h-36 rounded-xl border-2 border-dashed 
 													border-gray-300 dark:border-gray-600 flex items-center justify-center"
                           >
                             <span className="text-xs text-gray-500 text-center px-1">
@@ -321,7 +321,7 @@ export default function OfferWizard({
                     {Array.from({ length: peekLayers }).map((_, i) => (
                       <div
                         key={i}
-                        className="absolute rounded-2xl border-2"
+                        className="absolute rounded-xl border-2"
                         style={{
                           width: 96,
                           height: CARD_H,
@@ -343,7 +343,7 @@ export default function OfferWizard({
                       {card ? (
                         <CardComponent card={card} noTransition />
                       ) : (
-                        <div className="w-24 h-36 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center">
+                        <div className="w-24 h-36 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center">
                           <span className="text-xs text-gray-500 text-center px-1">
                             {e.card_type}
                           </span>

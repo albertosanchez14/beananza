@@ -43,20 +43,13 @@ export default function Page() {
   const params = useParams();
   const router = useRouter();
   const roomId = params.roomId as string;
-  const [profile, setProfile] = useState<{
-    id: string;
-    name: string;
-    authToken: string;
-  } | null>(null);
+  const [profile] = useState(() => loadProfile());
 
   useEffect(() => {
-    const p = loadProfile();
-    if (!p) {
+    if (!profile) {
       router.replace(`/identify?returnTo=/room/${roomId}`);
-    } else {
-      setProfile(p);
     }
-  }, [router, roomId]);
+  }, [router, roomId, profile]);
 
   const playerId = profile?.id ?? "";
   const playerName = profile?.name ?? "";
@@ -140,8 +133,7 @@ export default function Page() {
         const errorPayload = message.payload as { code: string };
         if (errorPayload.code === "GAME_ALREADY_STARTED") {
           setViewState("gameAlreadyStarted");
-        }
-        if (errorPayload.code === "unauthorized") {
+        } else if (errorPayload.code === "unauthorized") {
           localStorage.removeItem("playerProfile");
           router.replace(`/identify?returnTo=/room/${roomId}`);
         }

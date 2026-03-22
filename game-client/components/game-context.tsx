@@ -1,11 +1,10 @@
-import { createContext, useContext, useState, useRef, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 import { CardType, ExternalPlayer } from "@/schemas/types";
 import { GameState } from "@/hooks/state";
 
 type GameContextValue = {
   // UI state
   selectedCard: CardType | null;
-  animatingSlot: string | null;
   dragOverSlot: string | null;
   giveSelection: CardType[];
   requestSelection: CardType[];
@@ -32,7 +31,10 @@ type GameContextValue = {
   clearRequestSelection: () => void;
   onGiveDrop: (targetPlayer: ExternalPlayer, cardsToGive: CardType[]) => void;
   onRequestDrop: (cardsRequested: CardType[]) => void;
-  onCardRightClick: (card: CardType, targetPlayerId: string | undefined) => void;
+  onCardRightClick: (
+    card: CardType,
+    targetPlayerId: string | undefined,
+  ) => void;
 };
 
 export const GameContext = createContext<GameContextValue | null>(null);
@@ -55,7 +57,10 @@ type GameProviderProps = {
   onDrawCards: () => void;
   onGiveDrop: (targetPlayer: ExternalPlayer, cardsToGive: CardType[]) => void;
   onRequestDrop: (cardsRequested: CardType[]) => void;
-  onCardRightClick: (card: CardType, targetPlayerId: string | undefined) => void;
+  onCardRightClick: (
+    card: CardType,
+    targetPlayerId: string | undefined,
+  ) => void;
 };
 
 export function GameProvider({
@@ -73,17 +78,9 @@ export function GameProvider({
   onCardRightClick,
 }: GameProviderProps) {
   const [selectedCard, setSelectedCard] = useState<CardType | null>(null);
-  const [animatingSlot, setAnimatingSlot] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   const [giveSelection, setGiveSelection] = useState<CardType[]>([]);
   const [requestSelection, setRequestSelection] = useState<CardType[]>([]);
-  const animTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const triggerSlotAnim = (slotId: string) => {
-    if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
-    setAnimatingSlot(slotId);
-    animTimeoutRef.current = setTimeout(() => setAnimatingSlot(null), 350);
-  };
 
   const toggleGiveSelection = (card: CardType) => {
     setGiveSelection((prev) =>
@@ -135,7 +132,6 @@ export function GameProvider({
     const slot = gameState.field.slots[slotIndex];
     if (selectedCard) {
       if (!slot || !slot.cardName || slot.cardName === selectedCard.cardName) {
-        triggerSlotAnim(slotId);
         onPlantBean(selectedCard.cardId, slotId);
         setSelectedCard(null);
       }
@@ -154,7 +150,6 @@ export function GameProvider({
     setDragOverSlot(null);
     const slot = gameState.field.slots[slotIndex];
     if (!slot || !slot.cardName || slot.cardName === card.cardName) {
-      triggerSlotAnim(slotId);
       onPlantBean(card.cardId, slotId);
       setSelectedCard(null);
     }
@@ -184,7 +179,6 @@ export function GameProvider({
     gameState,
     cardsPerTurn,
     selectedCard,
-    animatingSlot,
     dragOverSlot,
     giveSelection,
     requestSelection,
