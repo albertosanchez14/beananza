@@ -115,6 +115,7 @@ export default function Board() {
   const prevCenterCardsForTurnRef = useRef<CardType[]>(centerCards);
   const prevFieldRef = useRef(field);
   const mySlotRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const mySlotCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const prevHandCardRectsRef = useRef<Map<string, { left: number; top: number }>>(new Map());
   const snapshotCenterRects = useRef<Map<string, { left: number; top: number }>>(new Map());
 
@@ -392,6 +393,17 @@ export default function Board() {
       const startPos = handPos ?? centerPos;
       if (!startPos) return;
 
+      // Use the projected card rect if available so we can bottom-anchor the
+      // flying card (transformOrigin "bottom center") exactly like TurnOverFlyingCard.
+      const cardEl = mySlotCardRefs.current.get(slot.slotId);
+      const cardRect = cardEl?.getBoundingClientRect();
+      const targetX = cardRect
+        ? cardRect.left + (cardRect.width - 96 * 1.08) / 2
+        : slotRect.left + (slotRect.width - 96) / 2;
+      const targetY = cardRect
+        ? cardRect.bottom - 144
+        : slotRect.top + (slotRect.height - 144) / 2;
+
       newFlying.push({
         id: `my-${slot.slotId}-${slot.cardIds.length}`,
         card: cardLookup.get(slot.cardName) ?? {
@@ -401,8 +413,8 @@ export default function Board() {
         },
         startX: startPos.left,
         startY: startPos.top,
-        targetX: slotRect.left + (slotRect.width - 96) / 2,
-        targetY: slotRect.top + (slotRect.height - 144) / 2,
+        targetX,
+        targetY,
         targetRotateX: 25,
         targetScaleX: 1.08,
         opponentSlotId: slot.slotId,
@@ -748,6 +760,10 @@ export default function Board() {
                       <Card
                         card={cardForSlot}
                         flipped={false}
+                        ref={(el) => {
+                          if (el) mySlotCardRefs.current.set(s.slotId, el);
+                          else mySlotCardRefs.current.delete(s.slotId);
+                        }}
                         hidden={animatingOpponentSlotIds.has(s.slotId)}
                         onContextMenu={
                           phase === "turnTrade"
