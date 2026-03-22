@@ -51,7 +51,11 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 	c.room = room
 
 	session := c.hub.gameManager.GetOrCreateSession(msg.RoomID)
-	if err := session.HandlePlayerJoin(c.PlayerId, c.PlayerName); err != nil {
+	if avatar, ok := payload.Metadata["avatar"].(string); ok {
+		c.Avatar = avatar
+	}
+
+	if err := session.HandlePlayerJoin(c.PlayerId, c.PlayerName, c.Avatar); err != nil {
 		// Most likely WAITING_ROOM_FULL — report it and leave the room.
 		c.sendGameError(err)
 		room.Leave(c)
@@ -108,6 +112,7 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 			Data: map[string]any{
 				"player_id":   c.PlayerId,
 				"player_name": c.PlayerName,
+				"avatar":      c.Avatar,
 				"ready":       false,
 			},
 		},

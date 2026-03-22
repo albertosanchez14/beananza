@@ -1,0 +1,9 @@
+.git
+.env*
+uploads
+test
+*.log
+.DS_Store
+go.work
+go.work.sum
+Makefile

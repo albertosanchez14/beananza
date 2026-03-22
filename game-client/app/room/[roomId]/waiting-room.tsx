@@ -8,7 +8,7 @@ import Opponents from "@/components/opponents";
 import Field from "@/components/field";
 import NewSlot from "@/components/slot";
 
-type WaitingRoomProps = { roomId: string; playerId: string } & WaitingRoomContext;
+type WaitingRoomProps = { roomId: string; playerId: string; myAvatar?: string } & WaitingRoomContext;
 
 function GhostSeat({ label }: { label: string }) {
   return (
@@ -32,6 +32,7 @@ function GhostSeat({ label }: { label: string }) {
 export default function WaitingRoom({
   roomId,
   playerId,
+  myAvatar,
   waitingLobbyState,
   setReady,
   leave,
@@ -69,6 +70,7 @@ export default function WaitingRoom({
               key={player.id}
               playerId={player.id}
               playerName={player.name}
+              playerAvatar={player.avatar}
               playerReady={player.ready}
               playerStatus={"waiting"}
               field={
@@ -161,6 +163,7 @@ export default function WaitingRoom({
             <Player
               playerId={me.id}
               playerName={me.name}
+              playerAvatar={myAvatar ?? me.avatar}
               playerReady={me.ready}
               playerStatus={"waiting"}
               field={<></>}

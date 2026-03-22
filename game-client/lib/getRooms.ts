@@ -8,7 +8,8 @@ export interface Room {
 }
 
 export async function getRooms(): Promise<Room[]> {
-  const res = await fetch(`${apiBaseUrl}/rooms`);
+  const baseUrl = process.env.INTERNAL_API_URL ?? apiBaseUrl;
+  const res = await fetch(`${baseUrl}/rooms`);
   if (!res.ok) throw new Error(`Server responded with ${res.status}`);
   const data: Room[] = await res.json();
   return data;

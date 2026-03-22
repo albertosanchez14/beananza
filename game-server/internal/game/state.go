@@ -10,6 +10,7 @@ import (
 type Player struct {
 	ID               string    `json:"id"`
 	Name             string    `json:"name"`
+	Avatar           string    `json:"avatar"`
 	Status           string    `json:"status"` // "active", "idle", "disconnected"
 	Coins            int       `json:"coins"`
 	Hand             []*Card   `json:"hand"`
@@ -76,7 +77,7 @@ func NewState(roomID string) *State {
 }
 
 // AddPlayer adds a player to the game state
-func (s *State) AddPlayer(playerId, playerName string) *Player {
+func (s *State) AddPlayer(playerId, playerName, avatar string) *Player {
 	fieldID := "field-" + playerId
 	// TODO: Change the number of fields depending on players
 	field := NewField(fieldID, 2)
@@ -84,6 +85,7 @@ func (s *State) AddPlayer(playerId, playerName string) *Player {
 	player := &Player{
 		ID:               playerId,
 		Name:             playerName,
+		Avatar:           avatar,
 		Status:           "active",
 		Coins:            0,
 		Hand:             make([]*Card, 0),

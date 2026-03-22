@@ -10,7 +10,7 @@ export type WaitingRoomContext = {
 };
 
 type UseWaitingRoomResult = WaitingRoomContext & {
-  join: (playerName: string) => boolean;
+  join: (playerName: string, avatar: string) => boolean;
   reconnect: (sessionToken: string, playerName: string) => boolean;
 };
 
@@ -23,7 +23,8 @@ export function useWaitingRoom(
   const waitingLobbyState = useWaitingLobbyState(lastMessage, playerId);
 
   const join = useCallback(
-    (playerName: string) => send("join", roomId, { player_name: playerName }),
+    (playerName: string, avatar: string) =>
+      send("join", roomId, { player_name: playerName, metadata: { avatar } }),
     [send, roomId],
   );
 

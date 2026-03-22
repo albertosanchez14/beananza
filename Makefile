@@ -3,8 +3,9 @@
 up:
 	docker compose up
 
-up-build: 
-	docker compose up --build
+up-build:
+	docker compose build --no-cache
+	docker compose up
 
 down: 
 	docker compose down -v

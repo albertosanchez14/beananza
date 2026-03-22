@@ -7,6 +7,7 @@ import (
 type WaitingPlayer struct {
 	ID       string    `json:"id"`
 	Name     string    `json:"name"`
+	Avatar   string    `json:"avatar"`
 	Ready    bool      `json:"ready"`
 	JoinedAt time.Time `json:"joined_at"`
 }
@@ -33,14 +34,15 @@ func (wl *WaitingLobby) GetPlayer(playerId string) (*WaitingPlayer, bool) {
 	return player, ok
 }
 
-func (wl *WaitingLobby) AddPlayer(playerID string, playerName string) error {
+func (wl *WaitingLobby) AddPlayer(playerID, playerName, avatar string) error {
 	if len(wl.Players) >= wl.MaxPlayers {
 		return NewWaitingLobbyFullError(wl.MaxPlayers)
 	}
 	player := &WaitingPlayer{
-		ID:    playerID,
-		Name:  playerName,
-		Ready: false,
+		ID:     playerID,
+		Name:   playerName,
+		Avatar: avatar,
+		Ready:  false,
 	}
 	wl.Players[playerID] = player
 	return nil

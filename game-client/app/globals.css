@@ -22,6 +22,17 @@ body {
   color: var(--foreground);
 }
 
+.western-input::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.western-input:-webkit-autofill,
+.western-input:-webkit-autofill:hover,
+.western-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px rgba(20, 10, 3, 0.9) inset;
+  -webkit-text-fill-color: white;
+}
+
 /* Deal-from-deck animation
    --deck-dx / --deck-dy: pixel offset from the card's resting position to the deck.
    The card starts AT the deck (translated there, face-down / rotated), then

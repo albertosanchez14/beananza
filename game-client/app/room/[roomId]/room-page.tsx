@@ -15,6 +15,7 @@ export default function RoomPage() {
     profile?.id ?? "",
     profile?.name ?? "",
     profile?.authToken ?? "",
+    profile?.avatar ?? "",
     redirectToIdentify,
   );
 
@@ -37,7 +38,7 @@ export default function RoomPage() {
         {viewState === "gameAlreadyStarted" && <RunningRoom roomId={roomId} />}
 
         {viewState === "waiting" && (
-          <WaitingRoom roomId={roomId} playerId={profile.id} {...waiting} />
+          <WaitingRoom roomId={roomId} playerId={profile.id} myAvatar={profile.avatar} {...waiting} />
         )}
 
         {showGame && (
