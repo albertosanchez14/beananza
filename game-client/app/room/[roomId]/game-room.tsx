@@ -3,46 +3,13 @@ import Board from "@/components/board";
 import OfferPanel from "@/components/offer-panel";
 import GiveCardsModal from "@/components/give-cards-modal";
 import RequestCardsModal from "@/components/request-cards-modal";
-import { GameState } from "@/hooks/state";
+import { GameRoomContext } from "@/hooks/useGameRoom";
 import { CardType, ExternalPlayer, OfferCard } from "@/schemas/types";
 import { useState, useEffect } from "react";
 
-type GameRoomProp = {
-  roomId: string;
-  playerId: string;
-  gameState: GameState;
-  cardsPerTurn?: number;
-  cardLookup: Map<string, CardType>;
-  plantBean: (
-    roomId: string,
-    playerId: string,
-    cardId: string,
-    slotId: string,
-  ) => boolean;
-  harvestField: (roomId: string, playerId: string, slotId: string) => boolean;
-  turnOverBean: (roomId: string) => boolean;
-  drawCards: (roomId: string) => boolean;
-  createOffer: (
-    roomId: string,
-    cardsOffered: OfferCard[],
-    cardsRequested: OfferCard[],
-    targetPlayerId?: string,
-  ) => boolean;
-  counterOffer: (
-    roomId: string,
-    parentOfferId: string,
-    cardsOffered: OfferCard[],
-    cardsRequested: OfferCard[],
-  ) => boolean;
-  respondOffer: (
-    roomId: string,
-    offerId: string,
-    action: "accept" | "reject" | "cancel",
-  ) => boolean;
-};
+type GameRoomProps = { roomId: string; playerId: string } & GameRoomContext;
 
 export default function GameRoom({
-  roomId,
   playerId,
   gameState,
   cardsPerTurn,
@@ -54,7 +21,7 @@ export default function GameRoom({
   createOffer,
   counterOffer,
   respondOffer,
-}: GameRoomProp) {
+}: GameRoomProps) {
   const [offerPanelOpen, setOfferPanelOpen] = useState(false);
   const [prevPhase, setPrevPhase] = useState<string>(gameState.phase);
   const [giveModal, setGiveModal] = useState<{
@@ -106,28 +73,12 @@ export default function GameRoom({
       (o.target_id === "" || o.target_id === playerId),
   ).length;
 
-  const handlePlantBean = (cardId: string, slotId: string) => {
-    plantBean(roomId, playerId, cardId, slotId);
-  };
-
-  const handleHarvestField = (slotId: string) => {
-    harvestField(roomId, playerId, slotId);
-  };
-
-  const handleTurnOverBean = () => {
-    turnOverBean(roomId);
-  };
-
-  const handleDrawCards = () => {
-    drawCards(roomId);
-  };
-
   const handleCreateOffer = (
     cardsOffered: OfferCard[],
     cardsRequested: OfferCard[],
     targetPlayerId?: string,
   ) => {
-    createOffer(roomId, cardsOffered, cardsRequested, targetPlayerId);
+    createOffer(cardsOffered, cardsRequested, targetPlayerId);
   };
 
   const handleCounterOffer = (
@@ -135,14 +86,14 @@ export default function GameRoom({
     cardsOffered: OfferCard[],
     cardsRequested: OfferCard[],
   ) => {
-    counterOffer(roomId, parentOfferId, cardsOffered, cardsRequested);
+    counterOffer(parentOfferId, cardsOffered, cardsRequested);
   };
 
   const handleRespondOffer = (
     offerId: string,
     action: "accept" | "reject" | "cancel",
   ) => {
-    respondOffer(roomId, offerId, action);
+    respondOffer(offerId, action);
   };
 
   return (
@@ -151,10 +102,10 @@ export default function GameRoom({
       cardsPerTurn={cardsPerTurn}
       cardLookup={cardLookup}
       myPlayerId={playerId}
-      onPlantBean={handlePlantBean}
-      onHarvestField={handleHarvestField}
-      onTurnOverBean={handleTurnOverBean}
-      onDrawCards={handleDrawCards}
+      onPlantBean={(cardId, slotId) => plantBean(cardId, slotId)}
+      onHarvestField={(slotId) => harvestField(slotId)}
+      onTurnOverBean={() => turnOverBean()}
+      onDrawCards={() => drawCards()}
       onGiveDrop={(player, cardsToGive) => setGiveModal({ player, cardsToGive })}
       onRequestDrop={(cardsRequested) => setRequestModal({ cardsRequested })}
       onCardRightClick={(card, targetPlayerId) =>
@@ -166,7 +117,7 @@ export default function GameRoom({
           {gameState.phase === "turnTrade" && (
             <button
               onClick={() => setOfferPanelOpen(true)}
-              className="relative flex items-center justify-between gap-2 px-3 
+              className="relative flex items-center justify-between gap-2 px-3
 						py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold
 						rounded-xl shadow transition-colors"
             >
@@ -220,14 +171,22 @@ export default function GameRoom({
             cardsRequested={[rightClickModal.cardRequested]}
             myHand={gameState.hand}
             centerCards={
-              playerId === gameState.playerTurn ? gameState.centerCards : undefined
+              playerId === gameState.playerTurn
+                ? gameState.centerCards
+                : undefined
             }
             onSubmit={(cardsOffered) => {
-              const reqCards = [{
-                card_type: rightClickModal.cardRequested.cardName,
-                card_id: rightClickModal.cardRequested.cardId,
-              }];
-              handleCreateOffer(cardsOffered, reqCards, rightClickModal.targetPlayerId);
+              const reqCards = [
+                {
+                  card_type: rightClickModal.cardRequested.cardName,
+                  card_id: rightClickModal.cardRequested.cardId,
+                },
+              ];
+              handleCreateOffer(
+                cardsOffered,
+                reqCards,
+                rightClickModal.targetPlayerId,
+              );
               setRightClickModal(null);
             }}
             onClose={() => setRightClickModal(null)}
@@ -243,7 +202,11 @@ export default function GameRoom({
                 card_type: c.cardName,
                 card_id: c.cardId,
               }));
-              handleCreateOffer(cardsOffered, cardsRequested, giveModal.player.playerId);
+              handleCreateOffer(
+                cardsOffered,
+                cardsRequested,
+                giveModal.player.playerId,
+              );
               setGiveModal(null);
             }}
             onClose={() => setGiveModal(null)}

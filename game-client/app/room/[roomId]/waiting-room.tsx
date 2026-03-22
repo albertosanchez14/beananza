@@ -1,4 +1,4 @@
-import { WaitingLobbyState } from "@/hooks/state";
+import { WaitingRoomContext } from "@/hooks/useWaitingRoom";
 import Player from "@/components/player";
 import Table from "@/components/table";
 import { useRouter } from "next/navigation";
@@ -8,13 +8,7 @@ import Opponents from "@/components/opponents";
 import Field from "@/components/field";
 import NewSlot from "@/components/slot";
 
-type WaitingRoomProps = {
-  roomId: string;
-  playerId: string;
-  waitingLobbyState: WaitingLobbyState;
-  setReady: (roomId: string, ready: boolean) => void;
-  sendLeave: (roomId: string) => void;
-};
+type WaitingRoomProps = { roomId: string; playerId: string } & WaitingRoomContext;
 
 function GhostSeat({ label }: { label: string }) {
   return (
@@ -40,7 +34,7 @@ export default function WaitingRoom({
   playerId,
   waitingLobbyState,
   setReady,
-  sendLeave,
+  leave,
 }: WaitingRoomProps) {
   const router = useRouter();
 
@@ -57,9 +51,9 @@ export default function WaitingRoom({
     waitingLobbyState.maxPlayers - 1 - opponents.length,
   );
 
-  const handleSetReady = (ready: boolean) => setReady(roomId, ready);
+  const handleSetReady = (ready: boolean) => setReady(ready);
   const handleLeaveRoom = () => {
-    sendLeave(roomId);
+    leave();
     router.push("/room");
   };
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { WebSocketMessage } from "@/hooks/useActions";
+import { WebSocketMessage } from "@/hooks/useWebSocket";
 import {
   CardType,
   ExternalPlayer,
@@ -9,9 +9,7 @@ import {
 } from "@/schemas/types";
 import {
   GameStateResponsePayload,
-  JoinedResponsePayload,
   Phases,
-  SessionState,
   WaitingLobbyResponsePayload,
 } from "@/schemas/messages";
 
@@ -74,65 +72,8 @@ const DEFAULT_LOBBY_STATE: WaitingLobbyState = {
 // ---------------------------------------------------------------------------
 
 /**
- * Tracks the top-level session state for a room, mirroring the server's
- * SessionState enum (waiting | playing | pause), plus the client-only
- * "connecting" state (before the first "joined" message arrives) and
- * "gameAlreadyStarted" (error state for non-members trying to join a live game).
- *
- * Transitions:
- *   "connecting"        — initial, before WS join handshake completes
- *   → "waiting"         — on "joined" with session_state "waiting"
- *   → "playing"         — on "joined" with session_state "playing",
- *                         or on broadcast "game_started"
- *   → "pause"           — on "joined" with session_state "pause"
- *   → "gameAlreadyStarted" — on error with code GAME_ALREADY_STARTED
- */
-export function useSessionState(
-  lastMessage: WebSocketMessage | null,
-): SessionState {
-  const [prevMessage, setPrevMessage] = useState<WebSocketMessage | null>(null);
-  const [state, setState] = useState<SessionState>("connecting");
-
-  if (lastMessage !== prevMessage && lastMessage !== null) {
-    setPrevMessage(lastMessage);
-
-    if (lastMessage.type === "joined") {
-      const payload = lastMessage.payload as unknown as JoinedResponsePayload;
-      const serverState = payload.session_state;
-      if (
-        serverState === "waiting" ||
-        serverState === "playing" ||
-        serverState === "pause"
-      ) {
-        setState(serverState);
-        return serverState;
-      }
-    }
-
-    if (lastMessage.type === "broadcast") {
-      const broadcastPayload = lastMessage.payload as { event: string };
-      if (broadcastPayload.event === "game_started") {
-        setState("playing");
-        return "playing";
-      }
-    }
-
-    if (lastMessage.type === "error") {
-      const errorPayload = lastMessage.payload as { code: string };
-      if (errorPayload.code === "GAME_ALREADY_STARTED") {
-        setState("gameAlreadyStarted");
-        return "gameAlreadyStarted";
-      }
-    }
-  }
-
-  return state;
-}
-
-/**
  * Tracks the personalised game state emitted by the server via "myState" messages.
  * Only meaningful when the session is in the "playing" or "pause" state.
- * Starts from DEFAULT_GAME_STATE and updates on every matching message.
  */
 export function useGameState(lastMessage: WebSocketMessage | null): GameState {
   const [prevMessage, setPrevMessage] = useState<WebSocketMessage | null>(null);
@@ -175,7 +116,6 @@ export function useGameState(lastMessage: WebSocketMessage | null): GameState {
 /**
  * Tracks the waiting lobby state emitted by the server via "waitingLobbyState" messages.
  * Only meaningful when the session is in the "waiting" state.
- * Starts from DEFAULT_LOBBY_STATE and updates on every matching message.
  */
 export function useWaitingLobbyState(
   lastMessage: WebSocketMessage | null,
