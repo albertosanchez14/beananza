@@ -144,8 +144,12 @@ export default function Board() {
 
       // All coordinates are relative to the hand wrapper so the flying card
       // lives in the same stacking context as the fan cards.
+      // Anchor on the card's bottom edge (deckRef points to the card element,
+      // whose getBoundingClientRect reflects Center's projected position).
+      // The tilt layer uses transformOrigin "bottom center", so anchoring
+      // startY at bottom-144 keeps the visual bottom flush with the deck card.
       const startX = deckRect.left + (deckRect.width - 96) / 2 - handRect.left;
-      const startY = deckRect.top - handRect.top;
+      const startY = deckRect.bottom - 144 - handRect.top;
 
       setHiddenCardIds((prev) => {
         const next = new Set(prev);

@@ -69,7 +69,6 @@ export function CardPile({
 
   return (
     <div
-      ref={deckRef}
       className="relative select-none"
       style={{ width: CARD_W, height: PILE_CONTAINER_H }}
     >
@@ -77,6 +76,7 @@ export function CardPile({
           The card shrinks visually because faceH controls how far *up* the layers
           reach, not by clipping the card image itself. */}
       <div
+        ref={deckRef}
         className={`absolute left-0 ${count === 0 ? "opacity-40" : ""}`}
         style={{
           bottom: faceBottom,

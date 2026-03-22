@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { CardType } from "@/schemas/types";
 import { CardFrontFace } from "@/components/card-front-face";
@@ -16,13 +17,13 @@ type FlyingCardProps = {
   onComplete: () => void;
 };
 
-// Back face: absolutely positioned, backface hidden, pre-rotated 180° on X
+// Back face: absolutely positioned, backface hidden, pre-rotated 180° on Y
 const backStyle: React.CSSProperties = {
   position: "absolute",
   inset: 0,
   backfaceVisibility: "hidden",
   WebkitBackfaceVisibility: "hidden",
-  transform: "rotateX(180deg)",
+  transform: "rotateY(180deg)",
 };
 
 export function FlyingCard({
@@ -40,10 +41,24 @@ export function FlyingCard({
   const dx = targetX - startX;
   const dy = targetY - startY;
 
+  // Tilt layer ref — we drive the CSS transition manually so the transform
+  // string stays in the `transform` shorthand (which parent `perspective` acts
+  // on), rather than going through Framer Motion's individual CSS properties.
+  const tiltRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = tiltRef.current;
+    if (!el) return;
+    const ms = delay * 1000;
+    const timer = setTimeout(() => {
+      el.style.transition = `transform 0.45s cubic-bezier(0.22,1,0.36,1)`;
+      el.style.transform = `rotateX(0deg) scaleX(1)`;
+    }, ms);
+    return () => clearTimeout(timer);
+  }, [delay]);
+
   return (
     // Wrapper positioned relative to the hand container.
-    // position:absolute + z-index:1 means it sits behind all existing fan cards
-    // (which have z-index 2…N) while being visible above board elements below.
     <div
       style={{
         position: "absolute",
@@ -75,62 +90,77 @@ export function FlyingCard({
         }}
         onAnimationComplete={onComplete}
       >
-        {/* Perspective context for the tilt layer */}
+        {/*
+          Perspective container — perspective CSS property applies to the
+          direct child's `transform` shorthand. The tilt div below uses a
+          plain CSS transform string (not Framer Motion values) so it is
+          guaranteed to be affected by this perspective.
+        */}
         <div style={{ width: "100%", height: "100%", perspective: "700px" }}>
-          {/* Layer 2 — deck tilt: rotateX 25→0, scaleX 1.08→1 (matches Center's transform) */}
-          <motion.div
+          {/*
+            Tilt layer — plain div so its `transform` stays in the CSS
+            shorthand that responds to the parent's `perspective`.
+            Starts matching Center's rotateX(25deg) scaleX(1.08); a CSS
+            transition unwinds it to flat over the same duration as the flight.
+          */}
+          <div
+            ref={tiltRef}
             style={{
               width: "100%",
               height: "100%",
+              transform: "rotateX(25deg) scaleX(1.08)",
+              transformOrigin: "bottom center",
               transformStyle: "preserve-3d",
             }}
-            initial={{ rotateX: 25, scaleX: 1.08 }}
-            animate={{ rotateX: 0, scaleX: 1 }}
-            transition={{
-              rotateX: { duration: 0.45, delay, ease: [0.22, 1, 0.36, 1] },
-              scaleX: { duration: 0.45, delay, ease: [0.22, 1, 0.36, 1] },
-            }}
           >
-            {/* Layer 3 — card flip: back→front (rotateX 180→0) starts once tilt is mostly done */}
-            <motion.div
-              style={{
-                transformStyle: "preserve-3d",
-                position: "relative",
-                width: "100%",
-                height: "100%",
-              }}
-              initial={{ rotateX: 180 }}
-              animate={{ rotateX: 0 }}
-              transition={{
-                duration: 0.42,
-                delay: delay + 0.28,
-                ease: [0.22, 1, 0.36, 1],
-              }}
+            {/*
+              Inner perspective matching the Card component's own flip context
+              (600px), so the rotateY animation looks identical to a real card flip.
+            */}
+            <div
+              style={{ width: "100%", height: "100%", perspective: "600px" }}
             >
-              {/* Front face — full fidelity via shared component (uses .card-face CSS class) */}
-              <CardFrontFace card={card} />
-
-              {/* Back face — pre-rotated 180° on X */}
-              <div
-                style={backStyle}
-                className="rounded-xl border-2 border-gray-500 overflow-hidden"
+              {/* Card flip: back→front (rotateY 180→0) */}
+              <motion.div
+                style={{
+                  position: "relative",
+                  width: "100%",
+                  height: "100%",
+                  transformStyle: "preserve-3d",
+                }}
+                initial={{ rotateY: 180 }}
+                animate={{ rotateY: 0 }}
+                transition={{
+                  duration: 0.42,
+                  delay: delay + 0.28,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
               >
-                {card.backImage ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={card.backImage}
-                    alt="Card back"
-                    className="w-full h-full object-cover"
-                    draggable={false}
-                  />
-                ) : (
-                  <div className="w-full h-full bg-green-800 flex items-center justify-center">
-                    <div className="w-12 h-16 rounded border-2 border-green-600 bg-green-700" />
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
+                {/* Front face */}
+                <CardFrontFace card={card} />
+
+                {/* Back face — pre-rotated 180° on Y */}
+                <div
+                  style={backStyle}
+                  className="rounded-xl border-2 border-gray-500 overflow-hidden"
+                >
+                  {card.backImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={card.backImage}
+                      alt="Card back"
+                      className="w-full h-full object-cover"
+                      draggable={false}
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-green-800 flex items-center justify-center">
+                      <div className="w-12 h-16 rounded border-2 border-green-600 bg-green-700" />
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          </div>
         </div>
       </motion.div>
     </div>
