@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { m, AnimatePresence } from "motion/react";
 import { CardType, SlotType } from "@/schemas/types";
 
 type SlotProp = {
@@ -78,10 +78,13 @@ export default function Slot({
           ${isInteractive ? "cursor-pointer" : ""}
         `}
           onClick={handleClick}
+          role={isInteractive ? "button" : undefined}
+          tabIndex={isInteractive ? 0 : undefined}
+          onKeyDown={handleClick ? (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") handleClick(); } : undefined}
           {...sharedDragProps}
         >
           <AnimatePresence>
-            <motion.div
+            <m.div
               key={`${slot?.slotId}-${slot?.cardName}`}
               initial={
                 suppressAnimation ? false : { scale: 1.25, y: -16, rotate: -2 }
@@ -90,7 +93,7 @@ export default function Slot({
               transition={{ type: "spring", stiffness: 480, damping: 24 }}
             >
               {children}
-            </motion.div>
+            </m.div>
           </AnimatePresence>
           <div
             className="absolute -top-2 -right-2 flex items-center
@@ -125,6 +128,9 @@ export default function Slot({
                 : "border-amber-900/50"),
         ].join(" ")}
         onClick={handleClick}
+        role={isInteractive ? "button" : undefined}
+        tabIndex={isInteractive ? 0 : undefined}
+        onKeyDown={handleClick ? (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") handleClick(); } : undefined}
         {...sharedDragProps}
       >
         {isInteractive && (

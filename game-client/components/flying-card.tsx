@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { motion } from "motion/react";
+import { m } from "motion/react";
+import Image from "next/image";
 import { CardType } from "@/schemas/types";
 import { CardFrontFace } from "@/components/card-front-face";
 
@@ -71,7 +72,7 @@ export function FlyingCard({
       }}
     >
       {/* Layer 1 — screen-space movement + fan tilt settle */}
-      <motion.div
+      <m.div
         style={{
           width: "100%",
           height: "100%",
@@ -121,7 +122,7 @@ export function FlyingCard({
               style={{ width: "100%", height: "100%", perspective: "600px" }}
             >
               {/* Card flip: back→front (rotateY 180→0) */}
-              <motion.div
+              <m.div
                 style={{
                   position: "relative",
                   width: "100%",
@@ -145,24 +146,18 @@ export function FlyingCard({
                   className="rounded-xl border-2 border-gray-500 overflow-hidden"
                 >
                   {card.backImage ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={card.backImage}
-                      alt="Card back"
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
+                    <Image src={card.backImage} alt="Card back" fill sizes="96px" style={{ objectFit: "cover" }} draggable={false} unoptimized />
                   ) : (
                     <div className="w-full h-full bg-green-800 flex items-center justify-center">
                       <div className="w-12 h-16 rounded border-2 border-green-600 bg-green-700" />
                     </div>
                   )}
                 </div>
-              </motion.div>
+              </m.div>
             </div>
           </div>
         </div>
-      </motion.div>
+      </m.div>
     </div>
   );
 }

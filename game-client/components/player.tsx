@@ -35,7 +35,7 @@ const HAIR_COLORS = ["#2c1810", "#1a1a1a", "#7b3f00", "#c8a96e", "#5c3317"];
 // ---------------------------------------------------------------------------
 // MiiAvatar — inline SVG character
 // ---------------------------------------------------------------------------
-export function MiiAvatar({
+function MiiAvatar({
   name,
   isCurrentTurn,
 }: {

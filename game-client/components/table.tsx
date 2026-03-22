@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 const DESIGN_W = 1280;
 const DESIGN_H = 720;
@@ -36,10 +37,13 @@ export default function Table({ children }: TableProps) {
           zIndex: 1,
         }}
       >
-        <img
+        <Image
           src="/tablenobg2.webp"
           alt=""
-          style={{ display: "block", width: "100%", height: "100%" }}
+          fill
+          sizes="100vw"
+          style={{ objectFit: "fill" }}
+          priority
         />
 
         <div

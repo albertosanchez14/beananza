@@ -80,7 +80,7 @@ export default function FieldGrid({
         const p = CELL_POSITIONS[i];
         return (
           <div
-            key={i}
+            key={ROOM_IDS[i]}
             style={{
               position: "absolute",
               left: `${p.left}%`,

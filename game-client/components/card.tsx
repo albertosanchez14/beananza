@@ -1,5 +1,6 @@
 import { forwardRef, useState } from "react";
-import { motion } from "motion/react";
+import { m } from "motion/react";
+import Image from "next/image";
 import { BaseCard, CardType } from "@/schemas/types";
 import { CardFrontFace } from "@/components/card-front-face";
 
@@ -51,6 +52,9 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
       onDragEnd={draggable ? handleDragEnd : undefined}
+      role={(onClick || onContextMenu) ? "button" : undefined}
+      tabIndex={(onClick || onContextMenu) ? 0 : undefined}
+      onKeyDown={onClick ? (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") onClick(e as unknown as React.MouseEvent<HTMLDivElement>); } : undefined}
       style={{ opacity: hidden ? 0 : undefined, ...style }}
       className={`w-24 h-36
         ${draggable ? "cursor-grab active:cursor-grabbing" : ""}
@@ -58,7 +62,7 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
         ${className ?? ""}
       `}
     >
-      <motion.div
+      <m.div
         onClick={onClick}
         style={{ perspective: "600px", width: "100%", height: "100%" }}
         initial={false}
@@ -68,7 +72,7 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
         }
       >
         {/* Inner wrapper — rotates on Y axis to flip between faces */}
-        <motion.div
+        <m.div
           className="rounded-xl"
           style={{
             transformStyle: "preserve-3d",
@@ -104,21 +108,15 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
           {/* ── BACK FACE ──────────────────────────────────────────────────── */}
           <div className="card-back rounded-xl border-2 border-gray-500 overflow-hidden">
             {card.backImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={card.backImage}
-                alt="Card back"
-                className="w-full h-full object-cover"
-                draggable={false}
-              />
+              <Image src={card.backImage} alt="Card back" fill sizes="96px" style={{ objectFit: "cover" }} draggable={false} unoptimized />
             ) : (
               <div className="w-full h-full bg-green-800 flex items-center justify-center">
                 <div className="w-12 h-16 rounded border-2 border-green-600 bg-green-700" />
               </div>
             )}
           </div>
-        </motion.div>
-      </motion.div>
+        </m.div>
+      </m.div>
     </div>
   );
 });

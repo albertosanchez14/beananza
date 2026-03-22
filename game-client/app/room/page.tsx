@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { getRooms, type Room } from "@/lib/getRooms";
 import FieldGrid from "./field-grid";
 import Link from "next/link";
+import Image from "next/image";
 
 const IMG_W = 1843;
 const IMG_H = 1228;
@@ -20,7 +21,14 @@ export default function Page() {
           aspectRatio: IMG_W / IMG_H,
         }}
       >
-        <img src="/fields/field6.jpeg" alt="" className="block w-full h-full" />
+        <Image
+          src="/fields/field6.jpeg"
+          alt=""
+          fill
+          sizes="100vw"
+          style={{ objectFit: "cover" }}
+          priority
+        />
 
         <div className="fixed top-0 left-0 right-0 flex items-center justify-center px-4 py-3">
           <Link

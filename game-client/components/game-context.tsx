@@ -37,7 +37,7 @@ type GameContextValue = {
   ) => void;
 };
 
-export const GameContext = createContext<GameContextValue | null>(null);
+const GameContext = createContext<GameContextValue | null>(null);
 
 export function useGameContext(): GameContextValue {
   const ctx = useContext(GameContext);

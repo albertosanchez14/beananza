@@ -47,10 +47,12 @@ export default function RequestCardsModal({
 
   return (
     <div
+      role="presentation"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
     >
       <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
@@ -101,6 +103,9 @@ export default function RequestCardsModal({
                 <div
                   key={card.cardId}
                   onClick={(e) => handleCardClick(e, card)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(kbdEvent) => { if (kbdEvent.key === "Enter" || kbdEvent.key === " ") handleCardClick(kbdEvent as unknown as React.MouseEvent, card); }}
                   className="cursor-pointer select-none"
                 >
                   <CardComponent
@@ -122,7 +127,10 @@ export default function RequestCardsModal({
                   {centerCards.map((card) => (
                     <div
                       key={card.cardId}
+                      role="button"
+                      tabIndex={0}
                       onClick={(e) => handleCardClick(e, card)}
+                      onKeyDown={(kbdEvent) => { if (kbdEvent.key === "Enter" || kbdEvent.key === " ") handleCardClick(kbdEvent as unknown as React.MouseEvent, card); }}
                       className="cursor-pointer select-none"
                     >
                       <CardComponent

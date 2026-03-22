@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { CardType, ExternalPlayer, SlotType } from "@/schemas/types";
 import { useGameContext } from "@/components/game-context";
 import Table from "@/components/table";
@@ -116,7 +111,6 @@ export default function Board() {
   const prevCenterCardRectsRef = useRef<
     Map<string, { left: number; top: number }>
   >(new Map());
-  // Separate ref for turnOver detection — avoids interfering with opponent animation effect.
   const prevCenterCardsForTurnRef = useRef<CardType[]>(centerCards);
 
   const [flyingCards, setFlyingCards] = useState<FlyingCardEntry[]>([]);

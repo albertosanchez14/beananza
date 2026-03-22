@@ -11,9 +11,9 @@ const LAYER_H = 4;
 const MAX_LAYERS = 7;
 // Fixed container height used by both CardPile and CenterCards so all three
 // centre items share the same bottom baseline and items-end aligns them correctly.
-export const PILE_CONTAINER_H = CARD_H + MAX_LAYERS * LAYER_H; // 172px
+const PILE_CONTAINER_H = CARD_H + MAX_LAYERS * LAYER_H; // 172px
 
-export function pileHeight(count: number): number {
+function pileHeight(count: number): number {
   const min = 44;
   const max = CARD_H;
   return Math.round(
@@ -21,7 +21,7 @@ export function pileHeight(count: number): number {
   );
 }
 
-export function stackLayers(count: number): number {
+function stackLayers(count: number): number {
   if (count === 0) return 0;
   return Math.min(MAX_LAYERS, Math.ceil((count / MAX_CARDS) * MAX_LAYERS) + 1);
 }

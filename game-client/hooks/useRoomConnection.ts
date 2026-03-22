@@ -5,7 +5,6 @@ import { useWaitingRoom, WaitingRoomContext } from "@/hooks/useWaitingRoom";
 import { useGameRoom, GameRoomContext } from "@/hooks/useGameRoom";
 import { JoinedResponsePayload } from "@/schemas/messages";
 
-export type { GameRoomContext, WaitingRoomContext };
 
 export type ViewState =
   | "connecting"

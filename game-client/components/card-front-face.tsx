@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { BaseCard, CardType } from "@/schemas/types";
 
 function sortedRates(
@@ -34,13 +35,7 @@ export function CardFrontFace({ card, isSelected = false }: Props) {
       {/* Image area */}
       <div className="relative flex-1 min-h-0 rounded-t-xl overflow-hidden">
         {fullCard?.frontImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={fullCard.frontImage}
-            alt={fullCard.cardName}
-            className="w-full h-full object-cover"
-            draggable={false}
-          />
+          <Image src={fullCard.frontImage} alt={fullCard.cardName} fill sizes="96px" style={{ objectFit: "cover" }} draggable={false} unoptimized />
         ) : (
           <div className="w-full h-full bg-blue-200 flex items-end justify-center pb-1">
             <span className="text-black text-center text-[9px] font-semibold leading-tight px-1">

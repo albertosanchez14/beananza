@@ -149,3 +149,15 @@ body {
 .fade-out-ui {
   animation: fade-out-ui 0.45s ease-out forwards;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-deal,
+  .cloud-slow,
+  .cloud-medium,
+  .cloud-fast,
+  .cactus-sway,
+  .fly-to-sky,
+  .fade-out-ui {
+    animation: none;
+  }
+}

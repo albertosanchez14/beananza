@@ -316,6 +316,9 @@ export default function OfferWizard({
                     className="relative cursor-pointer"
                     style={{ width: 96, height: containerH }}
                     onClick={() => removeRequested(e.card_type)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(kbdEvent) => { if (kbdEvent.key === "Enter" || kbdEvent.key === " ") removeRequested(e.card_type); }}
                     title={`Remove ${e.card_type}`}
                   >
                     {Array.from({ length: peekLayers }).map((_, i) => (

@@ -1,5 +1,5 @@
 "use client";
-import { motion } from "motion/react";
+import { m } from "motion/react";
 import { CardType } from "@/schemas/types";
 import { CardFrontFace } from "@/components/card-front-face";
 
@@ -59,7 +59,7 @@ export function PlantFlyingCard({
         Also the perspective container so the vanishing point stays
         centred on the card throughout the flight.
       */}
-      <motion.div
+      <m.div
         style={{
           width: "100%",
           height: "100%",
@@ -76,7 +76,7 @@ export function PlantFlyingCard({
           keeps the slot's bottom edge anchored, matching the field row's
           own transformOrigin.
         */}
-        <motion.div
+        <m.div
           style={{
             width: "100%",
             height: "100%",
@@ -113,7 +113,7 @@ export function PlantFlyingCard({
             the card's own centre, independent of the tilt above.
             Rotation spans the full flight duration (no initial hold).
           */}
-          <motion.div
+          <m.div
             style={{ width: "100%", height: "100%" }}
             initial={{ rotate: initialRotate }}
             animate={hasRotate ? { rotate: effectiveTargetRotate } : undefined}
@@ -129,9 +129,9 @@ export function PlantFlyingCard({
             }
           >
             <CardFrontFace card={card} />
-          </motion.div>
-        </motion.div>
-      </motion.div>
+          </m.div>
+        </m.div>
+      </m.div>
     </div>
   );
 }

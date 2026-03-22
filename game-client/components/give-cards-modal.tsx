@@ -43,10 +43,12 @@ export default function GiveCardsModal({
 
   return (
     <div
+      role="presentation"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
     >
       <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
@@ -95,6 +97,9 @@ export default function GiveCardsModal({
                 <div
                   key={type}
                   onClick={(e) => handleTypeClick(e, type)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(kbdEvent) => { if (kbdEvent.key === "Enter" || kbdEvent.key === " ") handleTypeClick(kbdEvent as unknown as React.MouseEvent, type); }}
                   className="cursor-pointer select-none"
                 >
                   <CardComponent
