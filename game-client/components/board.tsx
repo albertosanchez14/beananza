@@ -36,6 +36,7 @@ type TurnOverFlyingCardEntry = {
   targetX: number;
   targetY: number;
   index: number;
+  cardScale: number;
 };
 
 type PlantFlyingCardEntry = {
@@ -112,6 +113,10 @@ export default function Board() {
     Map<string, { left: number; top: number }>
   >(new Map());
   const prevCenterCardsForTurnRef = useRef<CardType[]>(centerCards);
+  const prevFieldRef = useRef(field);
+  const mySlotRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const prevHandCardRectsRef = useRef<Map<string, { left: number; top: number }>>(new Map());
+  const snapshotCenterRects = useRef<Map<string, { left: number; top: number }>>(new Map());
 
   const [flyingCards, setFlyingCards] = useState<FlyingCardEntry[]>([]);
   const [turnOverFlyingCards, setTurnOverFlyingCards] = useState<
@@ -198,8 +203,14 @@ export default function Board() {
 
     if (newCards.length > 0 && deckRef.current) {
       const deckRect = deckRef.current.getBoundingClientRect();
-      const startX = deckRect.left + (deckRect.width - 96) / 2;
-      const startY = deckRect.bottom - 144;
+      // deckRect.width ≈ 96 * tableScale * 1.08 (Center's scaleX).
+      // Dividing by (96 * 1.08) recovers the Table CSS scale so the flying
+      // card matches the visual size of the card sitting in the pile.
+      const cardScale = deckRect.width / (96 * 1.08);
+      const scaledW = 96 * cardScale;
+      const scaledH = 144 * cardScale;
+      const startX = deckRect.left + (deckRect.width - scaledW) / 2;
+      const startY = deckRect.bottom - scaledH;
 
       setHiddenCenterCardIds((prev) => {
         const next = new Set(prev);
@@ -222,10 +233,11 @@ export default function Board() {
             // card's bottom aligns with the tilted slot's bottom. Center X on the
             // visually wider (scaleX 1.08) card so there's no horizontal jump.
             targetX: cardRect
-              ? cardRect.left + (cardRect.width - 96) / 2
+              ? cardRect.left + (cardRect.width - scaledW) / 2
               : startX,
-            targetY: cardRect ? cardRect.bottom - 144 : startY,
+            targetY: cardRect ? cardRect.bottom - scaledH : startY,
             index: i,
+            cardScale,
           };
         }),
       ]);
@@ -361,6 +373,54 @@ export default function Board() {
     prevCenterCardRectsRef.current = newRects;
   }, [players, centerCards, cardLookup]);
 
+  useLayoutEffect(() => {
+    const prevField = prevFieldRef.current;
+    const newFlying: PlantFlyingCardEntry[] = [];
+
+    field.slots.forEach((slot) => {
+      const prevSlot = prevField.slots.find((s) => s.slotId === slot.slotId);
+      const prevCount = prevSlot?.cardIds.length ?? 0;
+      if (slot.cardIds.length <= prevCount || !slot.cardName) return;
+
+      const slotEl = mySlotRefs.current.get(slot.slotId);
+      if (!slotEl) return;
+      const slotRect = slotEl.getBoundingClientRect();
+
+      const newCardId = slot.cardIds.at(-1);
+      const handPos = newCardId ? prevHandCardRectsRef.current.get(newCardId) : undefined;
+      const centerPos = snapshotCenterRects.current.get(slot.cardName);
+      const startPos = handPos ?? centerPos;
+      if (!startPos) return;
+
+      newFlying.push({
+        id: `my-${slot.slotId}-${slot.cardIds.length}`,
+        card: cardLookup.get(slot.cardName) ?? {
+          cardId: newCardId ?? "",
+          cardName: slot.cardName,
+          backImage: "",
+        },
+        startX: startPos.left,
+        startY: startPos.top,
+        targetX: slotRect.left + (slotRect.width - 96) / 2,
+        targetY: slotRect.top + (slotRect.height - 144) / 2,
+        targetRotateX: 25,
+        targetScaleX: 1.08,
+        opponentSlotId: slot.slotId,
+      });
+    });
+
+    if (newFlying.length > 0) {
+      setPlantFlyingCards((prev) => [...prev, ...newFlying]);
+      setAnimatingOpponentSlotIds((prev) => {
+        const next = new Set(prev);
+        newFlying.forEach((e) => next.add(e.opponentSlotId!));
+        return next;
+      });
+    }
+
+    prevFieldRef.current = field;
+  }, [field, cardLookup]);
+
   const handleFlyComplete = useCallback((cardId: string) => {
     setFlyingCards((prev) => prev.filter((fc) => fc.id !== cardId));
     setHiddenCardIds((prev) => {
@@ -393,6 +453,30 @@ export default function Board() {
     [],
   );
 
+  // Snapshot hand and center card positions after every render so the next
+  // render's field-change effect can use them as animation start positions.
+  useLayoutEffect(() => {
+    const handRects = new Map<string, { left: number; top: number }>();
+    hand.forEach((card) => {
+      const el = cardRefs.current.get(card.cardId);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        handRects.set(card.cardId, { left: r.left, top: r.top });
+      }
+    });
+    prevHandCardRectsRef.current = handRects;
+
+    const centerRects = new Map<string, { left: number; top: number }>();
+    centerCards.forEach((card) => {
+      const el = cardRefs.current.get(card.cardId);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        centerRects.set(card.cardName, { left: r.left, top: r.top });
+      }
+    });
+    snapshotCenterRects.current = centerRects;
+  });
+
   // A representative card for the draw deck back image.
   // Prefer a real card from the live game state (which carries backImage from the server),
   // but fall back to the first entry in cardLookup so the back image is always available
@@ -420,6 +504,7 @@ export default function Board() {
           targetX={fc.targetX}
           targetY={fc.targetY}
           index={fc.index}
+          cardScale={fc.cardScale}
           onComplete={() => handleTurnOverComplete(fc.id)}
         />
       ))}
@@ -642,7 +727,13 @@ export default function Board() {
                 ? (cardLookup.get(s.cardName) ?? null)
                 : null;
               return (
-                <div key={s.slotId}>
+                <div
+                  key={s.slotId}
+                  ref={(el) => {
+                    if (el) mySlotRefs.current.set(s.slotId, el);
+                    else mySlotRefs.current.delete(s.slotId);
+                  }}
+                >
                   <Slot
                     slot={s}
                     index={index}
@@ -657,6 +748,7 @@ export default function Board() {
                       <Card
                         card={cardForSlot}
                         flipped={false}
+                        hidden={animatingOpponentSlotIds.has(s.slotId)}
                         onContextMenu={
                           phase === "turnTrade"
                             ? () =>
@@ -714,9 +806,7 @@ export default function Board() {
             }
             className={[
               "rounded-xl transition-colors",
-              isNonTurnTrade
-                ? "min-w-[60px] min-h-[144px] flex items-center"
-                : "",
+              isNonTurnTrade ? "min-w-24 min-h-36 flex items-center" : "",
               dragOverTraded
                 ? "bg-blue-500/20 ring-2 ring-blue-400 ring-inset"
                 : "",

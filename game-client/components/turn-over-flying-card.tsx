@@ -11,6 +11,7 @@ type TurnOverFlyingCardProps = {
   targetX: number;
   targetY: number;
   index: number;
+  cardScale?: number;
   onComplete: () => void;
 };
 
@@ -21,11 +22,14 @@ export function TurnOverFlyingCard({
   targetX,
   targetY,
   index,
+  cardScale = 1,
   onComplete,
 }: TurnOverFlyingCardProps) {
   const delay = index * 0.08;
   const dx = targetX - startX;
   const dy = targetY - startY;
+  const W = 96 * cardScale;
+  const H = 144 * cardScale;
 
   return (
     <div
@@ -33,8 +37,8 @@ export function TurnOverFlyingCard({
         position: "fixed",
         left: startX,
         top: startY,
-        width: 96,
-        height: 144,
+        width: W,
+        height: H,
         zIndex: 9999,
         pointerEvents: "none",
       }}
@@ -51,16 +55,14 @@ export function TurnOverFlyingCard({
         onAnimationComplete={onComplete}
       >
         {/*
-          Perspective context matching the Center container (700px).
-          Positioned here — outside the tilt — so the vanishing point is
-          centred on the card itself, mirroring how each card gets its own
-          perspective slice of the shared 700px context.
+          Perspective context matching the Center container (700px scaled by
+          cardScale so the 3D effect depth matches the visual card size).
         */}
-        <div style={{ width: "100%", height: "100%", perspective: "700px" }}>
+        <div style={{ width: "100%", height: "100%", perspective: `${700 * cardScale}px` }}>
           {/*
             Static tilt matching the Center container's transform throughout
             the flight. transformOrigin "bottom center" keeps the bottom edge
-            fixed, which is why targetY = cardRect.bottom - 144 lands exactly.
+            fixed, which is why targetY = cardRect.bottom - scaledH lands exactly.
           */}
           <div
             style={{
@@ -73,10 +75,10 @@ export function TurnOverFlyingCard({
           >
             {/*
               Inner perspective matching the Card component's own flip context
-              (600px), so the rotateY animation looks identical to a real card flip.
+              (600px scaled by cardScale).
             */}
             <div
-              style={{ width: "100%", height: "100%", perspective: "600px" }}
+              style={{ width: "100%", height: "100%", perspective: `${600 * cardScale}px` }}
             >
               {/* Long-side flip: rotateY 180 → 0 (back→front) */}
               <m.div
