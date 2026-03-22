@@ -104,7 +104,7 @@ export default function FanLayout({
       className="flex items-end justify-center"
       style={{
         minWidth: 60,
-        transform: "scale(0.28)",
+        transform: "scale(0.38)",
         transformOrigin: "bottom center",
         marginTop: -8,
       }}

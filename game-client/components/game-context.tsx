@@ -1,16 +1,19 @@
 import { createContext, useContext, useState, ReactNode } from "react";
-import { CardType } from "@/schemas/types";
+import { CardType, ExternalPlayer } from "@/schemas/types";
 import { GameState } from "@/hooks/state";
 
 type GameContextValue = {
   // UI state
   selectedCard: CardType | null;
   dragOverSlot: string | null;
+  giveSelection: CardType[];
+  requestSelection: CardType[];
   // Data
   gameState: GameState;
   cardsPerTurn?: number;
   cardLookup: Map<string, CardType>;
   highlightEmpty: boolean;
+  myPlayerId: string;
   // Handlers
   handleCardClick: (
     card: CardType,
@@ -23,6 +26,15 @@ type GameContextValue = {
   handleDrawDeckClick: () => void;
   onTurnOverBean: () => void;
   onDrawCards: () => void;
+  clearGiveSelection: () => void;
+  toggleRequestSelection: (card: CardType) => void;
+  clearRequestSelection: () => void;
+  onGiveDrop: (targetPlayer: ExternalPlayer, cardsToGive: CardType[]) => void;
+  onRequestDrop: (cardsRequested: CardType[]) => void;
+  onCardRightClick: (
+    card: CardType,
+    targetPlayerId: string | undefined,
+  ) => void;
 };
 
 export const GameContext = createContext<GameContextValue | null>(null);
@@ -38,10 +50,17 @@ type GameProviderProps = {
   gameState: GameState;
   cardsPerTurn?: number;
   cardLookup: Map<string, CardType>;
+  myPlayerId: string;
   onPlantBean: (cardId: string, slotId: string) => void;
   onHarvestField: (slotId: string) => void;
   onTurnOverBean: () => void;
   onDrawCards: () => void;
+  onGiveDrop: (targetPlayer: ExternalPlayer, cardsToGive: CardType[]) => void;
+  onRequestDrop: (cardsRequested: CardType[]) => void;
+  onCardRightClick: (
+    card: CardType,
+    targetPlayerId: string | undefined,
+  ) => void;
 };
 
 export function GameProvider({
@@ -49,19 +68,59 @@ export function GameProvider({
   gameState,
   cardsPerTurn,
   cardLookup,
+  myPlayerId,
   onPlantBean,
   onHarvestField,
   onTurnOverBean,
   onDrawCards,
+  onGiveDrop,
+  onRequestDrop,
+  onCardRightClick,
 }: GameProviderProps) {
   const [selectedCard, setSelectedCard] = useState<CardType | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
+  const [giveSelection, setGiveSelection] = useState<CardType[]>([]);
+  const [requestSelection, setRequestSelection] = useState<CardType[]>([]);
+
+  const toggleGiveSelection = (card: CardType) => {
+    setGiveSelection((prev) =>
+      prev.some((c) => c.cardId === card.cardId)
+        ? prev.filter((c) => c.cardId !== card.cardId)
+        : [...prev, card],
+    );
+  };
+
+  const clearGiveSelection = () => setGiveSelection([]);
+
+  const toggleRequestSelection = (card: CardType) => {
+    setRequestSelection((prev) =>
+      prev.some((c) => c.cardId === card.cardId)
+        ? prev.filter((c) => c.cardId !== card.cardId)
+        : [...prev, card],
+    );
+  };
+
+  const clearRequestSelection = () => setRequestSelection([]);
 
   const handleCardClick = (
     card: CardType,
     source: "hand" | "picked" | "center" = "hand",
   ) => {
     if (gameState.phase === "plantTrade" && source === "hand") return;
+    if (gameState.phase === "turnTrade") {
+      if (source === "center") {
+        if (myPlayerId !== gameState.playerTurn) return;
+        // Turn player clicking a center card → select it for planting
+        if (selectedCard?.cardId === card.cardId) {
+          setSelectedCard(null);
+        } else {
+          setSelectedCard(card);
+        }
+        return;
+      }
+      toggleGiveSelection(card);
+      return;
+    }
     if (selectedCard?.cardId === card.cardId) {
       setSelectedCard(null);
     } else {
@@ -121,8 +180,11 @@ export function GameProvider({
     cardsPerTurn,
     selectedCard,
     dragOverSlot,
+    giveSelection,
+    requestSelection,
     cardLookup,
     highlightEmpty: !!selectedCard,
+    myPlayerId,
     handleCardClick,
     handleFieldSlotClick,
     handleFieldDrop,
@@ -131,6 +193,12 @@ export function GameProvider({
     handleDrawDeckClick,
     onTurnOverBean,
     onDrawCards,
+    clearGiveSelection,
+    toggleRequestSelection,
+    clearRequestSelection,
+    onGiveDrop,
+    onRequestDrop,
+    onCardRightClick,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

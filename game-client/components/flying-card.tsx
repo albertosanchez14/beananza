@@ -57,13 +57,21 @@ export function FlyingCard({
     >
       {/* Layer 1 — screen-space movement + fan tilt settle */}
       <motion.div
-        style={{ width: "100%", height: "100%", transformOrigin: "bottom center" }}
+        style={{
+          width: "100%",
+          height: "100%",
+          transformOrigin: "bottom center",
+        }}
         initial={{ x: 0, y: 0, rotate: 0 }}
         animate={{ x: dx, y: dy, rotate: targetRotate }}
         transition={{
-          x:      { duration: 0.7,  delay,           ease: [0.22, 1, 0.36, 1] },
-          y:      { duration: 0.7,  delay,           ease: [0.22, 1, 0.36, 1] },
-          rotate: { duration: 0.25, delay: delay + 0.45, ease: [0.22, 1, 0.36, 1] },
+          x: { duration: 0.7, delay, ease: [0.22, 1, 0.36, 1] },
+          y: { duration: 0.7, delay, ease: [0.22, 1, 0.36, 1] },
+          rotate: {
+            duration: 0.25,
+            delay: delay + 0.45,
+            ease: [0.22, 1, 0.36, 1],
+          },
         }}
         onAnimationComplete={onComplete}
       >
@@ -71,7 +79,11 @@ export function FlyingCard({
         <div style={{ width: "100%", height: "100%", perspective: "700px" }}>
           {/* Layer 2 — deck tilt: rotateX 25→0, scaleX 1.08→1 (matches Center's transform) */}
           <motion.div
-            style={{ width: "100%", height: "100%", transformStyle: "preserve-3d" }}
+            style={{
+              width: "100%",
+              height: "100%",
+              transformStyle: "preserve-3d",
+            }}
             initial={{ rotateX: 25, scaleX: 1.08 }}
             animate={{ rotateX: 0, scaleX: 1 }}
             transition={{
@@ -101,7 +113,7 @@ export function FlyingCard({
               {/* Back face — pre-rotated 180° on X */}
               <div
                 style={backStyle}
-                className="rounded-2xl border-2 border-gray-500 overflow-hidden"
+                className="rounded-xl border-2 border-gray-500 overflow-hidden"
               >
                 {card.backImage ? (
                   // eslint-disable-next-line @next/next/no-img-element

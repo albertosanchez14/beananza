@@ -74,7 +74,9 @@ export function TurnOverFlyingCard({
               Inner perspective matching the Card component's own flip context
               (600px), so the rotateY animation looks identical to a real card flip.
             */}
-            <div style={{ width: "100%", height: "100%", perspective: "600px" }}>
+            <div
+              style={{ width: "100%", height: "100%", perspective: "600px" }}
+            >
               {/* Long-side flip: rotateY 180 → 0 (back→front) */}
               <motion.div
                 style={{
@@ -97,7 +99,7 @@ export function TurnOverFlyingCard({
                 <CardFrontFace card={card} />
 
                 {/* Back face — .card-back: same + rotateY(180deg) */}
-                <div className="card-back rounded-2xl border-2 border-gray-500 overflow-hidden">
+                <div className="card-back rounded-xl border-2 border-gray-500 overflow-hidden">
                   {card.backImage ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img

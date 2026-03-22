@@ -557,9 +557,8 @@ func (s *State) tradeToPickedCards(fromPlayerID string, toPlayerID string, cards
 		}
 	}
 
-	// Collect cards the acceptor is giving away (from their Hand)
-	cardsToReceive := make([]*Card, 0, len(cardsReceived))
-	cardsToReceiveIndices := make([]int, 0, len(cardsReceived))
+	// Collect cards the acceptor is giving away (from their Hand, or CenterCards if acceptor is turn player)
+	cardsToReceiveSources := make([]cardSource, 0, len(cardsReceived))
 	for _, cardID := range cardsReceived {
 		if cardID == "" {
 			continue
@@ -567,10 +566,18 @@ func (s *State) tradeToPickedCards(fromPlayerID string, toPlayerID string, cards
 		found := false
 		for i, card := range toPlayer.Hand {
 			if card.ID == cardID {
-				cardsToReceive = append(cardsToReceive, card)
-				cardsToReceiveIndices = append(cardsToReceiveIndices, i)
+				cardsToReceiveSources = append(cardsToReceiveSources, cardSource{card, i, -1})
 				found = true
 				break
+			}
+		}
+		if !found && s.TurnOrder[s.CurrentTurn] == toPlayerID {
+			for i, card := range s.CenterCards {
+				if card.ID == cardID {
+					cardsToReceiveSources = append(cardsToReceiveSources, cardSource{card, -1, i})
+					found = true
+					break
+				}
 			}
 		}
 		if !found {
@@ -609,15 +616,35 @@ func (s *State) tradeToPickedCards(fromPlayerID string, toPlayerID string, cards
 		toPlayer.PickedCards = append(toPlayer.PickedCards, cardsToGive...)
 	}
 
-	// Remove given cards from acceptor's Hand → add to creator's PickedCards
-	if len(cardsToReceive) > 0 {
-		newHand := make([]*Card, 0, len(toPlayer.Hand)-len(cardsToReceive))
+	// Remove given cards from acceptor's Hand or CenterCards → add to creator's PickedCards
+	if len(cardsToReceiveSources) > 0 {
+		handIndicesToRemove := make([]int, 0)
+		centerIndicesToRemove := make([]int, 0)
+		cardsToReceive := make([]*Card, 0, len(cardsToReceiveSources))
+		for _, src := range cardsToReceiveSources {
+			cardsToReceive = append(cardsToReceive, src.card)
+			if src.handIndex >= 0 {
+				handIndicesToRemove = append(handIndicesToRemove, src.handIndex)
+			} else {
+				centerIndicesToRemove = append(centerIndicesToRemove, src.centerIndex)
+			}
+		}
+		newHand := make([]*Card, 0, len(toPlayer.Hand)-len(handIndicesToRemove))
 		for i, card := range toPlayer.Hand {
-			if !slices.Contains(cardsToReceiveIndices, i) {
+			if !slices.Contains(handIndicesToRemove, i) {
 				newHand = append(newHand, card)
 			}
 		}
 		toPlayer.Hand = newHand
+		if len(centerIndicesToRemove) > 0 {
+			newCenter := make([]*Card, 0, len(s.CenterCards)-len(centerIndicesToRemove))
+			for i, card := range s.CenterCards {
+				if !slices.Contains(centerIndicesToRemove, i) {
+					newCenter = append(newCenter, card)
+				}
+			}
+			s.CenterCards = newCenter
+		}
 		fromPlayer.PickedCards = append(fromPlayer.PickedCards, cardsToReceive...)
 	}
 
@@ -798,6 +825,13 @@ func (s *State) CreateOffer(creatorID, targetID string, cardsOffered, cardsReque
 		}
 	}
 
+	turnPlayerID := s.TurnOrder[s.CurrentTurn]
+	if creatorID != turnPlayerID {
+		if targetID != turnPlayerID {
+			return nil, NewInvalidActionError("non-turn players can only create offers targeting the current player")
+		}
+	}
+
 	if err := s.validateCardsOffered(creator, cardsOffered, creatorID == s.TurnOrder[s.CurrentTurn]); err != nil {
 		return nil, err
 	}
@@ -845,7 +879,7 @@ func (s *State) CounterOffer(parentOfferID, creatorID string, cardsOffered, card
 		return nil, NewInvalidActionError("cannot counter your own offer")
 	}
 
-	if err := s.validateCardsOffered(creator, cardsOffered, false); err != nil {
+	if err := s.validateCardsOffered(creator, cardsOffered, creatorID == s.TurnOrder[s.CurrentTurn]); err != nil {
 		return nil, err
 	}
 
@@ -943,6 +977,15 @@ func (s *State) AcceptOffer(offerID, acceptorID string) error {
 				claimed[i] = true
 				resolved = true
 				break
+			}
+		}
+		if !resolved && acceptorID == s.TurnOrder[s.CurrentTurn] {
+			for _, card := range s.CenterCards {
+				if card.Name == c.CardType {
+					requestedIDs = append(requestedIDs, card.ID)
+					resolved = true
+					break
+				}
 			}
 		}
 		if !resolved {

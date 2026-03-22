@@ -1,5 +1,3 @@
-"use client";
-
 import { forwardRef, useState } from "react";
 import { motion } from "motion/react";
 import { BaseCard, CardType } from "@/schemas/types";
@@ -10,25 +8,29 @@ type CardProp = {
   isSelected?: boolean;
   draggable?: boolean;
   flipped?: boolean;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onContextMenu?: (e: React.MouseEvent<HTMLDivElement>) => void;
   style?: React.CSSProperties;
   className?: string;
   noTransition?: boolean;
   hidden?: boolean;
 };
 
-
-const Card = forwardRef<HTMLDivElement, CardProp>(function Card({
-  card,
-  isSelected = false,
-  draggable = false,
-  flipped = false,
-  onClick,
-  style,
-  className,
-  noTransition = false,
-  hidden = false,
-}, ref) {
+const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
+  {
+    card,
+    isSelected = false,
+    draggable = false,
+    flipped = false,
+    onClick,
+    onContextMenu,
+    style,
+    className,
+    noTransition = false,
+    hidden = false,
+  },
+  ref,
+) {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
@@ -44,6 +46,8 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card({
   return (
     <div
       ref={ref}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
       onDragEnd={draggable ? handleDragEnd : undefined}
@@ -60,14 +64,12 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card({
         initial={false}
         animate={{ opacity: isDragging ? 0.4 : 1 }}
         transition={
-          noTransition
-            ? { duration: 0 }
-            : { opacity: { duration: 0.15 } }
+          noTransition ? { duration: 0 } : { opacity: { duration: 0.15 } }
         }
       >
         {/* Inner wrapper — rotates on Y axis to flip between faces */}
         <motion.div
-          className="rounded-2xl"
+          className="rounded-xl"
           style={{
             transformStyle: "preserve-3d",
             position: "relative",
@@ -79,9 +81,7 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card({
             rotateY: flipped ? 180 : 0,
             y: isSelected ? -16 : 0,
             scale: isDragging ? 1.05 : 1,
-            boxShadow: isSelected
-              ? "0 20px 25px rgba(0,0,0,0.4)"
-              : "none",
+            boxShadow: isSelected ? "0 20px 25px rgba(0,0,0,0.4)" : "none",
           }}
           whileHover={
             onClick && !isSelected && !isDragging
@@ -102,7 +102,7 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card({
           <CardFrontFace card={card} isSelected={isSelected} />
 
           {/* ── BACK FACE ──────────────────────────────────────────────────── */}
-          <div className="card-back rounded-2xl border-2 border-gray-500 overflow-hidden">
+          <div className="card-back rounded-xl border-2 border-gray-500 overflow-hidden">
             {card.backImage ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img

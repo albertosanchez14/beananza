@@ -103,3 +103,49 @@ body {
   50%  { opacity: 1;   transform: scale(1.08); }
   100% { opacity: 0.5; transform: scale(1); }
 }
+
+/* ── Hero landscape animations ───────────────────────────────────────────── */
+@keyframes cloud-drift-slow {
+  0%, 100% { transform: translateX(0px); }
+  50%       { transform: translateX(18px); }
+}
+@keyframes cloud-drift-medium {
+  0%, 100% { transform: translateX(0px); }
+  50%       { transform: translateX(-24px); }
+}
+@keyframes cloud-drift-fast {
+  0%, 100% { transform: translateX(0px); }
+  50%       { transform: translateX(14px); }
+}
+@keyframes cactus-sway {
+  0%, 100% { transform: rotate(0deg); }
+  25%       { transform: rotate(0.6deg); }
+  75%       { transform: rotate(-0.6deg); }
+}
+
+.cloud-slow   { animation: cloud-drift-slow   18s ease-in-out infinite; }
+.cloud-medium { animation: cloud-drift-medium 12s ease-in-out infinite; }
+.cloud-fast   { animation: cloud-drift-fast    9s ease-in-out infinite; }
+.cactus-sway  { animation: cactus-sway 6s ease-in-out infinite; transform-origin: bottom center; }
+
+/* ── "Fly to sky" transition ─────────────────────────────────────────────── */
+@keyframes fly-to-sky {
+  0%   { transform: translateX(-50%) translateY(0)      scale(1);   filter: blur(0px); }
+  40%  { transform: translateX(-50%) translateY(-25vh)  scale(1.3); filter: blur(0px); }
+  72%  { transform: translateX(-50%) translateY(-60vh)  scale(2.0); filter: blur(6px); }
+  100% { transform: translateX(-50%) translateY(-95vh)  scale(2.8); filter: blur(50px); }
+}
+
+.fly-to-sky {
+  animation: fly-to-sky 1.8s cubic-bezier(0.3, 0, 0.8, 1) forwards;
+}
+
+@keyframes fade-out-ui {
+  0%   { opacity: 1; }
+  25%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+.fade-out-ui {
+  animation: fade-out-ui 0.45s ease-out forwards;
+}

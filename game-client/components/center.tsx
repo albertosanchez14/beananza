@@ -9,7 +9,7 @@ function Center({ children }: CenterProps) {
     <div
       className="absolute"
       style={{
-        top: "50%",
+        top: "45%",
         left: "50%",
         transform: "translate(-50%, -50%)",
         zIndex: 10,

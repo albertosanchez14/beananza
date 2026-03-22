@@ -1,7 +1,12 @@
-import { startTransition, useCallback, useLayoutEffect, useRef, useState } from "react";
-import { CardType, SlotType } from "@/schemas/types";
+import {
+  startTransition,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { CardType, ExternalPlayer, SlotType } from "@/schemas/types";
 import { useGameContext } from "@/components/game-context";
-
 import Table from "@/components/table";
 import { CardPile, CenterCards } from "@/components/card-pile";
 import Opponents from "@/components/opponents";
@@ -60,8 +65,14 @@ export default function Board() {
   const {
     gameState,
     selectedCard,
+    giveSelection,
+    requestSelection,
+    clearGiveSelection,
+    toggleRequestSelection,
+    clearRequestSelection,
     cardsPerTurn,
     cardLookup,
+    myPlayerId,
     handleCardClick,
     handleDrawDeckClick,
     handleFieldSlotClick,
@@ -70,7 +81,13 @@ export default function Board() {
     handleDragLeave,
     dragOverSlot,
     highlightEmpty,
+    onGiveDrop,
+    onRequestDrop,
+    onCardRightClick,
   } = useGameContext();
+
+  const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
+  const [dragOverTraded, setDragOverTraded] = useState(false);
 
   const {
     centerCards,
@@ -85,26 +102,35 @@ export default function Board() {
     coins,
   } = gameState;
 
+  const isTurnPlayer = myPlayerId === playerTurn;
+  const isNonTurnTrade = phase === "turnTrade" && !isTurnPlayer;
   const deckRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const opponentSlotRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const opponentHandContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const opponentHandContainerRefs = useRef<Map<string, HTMLDivElement>>(
+    new Map(),
+  );
   const prevHandRef = useRef<CardType[]>(hand);
   const prevPlayersRef = useRef(players);
   const prevCenterCardsRef = useRef<CardType[]>(centerCards);
-  const prevCenterCardRectsRef = useRef<Map<string, { left: number; top: number }>>(new Map());
+  const prevCenterCardRectsRef = useRef<
+    Map<string, { left: number; top: number }>
+  >(new Map());
   // Separate ref for turnOver detection — avoids interfering with opponent animation effect.
   const prevCenterCardsForTurnRef = useRef<CardType[]>(centerCards);
 
   const [flyingCards, setFlyingCards] = useState<FlyingCardEntry[]>([]);
-  const [turnOverFlyingCards, setTurnOverFlyingCards] = useState<TurnOverFlyingCardEntry[]>([]);
-  const [hiddenCenterCardIds, setHiddenCenterCardIds] = useState<Set<string>>(new Set());
+  const [turnOverFlyingCards, setTurnOverFlyingCards] = useState<
+    TurnOverFlyingCardEntry[]
+  >([]);
   const [hiddenCardIds, setHiddenCardIds] = useState<Set<string>>(new Set());
-  const [plantFlyingCards, setPlantFlyingCards] = useState<PlantFlyingCardEntry[]>([]);
-  const [animatingOpponentSlotIds, setAnimatingOpponentSlotIds] = useState<Set<string>>(
-    new Set(),
-  );
+  const [plantFlyingCards, setPlantFlyingCards] = useState<
+    PlantFlyingCardEntry[]
+  >([]);
+  const [animatingOpponentSlotIds, setAnimatingOpponentSlotIds] = useState<
+    Set<string>
+  >(new Set());
 
   useLayoutEffect(() => {
     const prevIds = new Set(prevHandRef.current.map((c) => c.cardId));
@@ -165,19 +191,15 @@ export default function Board() {
   }, [hand]);
 
   useLayoutEffect(() => {
-    const prevIds = new Set(prevCenterCardsForTurnRef.current.map((c) => c.cardId));
+    const prevIds = new Set(
+      prevCenterCardsForTurnRef.current.map((c) => c.cardId),
+    );
     const newCards = centerCards.filter((c) => !prevIds.has(c.cardId));
 
     if (newCards.length > 0 && deckRef.current) {
       const deckRect = deckRef.current.getBoundingClientRect();
       const startX = deckRect.left + (deckRect.width - 96) / 2;
       const startY = deckRect.bottom - 144;
-
-      setHiddenCenterCardIds((prev) => {
-        const next = new Set(prev);
-        newCards.forEach((c) => next.add(c.cardId));
-        return next;
-      });
 
       setTurnOverFlyingCards((prev) => [
         ...prev,
@@ -222,7 +244,9 @@ export default function Board() {
     const newFlying: PlantFlyingCardEntry[] = [];
 
     players.forEach((player) => {
-      const prevPlayer = prevPlayers.find((p) => p.playerId === player.playerId);
+      const prevPlayer = prevPlayers.find(
+        (p) => p.playerId === player.playerId,
+      );
       player.playerField.slots.forEach((slot) => {
         const prevSlot = prevPlayer?.playerField.slots.find(
           (s) => s.slotId === slot.slotId,
@@ -248,7 +272,8 @@ export default function Board() {
             // Fallback: deck position
             const deckRect = deckRef.current?.getBoundingClientRect();
             startX = (deckRect?.left ?? 0) + ((deckRect?.width ?? 96) - 96) / 2;
-            startY = (deckRect?.top ?? 0) + ((deckRect?.height ?? 144) - 144) / 2;
+            startY =
+              (deckRect?.top ?? 0) + ((deckRect?.height ?? 144) - 144) / 2;
           }
         } else {
           // Card came from hand — use hand container center
@@ -260,7 +285,8 @@ export default function Board() {
           } else {
             const deckRect = deckRef.current?.getBoundingClientRect();
             startX = (deckRect?.left ?? 0) + ((deckRect?.width ?? 96) - 96) / 2;
-            startY = (deckRect?.top ?? 0) + ((deckRect?.height ?? 144) - 144) / 2;
+            startY =
+              (deckRect?.top ?? 0) + ((deckRect?.height ?? 144) - 144) / 2;
           }
           initialScale = 0.28;
         }
@@ -283,8 +309,18 @@ export default function Board() {
           // Hand plants: rotateX flip (bottom axis) scaling to match slot size;
           // no 2D spin since the flip itself provides the visual.
           ...(!fromHand
-            ? { targetRotate: 180, targetRotateX: 25, targetScaleX: 1.08, targetScale: 0.75 }
-            : { initialRotate: 180, targetRotateX: 25, targetScaleX: 1.08, targetScale: 0.75 }),
+            ? {
+                targetRotate: 180,
+                targetRotateX: 25,
+                targetScaleX: 1.08,
+                targetScale: 0.75,
+              }
+            : {
+                initialRotate: 180,
+                targetRotateX: 25,
+                targetScaleX: 1.08,
+                targetScale: 0.75,
+              }),
           initialScale,
           ...(slotWasEmpty ? { opponentSlotId: slot.slotId } : {}),
         });
@@ -336,25 +372,26 @@ export default function Board() {
 
   const handleTurnOverComplete = useCallback((id: string) => {
     setTurnOverFlyingCards((prev) => prev.filter((fc) => fc.id !== id));
-    setHiddenCenterCardIds((prev) => {
-      const n = new Set(prev);
-      n.delete(id);
-      return n;
-    });
   }, []);
 
-  const handlePlantComplete = useCallback((id: string, opponentSlotId?: string) => {
-    setPlantFlyingCards((prev) => prev.filter((fc) => fc.id !== id));
-    if (opponentSlotId) {
-      setAnimatingOpponentSlotIds((prev) => {
-        const next = new Set(prev);
-        next.delete(opponentSlotId);
-        return next;
-      });
-    }
-  }, []);
+  const handlePlantComplete = useCallback(
+    (id: string, opponentSlotId?: string) => {
+      setPlantFlyingCards((prev) => prev.filter((fc) => fc.id !== id));
+      if (opponentSlotId) {
+        setAnimatingOpponentSlotIds((prev) => {
+          const next = new Set(prev);
+          next.delete(opponentSlotId);
+          return next;
+        });
+      }
+    },
+    [],
+  );
 
   // A representative card for the draw deck back image.
+  // Prefer a real card from the live game state (which carries backImage from the server),
+  // but fall back to the first entry in cardLookup so the back image is always available
+  // even before any cards have been dealt/discarded.
   const anyCardWithBack: CardType = centerCards[0] ??
     discardTopCard ??
     [...cardLookup.values()][0] ?? {
@@ -367,7 +404,7 @@ export default function Board() {
   return (
     <div
       className="relative w-full h-full overflow-hidden"
-      style={{ background: "#1a1008" }}
+      style={{ background: "#2a1505" }}
     >
       {turnOverFlyingCards.map((fc) => (
         <TurnOverFlyingCard
@@ -400,68 +437,144 @@ export default function Board() {
       ))}
       <Table>
         <Opponents>
-          {players.map((player) => (
-            <Player
-              key={player.playerId}
-              playerId={player.playerId}
-              playerName={player.playerName}
-              playerStatus="active"
-              playerCoins={player.playerCoins}
-              playerPickedCardsCount={player.playerPickedCardsCount}
-              isCurrentTurn={player.playerId === playerTurn}
-              gamePhase={phase}
-              field={
-                <Field>
-                  {player.playerField.slots.map((slot, index) => {
-                    const cardForSlot = slot.cardName
-                      ? (cardLookup?.get(slot.cardName) ?? null)
-                      : null;
-                    return (
-                      <div
-                        key={slot.slotId}
-                        ref={(el) => {
-                          if (el) opponentSlotRefs.current.set(slot.slotId, el);
-                          else opponentSlotRefs.current.delete(slot.slotId);
-                        }}
-                      >
-                        <Slot
-                          slot={slot}
-                          index={index}
-                          interactive={false}
-                          rotated={true}
+          {players.map((player) => {
+            const isTurnPlayer = myPlayerId === playerTurn;
+            const isEligibleTarget =
+              phase === "turnTrade" &&
+              (isTurnPlayer || player.playerId === playerTurn);
+
+            const handlePlayerDragOver = isEligibleTarget
+              ? (e: React.DragEvent) => {
+                  if (
+                    !isTurnPlayer &&
+                    e.dataTransfer.types.includes("application/center-card")
+                  )
+                    return;
+                  e.preventDefault();
+                  setDragOverPlayerId(player.playerId);
+                }
+              : undefined;
+
+            const handlePlayerDragLeave = isEligibleTarget
+              ? () => setDragOverPlayerId(null)
+              : undefined;
+
+            const handlePlayerDrop = isEligibleTarget
+              ? (e: React.DragEvent) => {
+                  e.preventDefault();
+                  setDragOverPlayerId(null);
+                  const raw = e.dataTransfer.getData("application/card");
+                  if (!raw) return;
+                  try {
+                    const dragged = JSON.parse(raw) as CardType;
+                    const seen = new Set<string>();
+                    const cardsToGive: CardType[] = [];
+                    for (const c of [...giveSelection, dragged]) {
+                      if (!seen.has(c.cardId)) {
+                        seen.add(c.cardId);
+                        const isCenterCard = centerCards.some(
+                          (cc) => cc.cardId === c.cardId,
+                        );
+                        if (!isTurnPlayer && isCenterCard) continue;
+                        cardsToGive.push(c);
+                      }
+                    }
+                    clearGiveSelection();
+                    if (cardsToGive.length > 0)
+                      onGiveDrop(player as ExternalPlayer, cardsToGive);
+                  } catch {
+                    // ignore malformed payload
+                  }
+                }
+              : undefined;
+
+            return (
+              <Player
+                key={player.playerId}
+                playerId={player.playerId}
+                playerName={player.playerName}
+                playerStatus="active"
+                playerCoins={player.playerCoins}
+                playerPickedCardsCount={player.playerPickedCardsCount}
+                isCurrentTurn={player.playerId === playerTurn}
+                gamePhase={phase}
+                isDragTarget={dragOverPlayerId === player.playerId}
+                onDragOver={handlePlayerDragOver}
+                onDragLeave={handlePlayerDragLeave}
+                onDrop={handlePlayerDrop}
+                field={
+                  <Field>
+                    {player.playerField.slots.map((slot, index) => {
+                      const cardForSlot = slot.cardName
+                        ? (cardLookup?.get(slot.cardName) ?? null)
+                        : null;
+                      return (
+                        <div
+                          key={slot.slotId}
+                          ref={(el) => {
+                            if (el)
+                              opponentSlotRefs.current.set(slot.slotId, el);
+                            else opponentSlotRefs.current.delete(slot.slotId);
+                          }}
                         >
-                          {cardForSlot && (
-                            <Card
-                              card={cardForSlot}
-                              flipped={false}
-                              noTransition={true}
-                              hidden={animatingOpponentSlotIds.has(slot.slotId)}
-                            />
-                          )}
-                        </Slot>
-                      </div>
-                    );
-                  })}
-                </Field>
-              }
-              hand={
-                <FanLayout
-                  variant="opponent"
-                  maxCards={12}
-                  containerRef={(el) => {
-                    if (el) opponentHandContainerRefs.current.set(player.playerId, el);
-                    else opponentHandContainerRefs.current.delete(player.playerId);
-                  }}
-                >
-                  {Array.from({ length: player.playerHandSize }).map(
-                    (_, index) => (
-                      <Card key={index} card={{ backImage }} flipped={true} />
-                    ),
-                  )}
-                </FanLayout>
-              }
-            />
-          ))}
+                          <Slot
+                            key={slot.slotId}
+                            slot={slot}
+                            index={index}
+                            interactive={false}
+                            rotated={true}
+                          >
+                            {cardForSlot && (
+                              <Card
+                                card={cardForSlot}
+                                flipped={false}
+                                noTransition={true}
+                                onContextMenu={
+                                  phase === "turnTrade"
+                                    ? () =>
+                                        onCardRightClick(
+                                          cardForSlot,
+                                          player.playerId,
+                                        )
+                                    : undefined
+                                }
+                                hidden={animatingOpponentSlotIds.has(
+                                  slot.slotId,
+                                )}
+                              />
+                            )}
+                          </Slot>
+                        </div>
+                      );
+                    })}
+                  </Field>
+                }
+                hand={
+                  <FanLayout
+                    variant="opponent"
+                    maxCards={12}
+                    containerRef={(el) => {
+                      if (el)
+                        opponentHandContainerRefs.current.set(
+                          player.playerId,
+                          el,
+                        );
+                      else
+                        opponentHandContainerRefs.current.delete(
+                          player.playerId,
+                        );
+                    }}
+                  >
+                    {Array.from({ length: player.playerHandSize }).map(
+                      (_, index) => (
+                        <Card key={index} card={{ backImage }} flipped={true} />
+                      ),
+                    )}
+                  </FanLayout>
+                }
+              />
+            );
+          })}
         </Opponents>
 
         <Center>
@@ -474,18 +587,38 @@ export default function Board() {
           />
           <CenterCards slots={cardsPerTurn ?? 3}>
             {centerCards.map((card) => (
-              <Card
+              <div
                 key={card.cardId}
-                ref={(el) => {
-                  if (el) cardRefs.current.set(card.cardId, el);
-                  else cardRefs.current.delete(card.cardId);
-                }}
-                card={card}
-                isSelected={selectedCard?.cardId === card.cardId}
-                draggable
-                onClick={() => handleCardClick(card, "center")}
-                hidden={hiddenCenterCardIds.has(card.cardId)}
-              />
+                onDragStart={(e) =>
+                  e.dataTransfer.setData("application/center-card", "true")
+                }
+              >
+                <Card
+                  card={card}
+                  ref={(el) => {
+                    if (el) cardRefs.current.set(card.cardId, el);
+                    else cardRefs.current.delete(card.cardId);
+                  }}
+                  isSelected={
+                    phase === "turnTrade"
+                      ? isTurnPlayer
+                        ? selectedCard?.cardId === card.cardId
+                        : requestSelection.some((c) => c.cardId === card.cardId)
+                      : selectedCard?.cardId === card.cardId
+                  }
+                  draggable={phase !== "plantTrade"}
+                  onClick={
+                    isNonTurnTrade
+                      ? () => toggleRequestSelection(card)
+                      : () => handleCardClick(card, "center")
+                  }
+                  onContextMenu={
+                    phase === "turnTrade" && !isTurnPlayer
+                      ? () => onCardRightClick(card, playerTurn)
+                      : undefined
+                  }
+                />
+              </div>
             ))}
           </CenterCards>
           <CardPile
@@ -494,82 +627,157 @@ export default function Board() {
             topCard={discardTopCard}
           />
         </Center>
-
-        <CurrentPlayer
-          coinCount={coins}
-          field={
-            <Field>
-              {field.slots.map((s: SlotType, index: number) => {
-                const cardForSlot = s.cardName
-                  ? (cardLookup.get(s.cardName) ?? null)
-                  : null;
+      </Table>
+      <CurrentPlayer
+        coinCount={coins}
+        field={
+          <Field>
+            {field.slots.map((s: SlotType, index: number) => {
+              const cardForSlot = s.cardName
+                ? (cardLookup.get(s.cardName) ?? null)
+                : null;
+              return (
+                <div key={s.slotId}>
+                  <Slot
+                    slot={s}
+                    index={index}
+                    dragOverSlot={dragOverSlot}
+                    highlightEmpty={highlightEmpty}
+                    handleDragOver={handleDragOver}
+                    handleDragLeave={handleDragLeave}
+                    handleFieldDrop={handleFieldDrop}
+                    handleSlotClick={handleFieldSlotClick}
+                  >
+                    {cardForSlot && (
+                      <Card
+                        card={cardForSlot}
+                        flipped={false}
+                        onContextMenu={
+                          phase === "turnTrade"
+                            ? () =>
+                                onCardRightClick(
+                                  cardForSlot,
+                                  isTurnPlayer ? undefined : playerTurn,
+                                )
+                            : undefined
+                        }
+                      />
+                    )}
+                  </Slot>
+                </div>
+              );
+            })}
+          </Field>
+        }
+        tradedCards={
+          <div
+            onDragOver={
+              isNonTurnTrade
+                ? (e) => {
+                    e.preventDefault();
+                    setDragOverTraded(true);
+                  }
+                : undefined
+            }
+            onDragLeave={
+              isNonTurnTrade ? () => setDragOverTraded(false) : undefined
+            }
+            onDrop={
+              isNonTurnTrade
+                ? (e: React.DragEvent) => {
+                    e.preventDefault();
+                    setDragOverTraded(false);
+                    const raw = e.dataTransfer.getData("application/card");
+                    if (!raw) return;
+                    try {
+                      const dragged = JSON.parse(raw) as CardType;
+                      const seen = new Set<string>();
+                      const cardsToRequest: CardType[] = [];
+                      for (const c of [...requestSelection, dragged]) {
+                        if (!seen.has(c.cardId)) {
+                          seen.add(c.cardId);
+                          cardsToRequest.push(c);
+                        }
+                      }
+                      clearRequestSelection();
+                      onRequestDrop(cardsToRequest);
+                    } catch {
+                      // ignore malformed payload
+                    }
+                  }
+                : undefined
+            }
+            className={[
+              "rounded-xl transition-colors",
+              isNonTurnTrade
+                ? "min-w-[60px] min-h-[144px] flex items-center"
+                : "",
+              dragOverTraded
+                ? "bg-blue-500/20 ring-2 ring-blue-400 ring-inset"
+                : "",
+            ].join(" ")}
+          >
+            <TradedCards />
+            {isNonTurnTrade && !dragOverTraded && (
+              <span className="text-xs text-blue-300/60 px-2 select-none pointer-events-none">
+                Drop to request
+              </span>
+            )}
+          </div>
+        }
+        hand={
+          // position:relative so flying cards (position:absolute) are
+          // anchored here and share the same stacking context as the fan.
+          <div ref={handRef} style={{ position: "relative" }}>
+            {/* Flying cards — z-index:1 so they slide behind existing fan cards */}
+            {flyingCards.map((fc) => (
+              <FlyingCard
+                key={fc.id}
+                card={fc.card}
+                startX={fc.startX}
+                startY={fc.startY}
+                targetX={fc.targetX}
+                targetY={fc.targetY}
+                index={fc.index}
+                zIndex={fc.zIndex}
+                targetRotate={fc.targetRotate}
+                onComplete={() => handleFlyComplete(fc.id)}
+              />
+            ))}
+            <FanLayout phase={phase}>
+              {hand.map((card) => {
+                const isSelected =
+                  phase === "turnTrade"
+                    ? giveSelection.some((c) => c.cardId === card.cardId)
+                    : selectedCard?.cardId === card.cardId;
                 return (
-                  <div key={s.slotId}>
-                    <Slot
-                      slot={s}
-                      index={index}
-                      dragOverSlot={dragOverSlot}
-                      highlightEmpty={highlightEmpty}
-                      handleDragOver={handleDragOver}
-                      handleDragLeave={handleDragLeave}
-                      handleFieldDrop={handleFieldDrop}
-                      handleSlotClick={handleFieldSlotClick}
-                    >
-                      {cardForSlot && (
-                        <Card
-                          card={cardForSlot}
-                          flipped={false}
-                        />
-                      )}
-                    </Slot>
-                  </div>
+                  <Card
+                    key={card.cardId}
+                    card={card}
+                    ref={(el) => {
+                      if (el) cardRefs.current.set(card.cardId, el);
+                      else cardRefs.current.delete(card.cardId);
+                    }}
+                    isSelected={isSelected}
+                    draggable={phase !== "plantTrade"}
+                    hidden={hiddenCardIds.has(card.cardId)}
+                    onClick={() => handleCardClick(card, "hand")}
+                    onContextMenu={
+                      phase === "turnTrade"
+                        ? () =>
+                            onCardRightClick(
+                              card,
+                              isTurnPlayer ? undefined : playerTurn,
+                            )
+                        : undefined
+                    }
+                  />
                 );
               })}
-            </Field>
-          }
-          tradedCards={<TradedCards />}
-          hand={
-            // position:relative so flying cards (position:absolute) are
-            // anchored here and share the same stacking context as the fan.
-            <div ref={handRef} style={{ position: "relative" }}>
-              {/* Flying cards — z-index:1 so they slide behind existing fan cards */}
-              {flyingCards.map((fc) => (
-                <FlyingCard
-                  key={fc.id}
-                  card={fc.card}
-                  startX={fc.startX}
-                  startY={fc.startY}
-                  targetX={fc.targetX}
-                  targetY={fc.targetY}
-                  index={fc.index}
-                  zIndex={fc.zIndex}
-                  targetRotate={fc.targetRotate}
-                  onComplete={() => handleFlyComplete(fc.id)}
-                />
-              ))}
-              <FanLayout phase={phase}>
-                {hand.map((card) => {
-                  const isSelected = selectedCard?.cardId === card.cardId;
-                  return (
-                    <Card
-                      key={card.cardId}
-                      ref={(el) => {
-                        if (el) cardRefs.current.set(card.cardId, el);
-                        else cardRefs.current.delete(card.cardId);
-                      }}
-                      card={card}
-                      isSelected={isSelected}
-                      draggable={phase !== "plantTrade"}
-                      onClick={() => handleCardClick(card, "hand")}
-                      hidden={hiddenCardIds.has(card.cardId)}
-                    />
-                  );
-                })}
-              </FanLayout>
-            </div>
-          }
-        />
-      </Table>
+            </FanLayout>
+          </div>
+        }
+      />
     </div>
   );
 }

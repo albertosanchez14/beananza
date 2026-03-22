@@ -1,5 +1,3 @@
-"use client";
-
 import Card from "@/components/card";
 import { BaseCard, CardType } from "@/schemas/types";
 import { Children, ReactNode } from "react";
@@ -52,7 +50,7 @@ export function CardPile({
         style={{ width: CARD_W, height: PILE_CONTAINER_H }}
       >
         <div
-          className="w-24 h-36 rounded-2xl border-2 border-dashed border-gray-600
+          className="w-24 h-36 rounded-xl border-2 border-dashed border-gray-600
                      bg-gray-800/40 flex items-center justify-center"
         >
           <span className="text-xs text-gray-500 font-medium tracking-wide">
@@ -92,7 +90,7 @@ export function CardPile({
       {Array.from({ length: layers }).map((_, i) => (
         <div
           key={i}
-          className="absolute rounded-2xl border-2"
+          className="absolute rounded-xl border-2"
           style={{
             width: CARD_W,
             height: faceH,

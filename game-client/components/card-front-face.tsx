@@ -27,7 +27,7 @@ export function CardFrontFace({ card, isSelected = false }: Props) {
 
   return (
     <div
-      className={`card-face rounded-2xl overflow-hidden bg-white border-2
+      className={`card-face rounded-xl overflow-hidden bg-white border-2
         ${isSelected ? "border-blue-500" : "border-gray-200"}
         flex flex-col`}
     >
