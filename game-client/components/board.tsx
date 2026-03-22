@@ -1,5 +1,4 @@
 import {
-  startTransition,
   useCallback,
   useLayoutEffect,
   useRef,
@@ -9,7 +8,7 @@ import { CardType, ExternalPlayer, SlotType } from "@/schemas/types";
 import { useGameContext } from "@/components/game-context";
 import Table from "@/components/table";
 import { CardPile, CenterCards } from "@/components/card-pile";
-import Opponents from "@/components/opponents";
+import Opponents, { getFieldRotation } from "@/components/opponents";
 import Center from "@/components/center";
 import CurrentPlayer from "@/components/current-player";
 import Slot from "@/components/slot";
@@ -125,6 +124,9 @@ export default function Board() {
     TurnOverFlyingCardEntry[]
   >([]);
   const [hiddenCardIds, setHiddenCardIds] = useState<Set<string>>(new Set());
+  const [hiddenCenterCardIds, setHiddenCenterCardIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [plantFlyingCards, setPlantFlyingCards] = useState<
     PlantFlyingCardEntry[]
   >([]);
@@ -201,6 +203,12 @@ export default function Board() {
       const startX = deckRect.left + (deckRect.width - 96) / 2;
       const startY = deckRect.bottom - 144;
 
+      setHiddenCenterCardIds((prev) => {
+        const next = new Set(prev);
+        newCards.forEach((c) => next.add(c.cardId));
+        return next;
+      });
+
       setTurnOverFlyingCards((prev) => [
         ...prev,
         ...newCards.map((card, i) => {
@@ -243,10 +251,11 @@ export default function Board() {
 
     const newFlying: PlantFlyingCardEntry[] = [];
 
-    players.forEach((player) => {
+    players.forEach((player, playerIndex) => {
       const prevPlayer = prevPlayers.find(
         (p) => p.playerId === player.playerId,
       );
+      const fieldRotation = getFieldRotation(playerIndex, players.length);
       player.playerField.slots.forEach((slot) => {
         const prevSlot = prevPlayer?.playerField.slots.find(
           (s) => s.slotId === slot.slotId,
@@ -293,7 +302,6 @@ export default function Board() {
 
         const fromHand = initialScale === 0.28;
         // Only hide the slot while animating when the slot was previously empty.
-        const slotWasEmpty = prevCount === 0;
         newFlying.push({
           id: `${slot.slotId}-${slot.cardIds.length}`,
           card: cardLookup.get(slot.cardName) ?? {
@@ -305,45 +313,39 @@ export default function Board() {
           startY,
           targetX: slotRect.left + (slotRect.width - 96) / 2,
           targetY: slotRect.top + (slotRect.height - 144) / 2,
-          // Center plants: 2D spin to match the rotated slot orientation.
-          // Hand plants: rotateX flip (bottom axis) scaling to match slot size;
-          // no 2D spin since the flip itself provides the visual.
+          // Center plants: 2D spin to match the rotated slot orientation,
+          // including the field container's own rotation.
+          // Hand plants: card stays at the slot's final orientation throughout;
+          // the scale animation provides the visual motion.
           ...(!fromHand
             ? {
-                targetRotate: 180,
+                targetRotate: fieldRotation,
                 targetRotateX: 25,
                 targetScaleX: 1.08,
                 targetScale: 0.75,
               }
             : {
-                initialRotate: 180,
+                initialRotate: fieldRotation,
                 targetRotateX: 25,
                 targetScaleX: 1.08,
                 targetScale: 0.75,
               }),
           initialScale,
-          ...(slotWasEmpty ? { opponentSlotId: slot.slotId } : {}),
+          opponentSlotId: slot.slotId,
         });
       });
     });
 
     if (newFlying.length > 0) {
-      // DOM measurements are done above; schedule state updates as a transition
-      // so setState is called inside a callback rather than directly in the
-      // effect body. React batches both updates, so the slot is hidden and the
-      // flying card appears atomically.
-      startTransition(() => {
-        setPlantFlyingCards((prev) => [...prev, ...newFlying]);
-        const toHide = newFlying
-          .filter((e) => e.opponentSlotId)
-          .map((e) => e.opponentSlotId!);
-        if (toHide.length > 0) {
-          setAnimatingOpponentSlotIds((prev) => {
-            const next = new Set(prev);
-            toHide.forEach((id) => next.add(id));
-            return next;
-          });
-        }
+      // Call setters directly (not via startTransition) so React processes
+      // both updates synchronously inside this layout effect — before the
+      // browser paints. This prevents the one-frame flicker where the card
+      // appears in the slot before the flying animation begins.
+      setPlantFlyingCards((prev) => [...prev, ...newFlying]);
+      setAnimatingOpponentSlotIds((prev) => {
+        const next = new Set(prev);
+        newFlying.forEach((e) => next.add(e.opponentSlotId!));
+        return next;
       });
     }
 
@@ -372,6 +374,11 @@ export default function Board() {
 
   const handleTurnOverComplete = useCallback((id: string) => {
     setTurnOverFlyingCards((prev) => prev.filter((fc) => fc.id !== id));
+    setHiddenCenterCardIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }, []);
 
   const handlePlantComplete = useCallback(
@@ -522,7 +529,6 @@ export default function Board() {
                             slot={slot}
                             index={index}
                             interactive={false}
-                            rotated={true}
                           >
                             {cardForSlot && (
                               <Card
@@ -599,6 +605,7 @@ export default function Board() {
                     if (el) cardRefs.current.set(card.cardId, el);
                     else cardRefs.current.delete(card.cardId);
                   }}
+                  hidden={hiddenCenterCardIds.has(card.cardId)}
                   isSelected={
                     phase === "turnTrade"
                       ? isTurnPlayer

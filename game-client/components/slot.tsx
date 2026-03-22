@@ -7,7 +7,6 @@ type SlotProp = {
   index: number;
   children?: ReactNode;
   interactive?: boolean;
-  rotated?: boolean;
   dragOverSlot?: string | null;
   highlightEmpty?: boolean;
   handleDragOver?: (e: React.DragEvent, slotId: string) => void;
@@ -22,7 +21,6 @@ export default function Slot({
   index,
   children,
   interactive = true,
-  rotated = false,
   dragOverSlot = null,
   highlightEmpty = false,
   handleDragOver,
@@ -78,7 +76,6 @@ export default function Slot({
         <div
           className={`relative select-none m-auto
           ${isInteractive ? "cursor-pointer" : ""}
-          ${rotated ? "transform-[rotate(180deg)] card-no-transition" : ""}
         `}
           onClick={handleClick}
           {...sharedDragProps}
@@ -87,9 +84,7 @@ export default function Slot({
             <motion.div
               key={`${slot?.slotId}-${slot?.cardName}`}
               initial={
-                rotated || suppressAnimation
-                  ? false
-                  : { scale: 1.25, y: -16, rotate: -2 }
+                suppressAnimation ? false : { scale: 1.25, y: -16, rotate: -2 }
               }
               animate={{ scale: 1, y: 0, rotate: 0 }}
               transition={{ type: "spring", stiffness: 480, damping: 24 }}

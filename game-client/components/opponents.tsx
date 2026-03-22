@@ -16,6 +16,12 @@ type OpponentsProps = {
   children: ReactNode;
 };
 
+export function getFieldRotation(index: number, total: number): number {
+  const totalSeats = total + 1;
+  const angle = 270 + (index + 1) * (360 / totalSeats);
+  return 270 - angle;
+}
+
 function getPosition(index: number, total: number) {
   const totalSeats = total + 1;
   const angle = 270 + (index + 1) * (360 / totalSeats);
