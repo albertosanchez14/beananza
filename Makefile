@@ -1,19 +1,22 @@
-.PHONY: help up up-build down redis dev dev-server dev-client build test lint
+.PHONY: help local lan teardown-lan up up-d down restart logs ps redis dev dev-server dev-client build test lint
 
-up:
-	docker compose up
+help:
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
-up-build:
-	docker compose build --no-cache
-	docker compose up
+# ── Run ───────────────────────────────────────────────────────────────────────
 
-down: 
-	docker compose down -v
+local: ## Build and run for localhost
+	APP_HOST=localhost docker compose up --build
 
-redis: 
-	docker compose up redis -d
+ifeq ($(OS),Windows_NT)
+lan: ## Build and run for LAN — auto-detects IP
+	powershell.exe -ExecutionPolicy Bypass -File scripts\setup-lan.ps1 $(if $(IP),-IP $(IP),)
+else
+lan: ## Build and run for LAN — auto-detects IP
+	@IP="$(IP)" bash scripts/setup-lan.sh
+endif
 
-dev: 
+dev: ## Run Redis in Docker + Go server + Next.js dev
 	@echo "Starting Redis..."
 	@docker compose up redis -d
 	@echo "Starting Go server and Next.js dev server (Ctrl+C to stop both)..."
@@ -22,20 +25,55 @@ dev:
 		npm run dev --prefix game-client & \
 		wait
 
-dev-server: 
+# ── Docker: manage ───────────────────────────────────────────────────────────
+
+ifeq ($(OS),Windows_NT)
+teardown-lan: ## Remove LAN firewall rules / portproxy
+	powershell.exe -ExecutionPolicy Bypass -File scripts\teardown-lan.ps1
+else
+teardown-lan: ## Remove LAN firewall rules / portproxy
+	@TEARDOWN=true bash scripts/setup-lan.sh
+endif
+
+up: ## Start without rebuilding
+	docker compose up
+
+up-d: ## Start without rebuilding (detached)
+	docker compose up -d
+
+down: ## Stop and remove volumes
+	docker compose down -v
+
+restart: ## Restart all services
+	docker compose restart
+
+logs: ## Follow logs for all services
+	docker compose logs -f
+
+ps: ## Show running containers
+	docker compose ps
+
+redis: ## Start only Redis (detached)
+	docker compose up redis -d
+
+# ── Dev: individual services ─────────────────────────────────────────────────
+
+dev-server: ## Run Redis + Go server (native)
 	@docker compose up redis -d
 	@$(MAKE) -C game-server run
 
-dev-client:
+dev-client: ## Run Next.js dev server (native)
 	npm run dev --prefix game-client
 
-build:
+# ── Build / test / lint ──────────────────────────────────────────────────────
+
+build: ## Build Go binary and Next.js
 	$(MAKE) -C game-server build
 	npm run build --prefix game-client
 
-test: 
+test: ## Run Go tests
 	$(MAKE) -C game-server test
 
-lint: 
+lint: ## Lint Go and Next.js
 	$(MAKE) -C game-server lint
 	npm run lint --prefix game-client
