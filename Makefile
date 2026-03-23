@@ -9,10 +9,10 @@ local: ## Build and run for localhost
 	APP_HOST=localhost docker compose up --build
 
 ifeq ($(OS),Windows_NT)
-lan: ## Build and run for LAN — auto-detects IP (override: make lan IP=192.168.1.x)
+lan: ## Build and run for LAN — auto-detects IP
 	powershell.exe -ExecutionPolicy Bypass -File scripts\setup-lan.ps1 $(if $(IP),-IP $(IP),)
 else
-lan: ## Build and run for LAN — auto-detects IP (override: make lan IP=192.168.1.x)
+lan: ## Build and run for LAN — auto-detects IP
 	@IP="$(IP)" bash scripts/setup-lan.sh
 endif
 
@@ -29,7 +29,7 @@ dev: ## Run Redis in Docker + Go server + Next.js dev
 
 ifeq ($(OS),Windows_NT)
 teardown-lan: ## Remove LAN firewall rules / portproxy
-	powershell.exe -ExecutionPolicy Bypass -File scripts\setup-lan.ps1 -Teardown
+	powershell.exe -ExecutionPolicy Bypass -File scripts\teardown-lan.ps1
 else
 teardown-lan: ## Remove LAN firewall rules / portproxy
 	@TEARDOWN=true bash scripts/setup-lan.sh
