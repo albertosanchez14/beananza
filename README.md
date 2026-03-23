@@ -2,16 +2,12 @@
 
 A multiplayer card game inspired in the Bohnanza game design by Uwe Rosenberg.
 
----
-
 ## Running
 
 ### Prerequisites
 
 - Docker + Docker Compose
 - `make`
-
----
 
 ### 1. Localhost with Docker
 
@@ -22,8 +18,6 @@ make local
 ```
 
 Open [http://localhost](http://localhost).
-
----
 
 ### 2. LAN with Docker
 
@@ -68,8 +62,6 @@ make teardown-lan               # Linux / macOS / Windows (via make)
 .\scripts\teardown-lan.ps1      # Windows (PowerShell as Administrator)
 ```
 
----
-
 ### 3. Development (no Docker for app services)
 
 Runs Redis in Docker, the Go server and Next.js dev server natively — ideal for fast iteration:
@@ -89,15 +81,11 @@ make dev-client   # Next.js dev server only
 make redis        # Redis only (detached)
 ```
 
----
-
 ### Stopping
 
 ```bash
 make down   # Stop and remove volumes
 ```
-
----
 
 ## Environment Setup
 
@@ -110,8 +98,6 @@ cp game-server/.env.example game-server/.env
 ```
 
 `.env` files are git-ignored. `.env.example` files are committed and serve as the reference.
-
----
 
 ### Root `.env` — controls Docker Compose builds
 
@@ -129,8 +115,6 @@ HOST=192.168.1.42
 
 > Changing `HOST` requires a rebuild (`make up-build`) because the value is compiled into the JS bundle.
 
----
-
 ### `game-client/.env` — controls `make dev` (local dev server)
 
 | Variable             | Default                  | Description                                                                                              |
@@ -138,8 +122,6 @@ HOST=192.168.1.42
 | `NEXT_PUBLIC_WS_URL` | `ws://localhost:8080/ws` | WebSocket URL for the Next.js dev server. Points directly to the Go server (port 8080), bypassing nginx. |
 
 > This file has no effect on Docker builds. Docker builds pass `NEXT_PUBLIC_HOST` (derived from root `HOST`) so the client connects through nginx on port 80.
-
----
 
 ### `game-server/.env` — controls `make dev-server` (local dev server)
 
@@ -163,8 +145,6 @@ HOST=192.168.1.42
 | `CARDS_CONFIG_PATH`   | `cards.yaml`     | Path to the cards YAML config file.                                                |
 
 > This file has no effect on Docker builds. Docker Compose sets these vars directly under each `game-server-*` service's `environment` block.
-
----
 
 ## Other Make Targets
 
