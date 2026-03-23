@@ -2,152 +2,77 @@
 
 A multiplayer card game inspired in the Bohnanza game design by Uwe Rosenberg.
 
-## Architecture
+--
 
-```
-Browser(s)
-    │
-    ▼
-nginx :80
-    ├── /ws, /rooms, /register, /config  →  game-server-1 / game-server-2 (Go, :8080)
-    └── /                                →  game-client (Next.js, :3000)
-                                                  │
-                                              Redis :6379
-```
-
-nginx uses `ip_hash` for upstream load balancing so WebSocket reconnects always land on the same game-server instance.
-
----
-
-## Running with Docker Compose
+## Running
 
 ### Prerequisites
 
 - Docker + Docker Compose
 - `make`
 
-### Quick start (localhost only)
+---
+
+### 1. Localhost with Docker
+
+Builds and starts the full stack accessible only from this machine:
 
 ```bash
-make up-build
+make local
 ```
 
 Open [http://localhost](http://localhost).
 
-To stop and remove volumes:
+---
+
+### 2. LAN with Docker
+
+Builds and starts the full stack accessible from any device on the same network. The setup script auto-detects your LAN IP and configures the firewall automatically.
+
+**Linux / macOS**
 
 ```bash
-make down
+make lan
+```
+
+**Windows** (Docker Desktop required — run PowerShell as Administrator):
+
+```powershell
+.\scripts\setup-lan.ps1
+```
+
+Or specify the IP manually:
+
+```powershell
+.\scripts\setup-lan.ps1 -IP 192.168.1.42
+```
+
+Or specify the IP manually on any platform:
+
+```bash
+IP=192.168.1.42 make lan        # Linux / macOS
+make lan IP=192.168.1.42        # Windows
+```
+
+Open `http://<your-lan-ip>` from any device on the same Wi-Fi.
+
+> Next.js bakes the WebSocket URL into the JS bundle at build time, so the correct IP must be provided at build time — you cannot switch between localhost and LAN without rebuilding.
+
+To tear down the LAN configuration and stop the app:
+
+```bash
+make teardown-lan               # Linux / macOS / Windows (via make)
+```
+
+```powershell
+.\scripts\teardown-lan.ps1      # Windows (PowerShell as Administrator)
 ```
 
 ---
 
-## Multi-Device / LAN Testing
+### 3. Development (no Docker for app services)
 
-Next.js bakes the WebSocket URL into the JS bundle at build time. The default `localhost` only works from the machine running Docker. To test from other devices (phones, laptops) on the same network, you need to build with your machine's LAN IP.
-
-### On Linux / macOS
-
-**1. Find your LAN IP**
-
-```bash
-ip addr show | grep "inet " | grep -v 127.0.0.1
-# or on macOS:
-ipconfig getifaddr en0
-```
-
-Use the IP of your Wi-Fi or Ethernet interface (e.g. `192.168.1.42`).
-
-**2. Set HOST in `.env`**
-
-```bash
-# .env (root of the project)
-HOST=192.168.1.42
-```
-
-**3. Rebuild and start**
-
-```bash
-make up-build
-```
-
-**4. Open from any device on the same Wi-Fi**
-
-```
-http://192.168.1.42
-```
-
----
-
-### On WSL2 (Windows)
-
-WSL2 runs inside a virtual network, so you need to forward the port from Windows to WSL2.
-
-**1. Find your Windows LAN IP**
-
-In a Windows terminal (cmd or PowerShell):
-
-```
-ipconfig
-```
-
-Look for your Wi-Fi or Ethernet adapter IPv4 address (e.g. `192.168.1.42`).
-
-**2. Find your WSL2 internal IP**
-
-In WSL:
-
-```bash
-ip addr show eth0 | grep "inet "
-# e.g. inet 172.21.151.21/20
-```
-
-**3. Forward port 80 from Windows to WSL2**
-
-In PowerShell **as Administrator**:
-
-```powershell
-netsh interface portproxy add v4tov4 `
-  listenport=80 listenaddress=0.0.0.0 `
-  connectport=80 connectaddress=<WSL2-IP>
-```
-
-**4. Allow port 80 through Windows Firewall**
-
-Also as Administrator:
-
-```powershell
-New-NetFirewallRule -DisplayName "WSL2 port 80" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
-```
-
-**5. Set HOST and rebuild**
-
-```bash
-# .env
-HOST=192.168.1.42   # Windows LAN IP
-```
-
-```bash
-make up-build
-```
-
-**6. Open from any device on the same Wi-Fi**
-
-```
-http://192.168.1.42
-```
-
-**To remove the port forwarding rule when done:**
-
-```powershell
-netsh interface portproxy delete v4tov4 listenport=80 listenaddress=0.0.0.0
-```
-
----
-
-## Local Development (no Docker)
-
-Runs Redis in Docker, the Go server and Next.js dev server natively:
+Runs Redis in Docker, the Go server and Next.js dev server natively — ideal for fast iteration:
 
 ```bash
 make dev
@@ -162,6 +87,14 @@ Individual targets:
 make dev-server   # Redis + Go server only
 make dev-client   # Next.js dev server only
 make redis        # Redis only (detached)
+```
+
+---
+
+### Stopping
+
+```bash
+make down   # Stop and remove volumes
 ```
 
 ---
