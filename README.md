@@ -2,7 +2,7 @@
 
 A multiplayer card game inspired in the Bohnanza game design by Uwe Rosenberg.
 
---
+---
 
 ## Running
 
