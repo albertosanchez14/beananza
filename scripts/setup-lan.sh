@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT=80
+PORT="${PORT:-80}"
 TEARDOWN="${TEARDOWN:-false}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -73,7 +73,7 @@ echo "--- Configuring network ---"
 echo ""
 
 echo "--- Starting app ---"
-echo "  URL : http://$LAN_IP"
+echo "  URL : http://$LAN_IP:$PORT"
 echo ""
 
-APP_HOST="$LAN_IP" docker compose -f "$ROOT_DIR/docker-compose.yml" up --build
+APP_HOST="$LAN_IP:$PORT" PORT="$PORT" docker compose -f "$ROOT_DIR/docker-compose.yml" up --build

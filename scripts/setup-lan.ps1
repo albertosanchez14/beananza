@@ -55,7 +55,8 @@ if ($ruleExists) {
 Write-Host ""
 
 Write-Host "--- Starting app ---"
-Write-Host "  URL : http://$LAN_IP"
+Write-Host "  URL : http://${LAN_IP}:${Port}"
 Write-Host ""
-$env:APP_HOST = $LAN_IP
+$env:APP_HOST = "${LAN_IP}:${Port}"
+$env:PORT = $Port
 docker compose --project-directory $ROOT up --build

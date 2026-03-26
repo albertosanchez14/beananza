@@ -1,3 +1,6 @@
+-include .env
+PORT ?= 80
+
 .PHONY: help local lan teardown-lan up up-d down restart logs ps redis dev dev-server dev-client build test lint
 
 help:
@@ -6,14 +9,14 @@ help:
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 local: ## Build and run for localhost
-	APP_HOST=localhost docker compose up --build
+	APP_HOST=localhost:$(PORT) PORT=$(PORT) docker compose up --build
 
 ifeq ($(OS),Windows_NT)
 lan: ## Build and run for LAN — auto-detects IP
-	powershell.exe -ExecutionPolicy Bypass -File scripts\setup-lan.ps1 $(if $(IP),-IP $(IP),)
+	powershell.exe -ExecutionPolicy Bypass -File scripts\setup-lan.ps1 $(if $(IP),-IP $(IP),) -Port $(PORT)
 else
 lan: ## Build and run for LAN — auto-detects IP
-	@IP="$(IP)" bash scripts/setup-lan.sh
+	@IP="$(IP)" PORT="$(PORT)" bash scripts/setup-lan.sh
 endif
 
 dev: ## Run Redis in Docker + Go server + Next.js dev
