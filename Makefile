@@ -35,7 +35,7 @@ teardown-lan: ## Remove LAN firewall rules / portproxy
 	powershell.exe -ExecutionPolicy Bypass -File scripts\teardown-lan.ps1
 else
 teardown-lan: ## Remove LAN firewall rules / portproxy
-	@TEARDOWN=true bash scripts/setup-lan.sh
+	@TEARDOWN=true PORT="$(PORT)" bash scripts/setup-lan.sh
 endif
 
 up: ## Start without rebuilding
