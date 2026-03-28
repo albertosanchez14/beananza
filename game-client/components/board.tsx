@@ -5,9 +5,9 @@ import {
   useMemo,
   useRef,
   useState,
-  Fragment,
 } from "react";
 import { motion } from "motion/react";
+import { ArrowRight } from "lucide-react";
 
 import { CardType, ExternalPlayer, SlotType } from "@/schemas/types";
 import { useGameContext } from "@/components/game-context";
@@ -51,12 +51,7 @@ type TurnOverFlyingCardEntry = {
 };
 
 // ── Offer-origin arrow helpers ────────────────────────────────────────────────
-const OFFER_ACCENT_HEX = [
-  "#3b82f6",
-  "#a855f7",
-  "#14b8a6",
-  "#f43f5e",
-];
+const OFFER_ACCENT_HEX = ["#3b82f6", "#a855f7", "#14b8a6", "#f43f5e"];
 const INCOMING_OFFER_HEX = "#16a34a";
 const FREE_REQUEST_HEX = "#3b82f6";
 
@@ -77,7 +72,6 @@ function elCenter(el: HTMLElement): { x: number; y: number } {
 function quadBezierPath(
   start: { x: number; y: number },
   end: { x: number; y: number },
-  curveUp = false,
 ): string {
   const mx = (start.x + end.x) / 2;
   const my = (start.y + end.y) / 2;
@@ -87,13 +81,11 @@ function quadBezierPath(
   if (len < 1) return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
   const px = -dy / len;
   const py = dx / len;
-  // curveUp: pick sign so the control point is above the midpoint (cpy < my)
-  // cpy = my + sign*py*40 < my  →  sign*py < 0
-  const dot =
-    px * (window.innerWidth / 2 - mx) + py * (window.innerHeight / 2 - my);
-  const sign = curveUp ? (py >= 0 ? -1 : 1) : dot >= 0 ? 1 : -1;
-  const cpx = mx + sign * px * 40;
-  const cpy = my + sign * py * 40;
+  // Always bow upward: sign chosen so cpy = my + sign*py*bow < my
+  const sign = py >= 0 ? -1 : 1;
+  const bow = Math.min(len * 0.15, 80);
+  const cpx = mx + sign * px * bow;
+  const cpy = my + sign * py * bow;
   return `M ${start.x} ${start.y} Q ${cpx} ${cpy} ${end.x} ${end.y}`;
 }
 
@@ -141,7 +133,10 @@ export default function Board() {
   } = useGameContext();
 
   const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
-  const [dragOverBlockReason, setDragOverBlockReason] = useState<string | null>(null);
+  const [dragOverBlockReason, setDragOverBlockReason] = useState<string | null>(
+    null,
+  );
+  const [hoveredOfferId, setHoveredOfferId] = useState<string | null>(null);
 
   const {
     centerCards,
@@ -158,7 +153,6 @@ export default function Board() {
   } = gameState;
 
   const isTurnPlayer = myPlayerId === playerTurn;
-
 
   // ── Origin-highlight helpers ─────────────────────────────────────────────────
   const ORIGIN_COLORS = {
@@ -185,11 +179,14 @@ export default function Board() {
   const { cardHighlights, playerHighlights } = useMemo(() => {
     const cardH = new Map<string, string>();
     const playerH = new Map<string, { color: string; count: number }>();
-    if (phase !== "turnTrade")
+    if (phase !== "turnTrade" || !hoveredOfferId)
       return { cardHighlights: cardH, playerHighlights: playerH };
 
     const rootPending = offers.filter(
-      (o) => o.status === "pending" && o.parent_offer_id === "",
+      (o) =>
+        o.status === "pending" &&
+        o.parent_offer_id === "" &&
+        o.id === hoveredOfferId,
     );
 
     for (const offer of rootPending) {
@@ -254,7 +251,15 @@ export default function Board() {
     }
     return { cardHighlights: cardH, playerHighlights: playerH };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offers, hand, centerCards, myPlayerId, phase, playerTurn]);
+  }, [
+    offers,
+    hand,
+    centerCards,
+    myPlayerId,
+    phase,
+    playerTurn,
+    hoveredOfferId,
+  ]);
 
   const deckRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
@@ -299,7 +304,7 @@ export default function Board() {
     Set<string>
   >(new Set());
   const [offerPaths, setOfferPaths] = useState<
-    Map<string, { pathStr: string; color: string; dim: boolean }>
+    Map<string, { pathStr: string; color: string }>
   >(new Map());
 
   useLayoutEffect(() => {
@@ -678,10 +683,7 @@ export default function Board() {
     }
 
     const computePaths = () => {
-      const next = new Map<
-        string,
-        { pathStr: string; color: string; dim: boolean }
-      >();
+      const next = new Map<string, { pathStr: string; color: string }>();
 
       // Resolve the DOM element for a specific hand card (by id or by type).
       const handCardEl = (
@@ -721,10 +723,8 @@ export default function Board() {
               pathStr: quadBezierPath(
                 elCenter(recvEl),
                 tagCenter,
-                recvInCenter,
               ),
               color,
-              dim: false,
             });
           }
 
@@ -755,7 +755,6 @@ export default function Board() {
                 next.set(`${offer.id}_o`, {
                   pathStr: quadBezierPath(elCenter(offEl), elCenter(targetEl)),
                   color,
-                  dim: true,
                 });
               }
             }
@@ -792,10 +791,8 @@ export default function Board() {
               pathStr: quadBezierPath(
                 elCenter(recvEl),
                 tagCenter,
-                recvInCenter,
               ),
               color,
-              dim: false,
             });
           }
 
@@ -826,7 +823,6 @@ export default function Board() {
               next.set(`${offer.id}_o`, {
                 pathStr: quadBezierPath(elCenter(offEl), elCenter(creatorEl)),
                 color,
-                dim: true,
               });
             }
           }
@@ -905,11 +901,19 @@ export default function Board() {
       ))}
 
       {/* Offer origin arrows */}
-      {Array.from(offerPaths.entries()).map(
-        ([key, { pathStr, color, dim }]) => {
-          const duration = svgPathLength(pathStr) / ARROW_SPEED_PX_S;
-          return (
-          <Fragment key={key}>
+      {Array.from(offerPaths.entries()).map(([key, { pathStr, color }]) => {
+        const duration = Math.min(
+          Math.max(svgPathLength(pathStr) / ARROW_SPEED_PX_S, 0.8),
+          2.5,
+        );
+        return (
+          <div
+            key={key}
+            style={{
+              opacity: hoveredOfferId && key.startsWith(hoveredOfferId) ? 1 : 0,
+              transition: "opacity 150ms ease",
+            }}
+          >
             <svg
               style={{
                 position: "fixed",
@@ -926,7 +930,8 @@ export default function Board() {
                 stroke={color}
                 strokeWidth={1.5}
                 fill="none"
-                strokeOpacity={dim ? 0.2 : 0.35}
+                strokeOpacity={0.5}
+                strokeDasharray="6 5"
               />
             </svg>
             {[0, 1, 2].map((i) => (
@@ -936,38 +941,27 @@ export default function Board() {
                   position: "fixed",
                   top: 0,
                   left: 0,
-                  width: 8,
-                  height: 8,
                   pointerEvents: "none",
                   zIndex: 51,
                   offsetPath: `path("${pathStr}")`,
                   offsetRotate: "auto",
+                  offsetAnchor: "50% 50%",
+                  // filter: `drop-shadow(0 0 4px ${color})`,
                 }}
                 animate={{ offsetDistance: ["0%", "100%"] }}
                 transition={{
                   duration,
                   repeat: Infinity,
                   ease: "linear",
-                  delay: i * (duration / 3),
+                  delay: -(i * (duration / 3)),
                 }}
               >
-                <svg
-                  width="8"
-                  height="8"
-                  viewBox="0 0 8 8"
-                  style={{ display: "block" }}
-                >
-                  <polygon
-                    points="0,0 8,4 0,8"
-                    fill={color}
-                    opacity={dim ? 0.6 : 0.85}
-                  />
-                </svg>
+                <ArrowRight size={22} color={color} strokeWidth={2.5} />
               </motion.div>
             ))}
-          </Fragment>
+          </div>
         );
-        })}
+      })}
 
       <Table>
         <Opponents>
@@ -986,7 +980,9 @@ export default function Board() {
                       blockReason = "Can't trade with a non-turn player";
                     } else if (
                       !isTurnPlayer &&
-                      e.dataTransfer.types.includes("application/drag-has-center")
+                      e.dataTransfer.types.includes(
+                        "application/drag-has-center",
+                      )
                     ) {
                       blockReason = "Can't give center cards";
                     }
@@ -1053,59 +1049,66 @@ export default function Board() {
                 isCurrentTurn={player.playerId === playerTurn}
                 gamePhase={phase}
                 isDragTarget={dragOverPlayerId === player.playerId}
-                dragBlockMessage={dragOverPlayerId === player.playerId ? dragOverBlockReason ?? undefined : undefined}
+                dragBlockMessage={
+                  dragOverPlayerId === player.playerId
+                    ? (dragOverBlockReason ?? undefined)
+                    : undefined
+                }
                 onDragOver={handlePlayerDragOver}
                 onDragLeave={handlePlayerDragLeave}
                 onDrop={handlePlayerDrop}
                 field={
-                  <div ref={(el) => {
-                    if (el) opponentFieldRefs.current.set(player.playerId, el);
-                    else opponentFieldRefs.current.delete(player.playerId);
-                  }}>
-                  <Field>
-                    {player.playerField.slots.map((slot, index) => {
-                      const cardForSlot = slot.cardName
-                        ? (cardLookup?.get(slot.cardName) ?? null)
-                        : null;
-                      return (
-                        <div
-                          key={slot.slotId}
-                          ref={(el) => {
-                            if (el)
-                              opponentSlotRefs.current.set(slot.slotId, el);
-                            else opponentSlotRefs.current.delete(slot.slotId);
-                          }}
-                        >
-                          <Slot
+                  <div
+                    ref={(el) => {
+                      if (el)
+                        opponentFieldRefs.current.set(player.playerId, el);
+                      else opponentFieldRefs.current.delete(player.playerId);
+                    }}
+                  >
+                    <Field>
+                      {player.playerField.slots.map((slot, index) => {
+                        const cardForSlot = slot.cardName
+                          ? (cardLookup?.get(slot.cardName) ?? null)
+                          : null;
+                        return (
+                          <div
                             key={slot.slotId}
-                            slot={slot}
-                            index={index}
-                            interactive={false}
+                            ref={(el) => {
+                              if (el)
+                                opponentSlotRefs.current.set(slot.slotId, el);
+                              else opponentSlotRefs.current.delete(slot.slotId);
+                            }}
                           >
-                            {cardForSlot && (
-                              <Card
-                                card={cardForSlot}
-                                flipped={false}
-                                noTransition={true}
-                                onContextMenu={
-                                  phase === "turnTrade"
-                                    ? () =>
-                                        onCardRightClick(
-                                          cardForSlot,
-                                          player.playerId,
-                                        )
-                                    : undefined
-                                }
-                                hidden={animatingOpponentSlotIds.has(
-                                  slot.slotId,
-                                )}
-                              />
-                            )}
-                          </Slot>
-                        </div>
-                      );
-                    })}
-                  </Field>
+                            <Slot
+                              key={slot.slotId}
+                              slot={slot}
+                              index={index}
+                              interactive={false}
+                            >
+                              {cardForSlot && (
+                                <Card
+                                  card={cardForSlot}
+                                  flipped={false}
+                                  noTransition={true}
+                                  onContextMenu={
+                                    phase === "turnTrade"
+                                      ? () =>
+                                          onCardRightClick(
+                                            cardForSlot,
+                                            player.playerId,
+                                          )
+                                      : undefined
+                                  }
+                                  hidden={animatingOpponentSlotIds.has(
+                                    slot.slotId,
+                                  )}
+                                />
+                              )}
+                            </Slot>
+                          </div>
+                        );
+                      })}
+                    </Field>
                   </div>
                 }
                 hand={
@@ -1166,7 +1169,10 @@ export default function Board() {
                       JSON.stringify(card),
                     );
                     // Always flag center card drags so drop targets can detect blocked state
-                    e.dataTransfer.setData("application/drag-has-center", "true");
+                    e.dataTransfer.setData(
+                      "application/drag-has-center",
+                      "true",
+                    );
                   }}
                 >
                   <Card
@@ -1266,7 +1272,9 @@ export default function Board() {
             pickedCards={pickedCards}
             selectedCard={selectedCard}
             onCardClick={handleCardClick}
-            pendingOffers={[...incomingOffer, ...outgoingOffer]}
+            incomingOffers={incomingOffer}
+            outgoingOffers={outgoingOffer}
+            onOfferHover={setHoveredOfferId}
             tagWrapperRefs={tagWrapperRefs}
             allOffers={offers}
             players={players}
@@ -1316,7 +1324,9 @@ export default function Board() {
                             if (
                               isInSelection &&
                               selection.some((c) =>
-                                centerCards.some((cc) => cc.cardId === c.cardId),
+                                centerCards.some(
+                                  (cc) => cc.cardId === c.cardId,
+                                ),
                               )
                             ) {
                               e.dataTransfer.setData(

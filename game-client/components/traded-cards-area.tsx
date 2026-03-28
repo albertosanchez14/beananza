@@ -10,7 +10,9 @@ type Props = {
   pickedCards: CardType[];
   selectedCard: CardType | null;
   onCardClick: (card: CardType) => void;
-  pendingOffers: Offer[];
+  incomingOffers: Offer[];
+  outgoingOffers: Offer[];
+  onOfferHover: (id: string | null) => void;
   tagWrapperRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
   allOffers: Offer[];
   players: ExternalPlayer[];
@@ -38,7 +40,9 @@ export default function TradedCardsArea({
   pickedCards,
   selectedCard,
   onCardClick,
-  pendingOffers,
+  incomingOffers,
+  outgoingOffers,
+  onOfferHover,
   tagWrapperRefs,
   allOffers,
   players,
@@ -104,29 +108,58 @@ export default function TradedCardsArea({
         phase={phase}
       />
 
-      {phase === "turnTrade" &&
-        pendingOffers.map((offer) => (
-          <div
-            key={offer.id}
-            ref={(el) => {
-              if (el) tagWrapperRefs.current.set(offer.id, el);
-              else tagWrapperRefs.current.delete(offer.id);
-            }}
-          >
-            <InlineOfferTag
-              offer={offer}
-              allOffers={allOffers}
-              players={players}
-              myPlayerId={myPlayerId}
-              cardLookup={cardLookup}
-              hand={hand}
-              centerCards={centerCards}
-              isTurnPlayer={isTurnPlayer}
-              onRespond={onRespondOffer}
-              onCounter={onCounterOffer}
-            />
-          </div>
-        ))}
+      {phase === "turnTrade" && (
+        <>
+          {incomingOffers.map((offer) => (
+            <div
+              key={offer.id}
+              ref={(el) => {
+                if (el) tagWrapperRefs.current.set(offer.id, el);
+                else tagWrapperRefs.current.delete(offer.id);
+              }}
+            >
+              <InlineOfferTag
+                offer={offer}
+                allOffers={allOffers}
+                players={players}
+                myPlayerId={myPlayerId}
+                cardLookup={cardLookup}
+                hand={hand}
+                centerCards={centerCards}
+                isTurnPlayer={isTurnPlayer}
+                offerIndex={0}
+                onRespond={onRespondOffer}
+                onCounter={onCounterOffer}
+                onHover={onOfferHover}
+              />
+            </div>
+          ))}
+          {outgoingOffers.map((offer, idx) => (
+            <div
+              key={offer.id}
+              ref={(el) => {
+                if (el) tagWrapperRefs.current.set(offer.id, el);
+                else tagWrapperRefs.current.delete(offer.id);
+              }}
+            >
+              <InlineOfferTag
+                offer={offer}
+                allOffers={allOffers}
+                players={players}
+                myPlayerId={myPlayerId}
+                cardLookup={cardLookup}
+                hand={hand}
+                centerCards={centerCards}
+                isTurnPlayer={isTurnPlayer}
+                offerIndex={idx}
+                onRespond={onRespondOffer}
+                onCounter={onCounterOffer}
+                onHover={onOfferHover}
+              />
+            </div>
+          ))}
+        </>
+      )}
 
       {isTurnTrade && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 select-none pointer-events-none -z-10">

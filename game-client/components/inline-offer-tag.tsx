@@ -53,6 +53,7 @@ type Props = {
     offered: OfferCard[],
     requested: OfferCard[],
   ) => void;
+  onHover?: (id: string | null) => void;
 };
 
 export default function InlineOfferTag({
@@ -64,6 +65,7 @@ export default function InlineOfferTag({
   isTurnPlayer = false,
   offerIndex = 0,
   onRespond,
+  onHover,
 }: Props) {
   const isIncoming = offer.creator_id !== myPlayerId;
   const [dismissed, setDismissed] = useState(false);
@@ -125,6 +127,8 @@ export default function InlineOfferTag({
     <div
       className={`relative shrink-0 rounded-xl border-2 transition-all duration-200 overflow-hidden flex flex-row ${borderCls}`}
       style={{ width: isIncoming ? undefined : 96, height: 144 }}
+      onMouseEnter={() => onHover?.(offer.id)}
+      onMouseLeave={() => onHover?.(null)}
     >
       {/* Ghost area: X for free offers, ghost cards otherwise */}
       {isFreeRequest ? (
