@@ -1,6 +1,17 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  Fragment,
+} from "react";
+import { motion } from "motion/react";
+
 import { CardType, ExternalPlayer, SlotType } from "@/schemas/types";
 import { useGameContext } from "@/components/game-context";
+
 import Table from "@/components/table";
 import { CardPile, CenterCards } from "@/components/card-pile";
 import Opponents, { getFieldRotation } from "@/components/opponents";
@@ -8,7 +19,7 @@ import Center from "@/components/center";
 import CurrentPlayer from "@/components/current-player";
 import Slot from "@/components/slot";
 import Field from "@/components/field";
-import TradedCards from "./traded-cards";
+import TradedCardsArea from "@/components/traded-cards-area";
 import FanLayout from "@/components/fan-layout";
 import Card from "@/components/card";
 import Player from "@/components/player";
@@ -39,6 +50,53 @@ type TurnOverFlyingCardEntry = {
   cardScale: number;
 };
 
+// ── Offer-origin arrow helpers ────────────────────────────────────────────────
+const OFFER_ACCENT_HEX = [
+  "#3b82f6",
+  "#a855f7",
+  "#14b8a6",
+  "#f43f5e",
+];
+const INCOMING_OFFER_HEX = "#16a34a";
+const FREE_REQUEST_HEX = "#3b82f6";
+
+const ARROW_SPEED_PX_S = 300; // pixels per second for arrow dots
+
+function svgPathLength(d: string): number {
+  if (typeof document === "undefined") return 400;
+  const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  el.setAttribute("d", d);
+  return el.getTotalLength();
+}
+
+function elCenter(el: HTMLElement): { x: number; y: number } {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+function quadBezierPath(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  curveUp = false,
+): string {
+  const mx = (start.x + end.x) / 2;
+  const my = (start.y + end.y) / 2;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+  const px = -dy / len;
+  const py = dx / len;
+  // curveUp: pick sign so the control point is above the midpoint (cpy < my)
+  // cpy = my + sign*py*40 < my  →  sign*py < 0
+  const dot =
+    px * (window.innerWidth / 2 - mx) + py * (window.innerHeight / 2 - my);
+  const sign = curveUp ? (py >= 0 ? -1 : 1) : dot >= 0 ? 1 : -1;
+  const cpx = mx + sign * px * 40;
+  const cpy = my + sign * py * 40;
+  return `M ${start.x} ${start.y} Q ${cpx} ${cpy} ${end.x} ${end.y}`;
+}
+
 type PlantFlyingCardEntry = {
   id: string;
   slotIndex?: number;
@@ -54,17 +112,15 @@ type PlantFlyingCardEntry = {
   initialScale?: number;
   targetScale?: number;
   opponentSlotId?: string;
+  slotWasEmpty?: boolean;
 };
 
 export default function Board() {
   const {
     gameState,
     selectedCard,
-    giveSelection,
-    requestSelection,
-    clearGiveSelection,
-    toggleRequestSelection,
-    clearRequestSelection,
+    selection,
+    clearSelection,
     cardsPerTurn,
     cardLookup,
     myPlayerId,
@@ -79,10 +135,13 @@ export default function Board() {
     onGiveDrop,
     onRequestDrop,
     onCardRightClick,
+    offers,
+    onRespondOffer,
+    onCounterOffer,
   } = useGameContext();
 
   const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
-  const [dragOverTraded, setDragOverTraded] = useState(false);
+  const [dragOverBlockReason, setDragOverBlockReason] = useState<string | null>(null);
 
   const {
     centerCards,
@@ -95,10 +154,108 @@ export default function Board() {
     phase,
     field,
     coins,
+    pickedCards,
   } = gameState;
 
   const isTurnPlayer = myPlayerId === playerTurn;
-  const isNonTurnTrade = phase === "turnTrade" && !isTurnPlayer;
+
+
+  // ── Origin-highlight helpers ─────────────────────────────────────────────────
+  const ORIGIN_COLORS = {
+    hand: "#60a5fa",
+    center: "#fbbf24",
+    player: "#c084fc",
+  } as const;
+
+  const getOriginColor = (cardId: string, cardType: string): string => {
+    if (cardId) {
+      if (hand.some((c) => c.cardId === cardId)) return ORIGIN_COLORS.hand;
+      if (centerCards.some((c) => c.cardId === cardId))
+        return ORIGIN_COLORS.center;
+    } else {
+      if (hand.some((c) => c.cardName === cardType)) return ORIGIN_COLORS.hand;
+      if (centerCards.some((c) => c.cardName === cardType))
+        return ORIGIN_COLORS.center;
+    }
+    return ORIGIN_COLORS.player;
+  };
+
+  // cardHighlights: cardId → color for cards I can see (my hand + center)
+  // playerHighlights: playerId → { color, count } for opponent hand cards in offers
+  const { cardHighlights, playerHighlights } = useMemo(() => {
+    const cardH = new Map<string, string>();
+    const playerH = new Map<string, { color: string; count: number }>();
+    if (phase !== "turnTrade")
+      return { cardHighlights: cardH, playerHighlights: playerH };
+
+    const rootPending = offers.filter(
+      (o) => o.status === "pending" && o.parent_offer_id === "",
+    );
+
+    for (const offer of rootPending) {
+      const isOwn = offer.creator_id === myPlayerId;
+      const isIncoming =
+        offer.target_id === myPlayerId && offer.creator_id !== myPlayerId;
+      if (!isOwn && !isIncoming) continue;
+
+      // Cards from my side (my hand or my center).
+      // For incoming offers the current player is not the turn player and cannot
+      // use center cards — only highlight hand matches.
+      const myCards = isOwn ? offer.cards_offered : offer.cards_requested;
+      const amTurnPlayer = myPlayerId === playerTurn;
+      for (const c of myCards) {
+        const color =
+          isIncoming && !amTurnPlayer
+            ? c.card_id
+              ? hand.some((h) => h.cardId === c.card_id)
+                ? ORIGIN_COLORS.hand
+                : null
+              : hand.some((h) => h.cardName === c.card_type)
+                ? ORIGIN_COLORS.hand
+                : null
+            : getOriginColor(c.card_id, c.card_type);
+        if (!color) continue;
+        if (c.card_id) {
+          if (!cardH.has(c.card_id)) cardH.set(c.card_id, color);
+        } else {
+          const pool =
+            color === ORIGIN_COLORS.hand
+              ? hand
+              : color === ORIGIN_COLORS.center
+                ? centerCards
+                : [];
+          for (const hc of pool) {
+            if (hc.cardName === c.card_type && !cardH.has(hc.cardId))
+              cardH.set(hc.cardId, color);
+          }
+        }
+      }
+
+      // Cards on the other player's side — only highlight center cards when
+      // we have an exact card_id match. Type fallback is unreliable here: the
+      // same card type may exist in the center while the request targets a
+      // player's hand, so we must not highlight the center card in that case.
+      const theirCards = isOwn ? offer.cards_requested : offer.cards_offered;
+      const otherPlayerId = isOwn ? offer.target_id : offer.creator_id;
+      for (const c of theirCards) {
+        const inCenter = !!(
+          c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
+        );
+        if (inCenter) {
+          if (!cardH.has(c.card_id)) cardH.set(c.card_id, ORIGIN_COLORS.center);
+        } else if (otherPlayerId) {
+          const existing = playerH.get(otherPlayerId);
+          playerH.set(otherPlayerId, {
+            color: ORIGIN_COLORS.player,
+            count: (existing?.count ?? 0) + 1,
+          });
+        }
+      }
+    }
+    return { cardHighlights: cardH, playerHighlights: playerH };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offers, hand, centerCards, myPlayerId, phase, playerTurn]);
+
   const deckRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -106,6 +263,9 @@ export default function Board() {
   const opponentHandContainerRefs = useRef<Map<string, HTMLDivElement>>(
     new Map(),
   );
+  const opponentFieldRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const centerCardsRef = useRef<HTMLDivElement>(null);
+  const tagWrapperRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const prevHandRef = useRef<CardType[]>(hand);
   const prevPlayersRef = useRef(players);
   const prevCenterCardsRef = useRef<CardType[]>(centerCards);
@@ -114,10 +274,15 @@ export default function Board() {
   >(new Map());
   const prevCenterCardsForTurnRef = useRef<CardType[]>(centerCards);
   const prevFieldRef = useRef(field);
+  const dragPlantedCardIds = useRef<Set<string>>(new Set());
   const mySlotRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const mySlotCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const prevHandCardRectsRef = useRef<Map<string, { left: number; top: number }>>(new Map());
-  const snapshotCenterRects = useRef<Map<string, { left: number; top: number }>>(new Map());
+  const prevHandCardRectsRef = useRef<
+    Map<string, { left: number; top: number }>
+  >(new Map());
+  const snapshotCenterRects = useRef<
+    Map<string, { left: number; top: number }>
+  >(new Map());
 
   const [flyingCards, setFlyingCards] = useState<FlyingCardEntry[]>([]);
   const [turnOverFlyingCards, setTurnOverFlyingCards] = useState<
@@ -133,6 +298,9 @@ export default function Board() {
   const [animatingOpponentSlotIds, setAnimatingOpponentSlotIds] = useState<
     Set<string>
   >(new Set());
+  const [offerPaths, setOfferPaths] = useState<
+    Map<string, { pathStr: string; color: string; dim: boolean }>
+  >(new Map());
 
   useLayoutEffect(() => {
     const prevIds = new Set(prevHandRef.current.map((c) => c.cardId));
@@ -343,6 +511,7 @@ export default function Board() {
               }),
           initialScale,
           opponentSlotId: slot.slotId,
+          slotWasEmpty: prevCount === 0,
         });
       });
     });
@@ -355,7 +524,9 @@ export default function Board() {
       setPlantFlyingCards((prev) => [...prev, ...newFlying]);
       setAnimatingOpponentSlotIds((prev) => {
         const next = new Set(prev);
-        newFlying.forEach((e) => next.add(e.opponentSlotId!));
+        newFlying.forEach((e) => {
+          if (e.slotWasEmpty) next.add(e.opponentSlotId!);
+        });
         return next;
       });
     }
@@ -388,7 +559,14 @@ export default function Board() {
       const slotRect = slotEl.getBoundingClientRect();
 
       const newCardId = slot.cardIds.at(-1);
-      const handPos = newCardId ? prevHandCardRectsRef.current.get(newCardId) : undefined;
+      if (newCardId && dragPlantedCardIds.current.has(newCardId)) {
+        dragPlantedCardIds.current.delete(newCardId);
+        return;
+      }
+
+      const handPos = newCardId
+        ? prevHandCardRectsRef.current.get(newCardId)
+        : undefined;
       const centerPos = snapshotCenterRects.current.get(slot.cardName);
       const startPos = handPos ?? centerPos;
       if (!startPos) return;
@@ -418,6 +596,7 @@ export default function Board() {
         targetRotateX: 25,
         targetScaleX: 1.08,
         opponentSlotId: slot.slotId,
+        slotWasEmpty: prevCount === 0,
       });
     });
 
@@ -425,7 +604,9 @@ export default function Board() {
       setPlantFlyingCards((prev) => [...prev, ...newFlying]);
       setAnimatingOpponentSlotIds((prev) => {
         const next = new Set(prev);
-        newFlying.forEach((e) => next.add(e.opponentSlotId!));
+        newFlying.forEach((e) => {
+          if (e.slotWasEmpty) next.add(e.opponentSlotId!);
+        });
         return next;
       });
     }
@@ -489,6 +670,176 @@ export default function Board() {
     snapshotCenterRects.current = centerRects;
   });
 
+  // ── Offer origin arrow paths ────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== "turnTrade") {
+      setOfferPaths(new Map());
+      return;
+    }
+
+    const computePaths = () => {
+      const next = new Map<
+        string,
+        { pathStr: string; color: string; dim: boolean }
+      >();
+
+      // Resolve the DOM element for a specific hand card (by id or by type).
+      const handCardEl = (
+        card_id: string,
+        card_type: string,
+      ): HTMLDivElement | null => {
+        if (card_id) return cardRefs.current.get(card_id) ?? null;
+        const match = hand.find((h) => h.cardName === card_type);
+        return match ? (cardRefs.current.get(match.cardId) ?? null) : null;
+      };
+
+      offers
+        .filter(
+          (o) =>
+            o.creator_id === myPlayerId &&
+            o.parent_offer_id === "" &&
+            o.status === "pending",
+        )
+        .forEach((offer, idx) => {
+          const tagEl = tagWrapperRefs.current.get(offer.id);
+          if (!tagEl) return;
+          const color = OFFER_ACCENT_HEX[idx % OFFER_ACCENT_HEX.length];
+          const tagCenter = elCenter(tagEl);
+
+          // Receiving arrow: cards_requested origin → tag
+          const centerRequested = offer.cards_requested.find(
+            (c) =>
+              c.card_id && centerCards.some((cc) => cc.cardId === c.card_id),
+          );
+          const recvInCenter = !!centerRequested;
+          const recvEl = recvInCenter
+            ? (cardRefs.current.get(centerRequested!.card_id) ??
+              centerCardsRef.current)
+            : (opponentHandContainerRefs.current.get(offer.target_id) ?? null);
+          if (recvEl) {
+            next.set(`${offer.id}_r`, {
+              pathStr: quadBezierPath(
+                elCenter(recvEl),
+                tagCenter,
+                recvInCenter,
+              ),
+              color,
+              dim: false,
+            });
+          }
+
+          // Offering arrow: my hand/center → target player's field
+          if (offer.cards_offered.length > 0) {
+            const targetEl =
+              opponentFieldRefs.current.get(offer.target_id) ?? null;
+            if (targetEl) {
+              const centerOffered = offer.cards_offered.find(
+                (c) =>
+                  c.card_id &&
+                  centerCards.some((cc) => cc.cardId === c.card_id),
+              );
+              const offInCenter = !!centerOffered;
+              const firstHandOffered = offer.cards_offered.find(
+                (c) => !centerCards.some((cc) => cc.cardId === c.card_id),
+              );
+              const offEl = offInCenter
+                ? (cardRefs.current.get(centerOffered!.card_id) ??
+                  centerCardsRef.current)
+                : firstHandOffered
+                  ? (handCardEl(
+                      firstHandOffered.card_id,
+                      firstHandOffered.card_type,
+                    ) ?? handRef.current)
+                  : handRef.current;
+              if (offEl) {
+                next.set(`${offer.id}_o`, {
+                  pathStr: quadBezierPath(elCenter(offEl), elCenter(targetEl)),
+                  color,
+                  dim: true,
+                });
+              }
+            }
+          }
+        });
+
+      offers
+        .filter(
+          (o) =>
+            o.target_id === myPlayerId &&
+            o.creator_id !== myPlayerId &&
+            o.parent_offer_id === "" &&
+            o.status === "pending",
+        )
+        .forEach((offer) => {
+          const tagEl = tagWrapperRefs.current.get(offer.id);
+          if (!tagEl) return;
+          const isFree = offer.cards_offered.length === 0;
+          const color = isFree ? FREE_REQUEST_HEX : INCOMING_OFFER_HEX;
+          const tagCenter = elCenter(tagEl);
+
+          // Receiving arrow: cards_offered origin (creator hand/center) → tag
+          const centerOffered = offer.cards_offered.find(
+            (c) =>
+              c.card_id && centerCards.some((cc) => cc.cardId === c.card_id),
+          );
+          const recvInCenter = !!centerOffered;
+          const recvEl = recvInCenter
+            ? (cardRefs.current.get(centerOffered!.card_id) ??
+              centerCardsRef.current)
+            : (opponentHandContainerRefs.current.get(offer.creator_id) ?? null);
+          if (recvEl) {
+            next.set(`${offer.id}_r`, {
+              pathStr: quadBezierPath(
+                elCenter(recvEl),
+                tagCenter,
+                recvInCenter,
+              ),
+              color,
+              dim: false,
+            });
+          }
+
+          // Offering arrow: center/hand card → creator's field (the card going to the requester)
+          const creatorEl =
+            opponentFieldRefs.current.get(offer.creator_id) ?? null;
+          if (creatorEl) {
+            const centerRequested = offer.cards_requested.find(
+              (c) =>
+                c.card_id && centerCards.some((cc) => cc.cardId === c.card_id),
+            );
+            const offInCenter = !!centerRequested;
+            const firstHandRequested = offer.cards_requested.find(
+              (c) => !centerCards.some((cc) => cc.cardId === c.card_id),
+            );
+            const offEl = offInCenter
+              ? (cardRefs.current.get(centerRequested!.card_id) ??
+                centerCardsRef.current)
+              : isFree
+                ? null
+                : firstHandRequested
+                  ? (handCardEl(
+                      firstHandRequested.card_id,
+                      firstHandRequested.card_type,
+                    ) ?? handRef.current)
+                  : null;
+            if (offEl) {
+              next.set(`${offer.id}_o`, {
+                pathStr: quadBezierPath(elCenter(offEl), elCenter(creatorEl)),
+                color,
+                dim: true,
+              });
+            }
+          }
+        });
+
+      setOfferPaths(next);
+    };
+
+    computePaths();
+    window.addEventListener("resize", computePaths);
+    return () => window.removeEventListener("resize", computePaths);
+  }, [offers, phase, myPlayerId, centerCards, hand]);
+
   // A representative card for the draw deck back image.
   // Prefer a real card from the live game state (which carries backImage from the server),
   // but fall back to the first entry in cardLookup so the back image is always available
@@ -501,6 +852,20 @@ export default function Board() {
       backImage: "",
     };
   const backImage = [...(cardLookup?.values() ?? [])][0]?.backImage ?? "";
+
+  const outgoingOffer = offers.filter(
+    (o) =>
+      o.creator_id === myPlayerId &&
+      o.parent_offer_id === "" &&
+      o.status === "pending",
+  );
+  const incomingOffer = offers.filter(
+    (o) =>
+      o.target_id === myPlayerId &&
+      o.creator_id !== myPlayerId &&
+      o.parent_offer_id === "" &&
+      o.status === "pending",
+  );
 
   return (
     <div
@@ -539,6 +904,71 @@ export default function Board() {
         />
       ))}
 
+      {/* Offer origin arrows */}
+      {Array.from(offerPaths.entries()).map(
+        ([key, { pathStr, color, dim }]) => {
+          const duration = svgPathLength(pathStr) / ARROW_SPEED_PX_S;
+          return (
+          <Fragment key={key}>
+            <svg
+              style={{
+                position: "fixed",
+                inset: 0,
+                width: "100vw",
+                height: "100vh",
+                pointerEvents: "none",
+                zIndex: 50,
+                overflow: "visible",
+              }}
+            >
+              <path
+                d={pathStr}
+                stroke={color}
+                strokeWidth={1.5}
+                fill="none"
+                strokeOpacity={dim ? 0.2 : 0.35}
+              />
+            </svg>
+            {[0, 1, 2].map((i) => (
+              <motion.div
+                key={i}
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  width: 8,
+                  height: 8,
+                  pointerEvents: "none",
+                  zIndex: 51,
+                  offsetPath: `path("${pathStr}")`,
+                  offsetRotate: "auto",
+                }}
+                animate={{ offsetDistance: ["0%", "100%"] }}
+                transition={{
+                  duration,
+                  repeat: Infinity,
+                  ease: "linear",
+                  delay: i * (duration / 3),
+                }}
+              >
+                <svg
+                  width="8"
+                  height="8"
+                  viewBox="0 0 8 8"
+                  style={{ display: "block" }}
+                >
+                  <polygon
+                    points="0,0 8,4 0,8"
+                    fill={color}
+                    opacity={dim ? 0.6 : 0.85}
+                  />
+                </svg>
+              </motion.div>
+            ))}
+          </Fragment>
+        );
+        })}
+
       <Table>
         <Opponents>
           {players.map((player) => {
@@ -547,50 +977,69 @@ export default function Board() {
               phase === "turnTrade" &&
               (isTurnPlayer || player.playerId === playerTurn);
 
-            const handlePlayerDragOver = isEligibleTarget
-              ? (e: React.DragEvent) => {
-                  if (
-                    !isTurnPlayer &&
-                    e.dataTransfer.types.includes("application/center-card")
-                  )
-                    return;
-                  e.preventDefault();
-                  setDragOverPlayerId(player.playerId);
-                }
-              : undefined;
-
-            const handlePlayerDragLeave = isEligibleTarget
-              ? () => setDragOverPlayerId(null)
-              : undefined;
-
-            const handlePlayerDrop = isEligibleTarget
-              ? (e: React.DragEvent) => {
-                  e.preventDefault();
-                  setDragOverPlayerId(null);
-                  const raw = e.dataTransfer.getData("application/card");
-                  if (!raw) return;
-                  try {
-                    const dragged = JSON.parse(raw) as CardType;
-                    const seen = new Set<string>();
-                    const cardsToGive: CardType[] = [];
-                    for (const c of [...giveSelection, dragged]) {
-                      if (!seen.has(c.cardId)) {
-                        seen.add(c.cardId);
-                        const isCenterCard = centerCards.some(
-                          (cc) => cc.cardId === c.cardId,
-                        );
-                        if (!isTurnPlayer && isCenterCard) continue;
-                        cardsToGive.push(c);
-                      }
+            const handlePlayerDragOver =
+              phase === "turnTrade"
+                ? (e: React.DragEvent) => {
+                    e.preventDefault();
+                    let blockReason: string | null = null;
+                    if (!isEligibleTarget) {
+                      blockReason = "Can't trade with a non-turn player";
+                    } else if (
+                      !isTurnPlayer &&
+                      e.dataTransfer.types.includes("application/drag-has-center")
+                    ) {
+                      blockReason = "Can't give center cards";
                     }
-                    clearGiveSelection();
-                    if (cardsToGive.length > 0)
-                      onGiveDrop(player as ExternalPlayer, cardsToGive);
-                  } catch {
-                    // ignore malformed payload
+                    setDragOverPlayerId(player.playerId);
+                    setDragOverBlockReason(blockReason);
                   }
-                }
-              : undefined;
+                : undefined;
+
+            const handlePlayerDragLeave =
+              phase === "turnTrade"
+                ? () => {
+                    setDragOverPlayerId(null);
+                    setDragOverBlockReason(null);
+                  }
+                : undefined;
+
+            const handlePlayerDrop =
+              phase === "turnTrade"
+                ? (e: React.DragEvent) => {
+                    e.preventDefault();
+                    setDragOverPlayerId(null);
+                    setDragOverBlockReason(null);
+                    if (!isEligibleTarget) return;
+                    const raw = e.dataTransfer.getData("application/card");
+                    if (!raw) return;
+                    try {
+                      const dragged = JSON.parse(raw) as CardType;
+                      const isDraggedInSelection = selection.some(
+                        (c) => c.cardId === dragged.cardId,
+                      );
+                      const cardsToDrop = isDraggedInSelection
+                        ? [...selection]
+                        : [dragged];
+
+                      // Block if non-turn player tries to give center cards
+                      if (!isTurnPlayer) {
+                        const hasCenterCard = cardsToDrop.some((c) =>
+                          centerCards.some((cc) => cc.cardId === c.cardId),
+                        );
+                        if (hasCenterCard) {
+                          clearSelection();
+                          return;
+                        }
+                      }
+
+                      clearSelection();
+                      if (cardsToDrop.length > 0)
+                        onGiveDrop(player as ExternalPlayer, cardsToDrop);
+                    } catch {
+                      // ignore malformed payload
+                    }
+                  }
+                : undefined;
 
             return (
               <Player
@@ -604,10 +1053,15 @@ export default function Board() {
                 isCurrentTurn={player.playerId === playerTurn}
                 gamePhase={phase}
                 isDragTarget={dragOverPlayerId === player.playerId}
+                dragBlockMessage={dragOverPlayerId === player.playerId ? dragOverBlockReason ?? undefined : undefined}
                 onDragOver={handlePlayerDragOver}
                 onDragLeave={handlePlayerDragLeave}
                 onDrop={handlePlayerDrop}
                 field={
+                  <div ref={(el) => {
+                    if (el) opponentFieldRefs.current.set(player.playerId, el);
+                    else opponentFieldRefs.current.delete(player.playerId);
+                  }}>
                   <Field>
                     {player.playerField.slots.map((slot, index) => {
                       const cardForSlot = slot.cardName
@@ -652,6 +1106,7 @@ export default function Board() {
                       );
                     })}
                   </Field>
+                  </div>
                 }
                 hand={
                   <FanLayout
@@ -671,7 +1126,17 @@ export default function Board() {
                   >
                     {Array.from({ length: player.playerHandSize }).map(
                       (_, index) => (
-                        <Card key={index} card={{ backImage }} flipped={true} />
+                        <Card
+                          key={index}
+                          card={{ backImage }}
+                          flipped={true}
+                          highlightColor={
+                            index <
+                            (playerHighlights.get(player.playerId)?.count ?? 0)
+                              ? playerHighlights.get(player.playerId)?.color
+                              : undefined
+                          }
+                        />
                       ),
                     )}
                   </FanLayout>
@@ -689,43 +1154,49 @@ export default function Board() {
             onClickAction={handleDrawDeckClick}
             deckRef={deckRef}
           />
-          <CenterCards slots={cardsPerTurn ?? 3}>
-            {centerCards.map((card) => (
-              <div
-                key={card.cardId}
-                onDragStart={(e) =>
-                  e.dataTransfer.setData("application/center-card", "true")
-                }
-              >
-                <Card
-                  card={card}
-                  ref={(el) => {
-                    if (el) cardRefs.current.set(card.cardId, el);
-                    else cardRefs.current.delete(card.cardId);
+          <div ref={centerCardsRef}>
+            <CenterCards slots={cardsPerTurn ?? 3}>
+              {centerCards.map((card) => (
+                <div
+                  key={card.cardId}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("application/center-card", "true");
+                    e.dataTransfer.setData(
+                      "application/card",
+                      JSON.stringify(card),
+                    );
+                    // Always flag center card drags so drop targets can detect blocked state
+                    e.dataTransfer.setData("application/drag-has-center", "true");
                   }}
-                  hidden={hiddenCenterCardIds.has(card.cardId)}
-                  isSelected={
-                    phase === "turnTrade"
-                      ? isTurnPlayer
-                        ? selectedCard?.cardId === card.cardId
-                        : requestSelection.some((c) => c.cardId === card.cardId)
-                      : selectedCard?.cardId === card.cardId
-                  }
-                  draggable={phase !== "plantTrade"}
-                  onClick={
-                    isNonTurnTrade
-                      ? () => toggleRequestSelection(card)
-                      : () => handleCardClick(card, "center")
-                  }
-                  onContextMenu={
-                    phase === "turnTrade" && !isTurnPlayer
-                      ? () => onCardRightClick(card, playerTurn)
-                      : undefined
-                  }
-                />
-              </div>
-            ))}
-          </CenterCards>
+                >
+                  <Card
+                    card={card}
+                    ref={(el) => {
+                      if (el) cardRefs.current.set(card.cardId, el);
+                      else cardRefs.current.delete(card.cardId);
+                    }}
+                    hidden={hiddenCenterCardIds.has(card.cardId)}
+                    highlightColor={
+                      phase === "turnTrade" &&
+                      selection.some((c) => c.cardId === card.cardId)
+                        ? "#a855f7"
+                        : cardHighlights.get(card.cardId)
+                    }
+                    isSelected={selectedCard?.cardId === card.cardId}
+                    draggable={true}
+                    onClick={(e: React.MouseEvent) =>
+                      handleCardClick(card, "center", e.ctrlKey || e.metaKey)
+                    }
+                    onContextMenu={
+                      phase === "turnTrade" && !isTurnPlayer
+                        ? () => onCardRightClick(card, playerTurn)
+                        : undefined
+                    }
+                  />
+                </div>
+              ))}
+            </CenterCards>
+          </div>
           <CardPile
             label="Discard"
             count={discardPileSize}
@@ -733,6 +1204,7 @@ export default function Board() {
           />
         </Center>
       </Table>
+
       <CurrentPlayer
         coinCount={coins}
         field={
@@ -756,7 +1228,10 @@ export default function Board() {
                     highlightEmpty={highlightEmpty}
                     handleDragOver={handleDragOver}
                     handleDragLeave={handleDragLeave}
-                    handleFieldDrop={handleFieldDrop}
+                    handleFieldDrop={(slotId, slotIndex, card) => {
+                      dragPlantedCardIds.current.add(card.cardId);
+                      handleFieldDrop(slotId, slotIndex, card);
+                    }}
                     handleSlotClick={handleFieldSlotClick}
                   >
                     {cardForSlot && (
@@ -786,64 +1261,29 @@ export default function Board() {
           </Field>
         }
         tradedCards={
-          <div
-            onDragOver={
-              isNonTurnTrade
-                ? (e) => {
-                    e.preventDefault();
-                    setDragOverTraded(true);
-                  }
-                : undefined
-            }
-            onDragLeave={
-              isNonTurnTrade ? () => setDragOverTraded(false) : undefined
-            }
-            onDrop={
-              isNonTurnTrade
-                ? (e: React.DragEvent) => {
-                    e.preventDefault();
-                    setDragOverTraded(false);
-                    const raw = e.dataTransfer.getData("application/card");
-                    if (!raw) return;
-                    try {
-                      const dragged = JSON.parse(raw) as CardType;
-                      const seen = new Set<string>();
-                      const cardsToRequest: CardType[] = [];
-                      for (const c of [...requestSelection, dragged]) {
-                        if (!seen.has(c.cardId)) {
-                          seen.add(c.cardId);
-                          cardsToRequest.push(c);
-                        }
-                      }
-                      clearRequestSelection();
-                      onRequestDrop(cardsToRequest);
-                    } catch {
-                      // ignore malformed payload
-                    }
-                  }
-                : undefined
-            }
-            className={[
-              "rounded-xl transition-colors",
-              isNonTurnTrade ? "min-w-24 min-h-36 flex items-center" : "",
-              dragOverTraded
-                ? "bg-blue-500/20 ring-2 ring-blue-400 ring-inset"
-                : "",
-            ].join(" ")}
-          >
-            <TradedCards />
-            {isNonTurnTrade && !dragOverTraded && (
-              <span className="text-xs text-blue-300/60 px-2 select-none pointer-events-none">
-                Drop to request
-              </span>
-            )}
-          </div>
+          <TradedCardsArea
+            phase={phase}
+            pickedCards={pickedCards}
+            selectedCard={selectedCard}
+            onCardClick={handleCardClick}
+            pendingOffers={[...incomingOffer, ...outgoingOffer]}
+            tagWrapperRefs={tagWrapperRefs}
+            allOffers={offers}
+            players={players}
+            myPlayerId={myPlayerId}
+            cardLookup={cardLookup}
+            hand={hand}
+            centerCards={centerCards}
+            isTurnPlayer={isTurnPlayer}
+            onRespondOffer={onRespondOffer}
+            onCounterOffer={onCounterOffer}
+            selection={selection}
+            clearSelection={clearSelection}
+            onRequestDrop={onRequestDrop}
+          />
         }
         hand={
-          // position:relative so flying cards (position:absolute) are
-          // anchored here and share the same stacking context as the fan.
           <div ref={handRef} style={{ position: "relative" }}>
-            {/* Flying cards — z-index:1 so they slide behind existing fan cards */}
             {flyingCards.map((fc) => (
               <FlyingCard
                 key={fc.id}
@@ -862,30 +1302,61 @@ export default function Board() {
               {hand.map((card) => {
                 const isSelected =
                   phase === "turnTrade"
-                    ? giveSelection.some((c) => c.cardId === card.cardId)
+                    ? selection.some((c) => c.cardId === card.cardId)
                     : selectedCard?.cardId === card.cardId;
                 return (
-                  <Card
+                  <div
                     key={card.cardId}
-                    card={card}
-                    ref={(el) => {
-                      if (el) cardRefs.current.set(card.cardId, el);
-                      else cardRefs.current.delete(card.cardId);
-                    }}
-                    isSelected={isSelected}
-                    draggable={phase !== "plantTrade"}
-                    hidden={hiddenCardIds.has(card.cardId)}
-                    onClick={() => handleCardClick(card, "hand")}
-                    onContextMenu={
+                    onDragStart={
                       phase === "turnTrade"
-                        ? () =>
-                            onCardRightClick(
-                              card,
-                              isTurnPlayer ? undefined : playerTurn,
-                            )
+                        ? (e) => {
+                            const isInSelection = selection.some(
+                              (c) => c.cardId === card.cardId,
+                            );
+                            if (
+                              isInSelection &&
+                              selection.some((c) =>
+                                centerCards.some((cc) => cc.cardId === c.cardId),
+                              )
+                            ) {
+                              e.dataTransfer.setData(
+                                "application/drag-has-center",
+                                "true",
+                              );
+                            }
+                          }
                         : undefined
                     }
-                  />
+                  >
+                    <Card
+                      card={card}
+                      ref={(el) => {
+                        if (el) cardRefs.current.set(card.cardId, el);
+                        else cardRefs.current.delete(card.cardId);
+                      }}
+                      isSelected={isSelected}
+                      draggable={phase !== "plantTrade"}
+                      hidden={hiddenCardIds.has(card.cardId)}
+                      highlightColor={
+                        phase === "turnTrade" &&
+                        selection.some((c) => c.cardId === card.cardId)
+                          ? "#a855f7"
+                          : cardHighlights.get(card.cardId)
+                      }
+                      onClick={(e: React.MouseEvent) =>
+                        handleCardClick(card, "hand", e.ctrlKey || e.metaKey)
+                      }
+                      onContextMenu={
+                        phase === "turnTrade"
+                          ? () =>
+                              onCardRightClick(
+                                card,
+                                isTurnPlayer ? undefined : playerTurn,
+                              )
+                          : undefined
+                      }
+                    />
+                  </div>
                 );
               })}
             </FanLayout>

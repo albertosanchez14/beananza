@@ -39,7 +39,15 @@ export default function CurrentPlayer({
             </span>
           </div>
           {field}
-          {tradedCards}
+          {/* Zero-width anchor so tradedCards never shifts the field */}
+          <div className="relative" style={{ width: 0, overflow: "visible" }}>
+            <div
+              className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-2"
+              style={{ pointerEvents: "auto" }}
+            >
+              {tradedCards}
+            </div>
+          </div>
         </div>
       </div>
       {hand}

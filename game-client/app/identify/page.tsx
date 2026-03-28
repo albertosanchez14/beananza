@@ -9,8 +9,18 @@ export const metadata: Metadata = {
 
 export default function IdentifyPage() {
   return (
-    <Suspense fallback={null}>
-      <IdentifyForm />
-    </Suspense>
+    <div
+      className="relative flex min-h-screen items-center justify-center px-4 overflow-hidden"
+      style={{
+        backgroundImage: "url('/fields/field6.jpeg')",
+        backgroundSize: "cover",
+        backgroundPosition: "bottom",
+      }}
+    >
+      <div className="absolute inset-0 bg-black/50" />
+      <Suspense fallback={null}>
+        <IdentifyForm />
+      </Suspense>
+    </div>
   );
 }

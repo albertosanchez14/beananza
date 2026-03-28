@@ -40,13 +40,19 @@ function loadProfile(): PlayerProfile | null {
 
 export function usePlayerProfile(roomId: string) {
   const router = useRouter();
-  const [profile] = useState<PlayerProfile | null>(() => loadProfile());
+  const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    if (!profile) {
+    setProfile(loadProfile());
+    setChecked(true);
+  }, []);
+
+  useEffect(() => {
+    if (checked && !profile) {
       router.replace(`/identify?returnTo=/room/${roomId}`);
     }
-  }, [router, roomId, profile]);
+  }, [router, roomId, profile, checked]);
 
   const redirectToIdentify = useCallback(() => {
     localStorage.removeItem("playerProfile");

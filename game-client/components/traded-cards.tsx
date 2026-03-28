@@ -2,17 +2,24 @@
 
 import Card from "@/components/card";
 import { CardType } from "@/schemas/types";
-import { useGameContext } from "./game-context";
 
-export default function TradedCards() {
-  const { gameState, selectedCard, handleCardClick } = useGameContext();
-  const { pickedCards } = gameState;
+type Props = {
+  pickedCards: Array<CardType>;
+  selectedCard: CardType | null;
+  onCardClick: (card: CardType, source?: "hand" | "picked" | "center") => void;
+  phase?: string;
+};
 
+export default function TradedCards({
+  pickedCards,
+  selectedCard,
+  onCardClick,
+  phase,
+}: Props) {
   const CARD_H = 144;
   const CARD_W = 96;
   const LAYER_H = 4;
 
-  // Group picked cards by type, preserving insertion order.
   const pickedGroups: { cardName: string; cards: CardType[] }[] = [];
   const groupIndex = new Map<string, number>();
   for (const card of pickedCards) {
@@ -28,7 +35,7 @@ export default function TradedCards() {
   if (pickedGroups.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-2 pl-2" style={{ height: CARD_H }}>
+    <>
       {pickedGroups.map(({ cardName, cards }) => {
         const count = cards.length;
         const topCard = cards[0];
@@ -41,7 +48,6 @@ export default function TradedCards() {
             style={{ width: CARD_W, height: CARD_H }}
             title={cardName}
           >
-            {/* Depth slabs */}
             {Array.from({ length: layers }).map((_, i) => (
               <div
                 key={i}
@@ -56,21 +62,19 @@ export default function TradedCards() {
               />
             ))}
 
-            {/* Top face */}
             <div style={{ position: "relative", zIndex: layers + 1 }}>
               <Card
                 card={topCard}
                 flipped={false}
-                draggable
+                draggable={phase === "plantTrade"}
                 isSelected={
                   selectedCard != null &&
                   cards.some((c) => c.cardId === selectedCard.cardId)
                 }
-                onClick={() => handleCardClick(topCard, "picked")}
+                onClick={phase === "plantTrade" ? () => onCardClick(topCard, "picked") : undefined}
               />
             </div>
 
-            {/* Count badge */}
             {count > 1 && (
               <div
                 className="absolute flex items-center justify-center w-6 h-6
@@ -84,6 +88,6 @@ export default function TradedCards() {
           </div>
         );
       })}
-    </div>
+    </>
   );
 }

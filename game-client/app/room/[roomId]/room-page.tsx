@@ -19,7 +19,18 @@ export default function RoomPage() {
     redirectToIdentify,
   );
 
-  if (!profile) return null;
+  if (!profile) return (
+    <div
+      className="relative min-h-screen overflow-hidden"
+      style={{
+        backgroundImage: "url('/fields/field6.jpeg')",
+        backgroundSize: "cover",
+        backgroundPosition: "bottom",
+      }}
+    >
+      <div className="absolute inset-0 bg-black/50" />
+    </div>
+  );
 
   const showGame =
     viewState === "playing" || viewState === "pause" || viewState === "dealing";

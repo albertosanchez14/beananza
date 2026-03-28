@@ -77,16 +77,7 @@ export function IdentifyForm() {
 
   return (
     <div
-      className="relative flex min-h-screen items-center justify-center px-4 overflow-hidden"
-      style={{
-        backgroundImage: "url('/fields/field6.jpeg')",
-        backgroundSize: "cover",
-        backgroundPosition: "bottom",
-      }}
-    >
-      <div className="absolute inset-0 bg-black/50" />
-      <div
-        className="relative w-full max-w-sm rounded-2xl shadow-2xl p-8 flex flex-col gap-7"
+      className="relative w-full max-w-sm rounded-2xl shadow-2xl p-8 flex flex-col gap-7"
         style={{
           background: "rgba(20, 10, 3, 0.82)",
           backdropFilter: "blur(6px)",
@@ -221,6 +212,5 @@ export function IdentifyForm() {
           </button>
         </div>
       </div>
-    </div>
   );
 }

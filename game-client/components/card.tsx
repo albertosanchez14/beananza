@@ -1,4 +1,4 @@
-import { forwardRef, useState } from "react";
+import { forwardRef, useState, useEffect } from "react";
 import { m } from "motion/react";
 import Image from "next/image";
 import { BaseCard, CardType } from "@/schemas/types";
@@ -15,6 +15,8 @@ type CardProp = {
   className?: string;
   noTransition?: boolean;
   hidden?: boolean;
+  highlightColor?: string;
+  noRaise?: boolean;
 };
 
 const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
@@ -29,10 +31,18 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
     className,
     noTransition = false,
     hidden = false,
+    highlightColor,
+    noRaise = false,
   },
   ref,
 ) {
+  const isHighlighted = !!highlightColor;
   const [isDragging, setIsDragging] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    if (isSelected || isHighlighted) setIsHovered(false);
+  }, [isSelected, isHighlighted]);
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
     e.dataTransfer.setData("application/card", JSON.stringify(card));
@@ -63,7 +73,6 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
       `}
     >
       <m.div
-        onClick={onClick}
         style={{ perspective: "600px", width: "100%", height: "100%" }}
         initial={false}
         animate={{ opacity: isDragging ? 0.4 : 1 }}
@@ -81,17 +90,22 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
             height: "100%",
           }}
           initial={false}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
           animate={{
             rotateY: flipped ? 180 : 0,
-            y: isSelected ? -16 : 0,
+            y: (isSelected || (isHighlighted && !noRaise))
+              ? -16
+              : isHovered && onClick && !isDragging
+                ? -12
+                : 0,
             scale: isDragging ? 1.05 : 1,
-            boxShadow: isSelected ? "0 20px 25px rgba(0,0,0,0.4)" : "none",
+            boxShadow: (isSelected || (isHighlighted && !noRaise))
+              ? "0 20px 25px rgba(0,0,0,0.4)"
+              : isHovered && onClick && !isDragging
+                ? "0 10px 20px rgba(0,0,0,0.3)"
+                : "none",
           }}
-          whileHover={
-            onClick && !isSelected && !isDragging
-              ? { y: -12, boxShadow: "0 10px 20px rgba(0,0,0,0.3)" }
-              : undefined
-          }
           transition={
             noTransition
               ? { duration: 0 }
@@ -115,6 +129,15 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
               </div>
             )}
           </div>
+
+          {/* ── HIGHLIGHT RING ─────────────────────────────────────────────── */}
+          {/* Placed after both faces so it renders on top, moves with all animations */}
+          {highlightColor && (
+            <div
+              className="absolute inset-0 rounded-xl pointer-events-none"
+              style={{ border: `3px solid ${highlightColor}`, zIndex: 10 }}
+            />
+          )}
         </m.div>
       </m.div>
     </div>

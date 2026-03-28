@@ -1,13 +1,12 @@
-import { createContext, useContext, useState, ReactNode } from "react";
-import { CardType, ExternalPlayer } from "@/schemas/types";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { CardType, ExternalPlayer, Offer, OfferCard } from "@/schemas/types";
 import { GameState } from "@/hooks/state";
 
 type GameContextValue = {
   // UI state
   selectedCard: CardType | null;
   dragOverSlot: string | null;
-  giveSelection: CardType[];
-  requestSelection: CardType[];
+  selection: CardType[];
   // Data
   gameState: GameState;
   cardsPerTurn?: number;
@@ -18,6 +17,7 @@ type GameContextValue = {
   handleCardClick: (
     card: CardType,
     source?: "hand" | "picked" | "center",
+    ctrlKey?: boolean,
   ) => void;
   handleFieldSlotClick: (slotId: string, slotIndex: number) => void;
   handleFieldDrop: (slotId: string, slotIndex: number, card: CardType) => void;
@@ -26,15 +26,16 @@ type GameContextValue = {
   handleDrawDeckClick: () => void;
   onTurnOverBean: () => void;
   onDrawCards: () => void;
-  clearGiveSelection: () => void;
-  toggleRequestSelection: (card: CardType) => void;
-  clearRequestSelection: () => void;
+  clearSelection: () => void;
   onGiveDrop: (targetPlayer: ExternalPlayer, cardsToGive: CardType[]) => void;
   onRequestDrop: (cardsRequested: CardType[]) => void;
   onCardRightClick: (
     card: CardType,
     targetPlayerId: string | undefined,
   ) => void;
+  offers: Offer[];
+  onRespondOffer: (offerId: string, action: "accept" | "reject" | "cancel") => void;
+  onCounterOffer: (parentId: string, offered: OfferCard[], requested: OfferCard[]) => void;
 };
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -61,6 +62,8 @@ type GameProviderProps = {
     card: CardType,
     targetPlayerId: string | undefined,
   ) => void;
+  onRespondOffer: (offerId: string, action: "accept" | "reject" | "cancel") => void;
+  onCounterOffer: (parentId: string, offered: OfferCard[], requested: OfferCard[]) => void;
 };
 
 export function GameProvider({
@@ -76,49 +79,62 @@ export function GameProvider({
   onGiveDrop,
   onRequestDrop,
   onCardRightClick,
+  onRespondOffer,
+  onCounterOffer,
 }: GameProviderProps) {
   const [selectedCard, setSelectedCard] = useState<CardType | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
-  const [giveSelection, setGiveSelection] = useState<CardType[]>([]);
-  const [requestSelection, setRequestSelection] = useState<CardType[]>([]);
+  const [selection, setSelection] = useState<CardType[]>([]);
 
-  const toggleGiveSelection = (card: CardType) => {
-    setGiveSelection((prev) =>
+  const toggleSelection = (card: CardType) => {
+    setSelection((prev) =>
       prev.some((c) => c.cardId === card.cardId)
         ? prev.filter((c) => c.cardId !== card.cardId)
         : [...prev, card],
     );
   };
 
-  const clearGiveSelection = () => setGiveSelection([]);
+  const clearSelection = () => setSelection([]);
 
-  const toggleRequestSelection = (card: CardType) => {
-    setRequestSelection((prev) =>
-      prev.some((c) => c.cardId === card.cardId)
-        ? prev.filter((c) => c.cardId !== card.cardId)
-        : [...prev, card],
-    );
-  };
-
-  const clearRequestSelection = () => setRequestSelection([]);
+  useEffect(() => {
+    setSelection([]);
+  }, [gameState.phase]);
 
   const handleCardClick = (
     card: CardType,
     source: "hand" | "picked" | "center" = "hand",
+    ctrlKey = false,
   ) => {
     if (gameState.phase === "plantTrade" && source === "hand") return;
     if (gameState.phase === "turnTrade") {
       if (source === "center") {
-        if (myPlayerId !== gameState.playerTurn) return;
-        // Turn player clicking a center card → select it for planting
-        if (selectedCard?.cardId === card.cardId) {
-          setSelectedCard(null);
+        if (myPlayerId === gameState.playerTurn) {
+          // Turn player: ctrl+click adds to trade selection, regular click selects for planting
+          if (ctrlKey) {
+            toggleSelection(card);
+          } else {
+            if (selectedCard?.cardId === card.cardId) {
+              setSelectedCard(null);
+            } else {
+              setSelectedCard(card);
+            }
+          }
         } else {
-          setSelectedCard(card);
+          // Non-turn player: ctrl+click toggles, regular click single-selects
+          if (ctrlKey) {
+            toggleSelection(card);
+          } else {
+            setSelection([card]);
+          }
         }
         return;
       }
-      toggleGiveSelection(card);
+      // Hand cards
+      if (ctrlKey) {
+        toggleSelection(card);
+      } else {
+        setSelection([card]);
+      }
       return;
     }
     if (selectedCard?.cardId === card.cardId) {
@@ -180,8 +196,7 @@ export function GameProvider({
     cardsPerTurn,
     selectedCard,
     dragOverSlot,
-    giveSelection,
-    requestSelection,
+    selection,
     cardLookup,
     highlightEmpty: !!selectedCard,
     myPlayerId,
@@ -193,12 +208,13 @@ export function GameProvider({
     handleDrawDeckClick,
     onTurnOverBean,
     onDrawCards,
-    clearGiveSelection,
-    toggleRequestSelection,
-    clearRequestSelection,
+    clearSelection,
     onGiveDrop,
     onRequestDrop,
     onCardRightClick,
+    offers: gameState.offers,
+    onRespondOffer,
+    onCounterOffer,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
