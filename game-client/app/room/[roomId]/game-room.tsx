@@ -92,8 +92,9 @@ export default function GameRoom({
   const handleRespondOffer = (
     offerId: string,
     action: "accept" | "reject" | "cancel",
+    cardsToGive?: OfferCard[],
   ) => {
-    respondOffer(offerId, action);
+    respondOffer(offerId, action, cardsToGive);
   };
 
   return (
@@ -159,7 +160,15 @@ export default function GameRoom({
           <RequestCardsModal
             cardsRequested={requestModal.cardsRequested}
             myHand={gameState.hand}
-            onSubmit={(cardsOffered) => {
+            centerCards={
+              playerId === gameState.playerTurn
+                ? gameState.centerCards
+                : undefined
+            }
+            isTurnPlayer={playerId === gameState.playerTurn}
+            players={gameState.players.filter((p) => p.playerId !== playerId)}
+            defaultTargetId={playerId !== gameState.playerTurn ? gameState.playerTurn : undefined}
+            onSubmit={(cardsOffered, targetPlayerId) => {
               const isTurnPlayer = playerId === gameState.playerTurn;
               const allCenter = requestModal.cardsRequested.every((c) =>
                 gameState.centerCards.some((cc) => cc.cardId === c.cardId),
@@ -169,7 +178,7 @@ export default function GameRoom({
                 card_type: c.cardName,
                 card_id: useSpecificIds ? c.cardId : "",
               }));
-              handleCreateOffer(cardsOffered, reqCards, gameState.playerTurn);
+              handleCreateOffer(cardsOffered, reqCards, targetPlayerId);
               setRequestModal(null);
             }}
             onClose={() => setRequestModal(null)}
@@ -185,18 +194,23 @@ export default function GameRoom({
                 ? gameState.centerCards
                 : undefined
             }
-            onSubmit={(cardsOffered) => {
+            isTurnPlayer={playerId === gameState.playerTurn}
+            players={gameState.players.filter((p) => p.playerId !== playerId)}
+            defaultTargetId={rightClickModal.targetPlayerId}
+            onSubmit={(cardsOffered, targetPlayerId) => {
+              const isTurnPlayer = playerId === gameState.playerTurn;
+              const isCenter = gameState.centerCards.some(
+                (cc) => cc.cardId === rightClickModal.cardRequested.cardId,
+              );
               const reqCards = [
                 {
                   card_type: rightClickModal.cardRequested.cardName,
-                  card_id: rightClickModal.cardRequested.cardId,
+                  card_id: !isTurnPlayer && isCenter
+                    ? rightClickModal.cardRequested.cardId
+                    : "",
                 },
               ];
-              handleCreateOffer(
-                cardsOffered,
-                reqCards,
-                rightClickModal.targetPlayerId,
-              );
+              handleCreateOffer(cardsOffered, reqCards, targetPlayerId);
               setRightClickModal(null);
             }}
             onClose={() => setRightClickModal(null)}

@@ -26,6 +26,7 @@ export type GameRoomContext = {
   respondOffer: (
     offerId: string,
     action: "accept" | "reject" | "cancel",
+    cardsToGive?: OfferCard[],
   ) => boolean;
 };
 
@@ -92,11 +93,12 @@ export function useGameRoom(
   );
 
   const respondOffer = useCallback(
-    (offerId: string, action: "accept" | "reject" | "cancel") =>
+    (offerId: string, action: "accept" | "reject" | "cancel", cardsToGive?: OfferCard[]) =>
       send("action", roomId, {
         type: "respondOffer",
         offer_id: offerId,
         action,
+        ...(cardsToGive && cardsToGive.length > 0 ? { cards_to_give: cardsToGive } : {}),
       }),
     [send, roomId],
   );

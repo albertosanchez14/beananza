@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { CardType, OfferCard } from "@/schemas/types";
+import { CardType, ExternalPlayer, OfferCard } from "@/schemas/types";
 import CardComponent from "@/components/card";
 import { useGameContext } from "@/components/game-context";
 
@@ -9,46 +9,64 @@ type RequestCardsModalProps = {
   cardsRequested: CardType[];
   myHand: CardType[];
   centerCards?: CardType[];
-  onSubmit: (cardsOffered: OfferCard[]) => void;
+  isTurnPlayer: boolean;
+  players: ExternalPlayer[];
+  defaultTargetId?: string;
+  onSubmit: (cardsOffered: OfferCard[], targetPlayerId: string | undefined) => void;
   onClose: () => void;
 };
 
 type CardGroup = {
   cardName: string;
   display: CardType;
-  available: CardType[]; // hand cards first, then center cards
+  available: CardType[];
 };
+
+function buildGroups(cards: CardType[], cardLookup: Map<string, CardType>): CardGroup[] {
+  const map = new Map<string, CardGroup>();
+  for (const card of cards) {
+    if (!map.has(card.cardName)) {
+      map.set(card.cardName, {
+        cardName: card.cardName,
+        display: cardLookup.get(card.cardName) ?? card,
+        available: [],
+      });
+    }
+    map.get(card.cardName)!.available.push(card);
+  }
+  return Array.from(map.values());
+}
 
 export default function RequestCardsModal({
   cardsRequested,
   myHand,
   centerCards,
+  isTurnPlayer,
+  players,
+  defaultTargetId,
   onSubmit,
   onClose,
 }: RequestCardsModalProps) {
   const { cardLookup } = useGameContext();
+  const [selectedTargetId, setSelectedTargetId] = useState<string | undefined>(defaultTargetId);
+  const [handQty, setHandQty] = useState<Record<string, number>>({});
+  const [centerQty, setCenterQty] = useState<Record<string, number>>({});
 
-  // Build groups: hand first, then center — merged by cardName
-  const groups = useMemo<CardGroup[]>(() => {
-    const map = new Map<string, CardGroup>();
-    for (const card of [...myHand, ...(centerCards ?? [])]) {
-      if (!map.has(card.cardName)) {
-        map.set(card.cardName, {
-          cardName: card.cardName,
-          display: cardLookup.get(card.cardName) ?? card,
-          available: [],
-        });
-      }
-      map.get(card.cardName)!.available.push(card);
-    }
-    return Array.from(map.values());
-  }, [myHand, centerCards, cardLookup]);
+  const handGroups = useMemo(
+    () => buildGroups(myHand, cardLookup),
+    [myHand, cardLookup],
+  );
+  const centerGroups = useMemo(
+    () => (centerCards && centerCards.length > 0 ? buildGroups(centerCards, cardLookup) : []),
+    [centerCards, cardLookup],
+  );
 
-  // quantity offered per card type (0 = not offered)
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const hasCenterSection = centerGroups.length > 0;
 
-  const adjust = (cardName: string, delta: number) => {
-    setQuantities((prev) => {
+  const adjust = (cardName: string, delta: number, source: "hand" | "center") => {
+    const setQty = source === "hand" ? setHandQty : setCenterQty;
+    const groups = source === "hand" ? handGroups : centerGroups;
+    setQty((prev) => {
       const max = groups.find((g) => g.cardName === cardName)?.available.length ?? 0;
       const next = Math.max(0, Math.min(max, (prev[cardName] ?? 0) + delta));
       if (next === 0) {
@@ -61,19 +79,56 @@ export default function RequestCardsModal({
 
   const handleSubmit = () => {
     const cardsOffered: OfferCard[] = [];
-    for (const group of groups) {
-      const qty = quantities[group.cardName] ?? 0;
+    for (const group of handGroups) {
+      const qty = handQty[group.cardName] ?? 0;
       for (let i = 0; i < qty; i++) {
-        cardsOffered.push({
-          card_type: group.cardName,
-          card_id: group.available[i].cardId,
-        });
+        cardsOffered.push({ card_type: group.cardName, card_id: group.available[i].cardId });
       }
     }
-    onSubmit(cardsOffered);
+    for (const group of centerGroups) {
+      const qty = centerQty[group.cardName] ?? 0;
+      for (let i = 0; i < qty; i++) {
+        cardsOffered.push({ card_type: group.cardName, card_id: group.available[i].cardId });
+      }
+    }
+    onSubmit(cardsOffered, selectedTargetId);
   };
 
-  const totalOffered = Object.values(quantities).reduce((s, n) => s + n, 0);
+  const totalOffered =
+    Object.values(handQty).reduce((s, n) => s + n, 0) +
+    Object.values(centerQty).reduce((s, n) => s + n, 0);
+
+  const renderGroup = (group: CardGroup, qty: number, source: "hand" | "center") => (
+    <div key={`${source}_${group.cardName}`} className="flex flex-col items-center gap-1.5">
+      <CardComponent
+        card={group.display}
+        highlightColor={
+          qty > 0 ? (source === "center" ? "#fbbf24" : "#60a5fa") : undefined
+        }
+        noRaise
+        noTransition
+      />
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => adjust(group.cardName, -1, source)}
+          disabled={qty === 0}
+          className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold leading-none disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          −
+        </button>
+        <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 tabular-nums w-8 text-center">
+          {qty}/{group.available.length}
+        </span>
+        <button
+          onClick={() => adjust(group.cardName, 1, source)}
+          disabled={qty >= group.available.length}
+          className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold leading-none disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -114,54 +169,88 @@ export default function RequestCardsModal({
             </div>
           </div>
 
-          {/* Offer section */}
+          {/* Target section */}
           <div>
-            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-3">
+            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
+              {isTurnPlayer ? "Request from" : "Requesting from"}
+            </p>
+            {isTurnPlayer ? (
+              <div className="flex flex-col gap-1.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="target"
+                    checked={selectedTargetId === undefined}
+                    onChange={() => setSelectedTargetId(undefined)}
+                    className="accent-blue-500"
+                  />
+                  <span className="text-xs text-gray-700 dark:text-gray-300">Everyone</span>
+                </label>
+                {players.map((p) => (
+                  <label key={p.playerId} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="target"
+                      checked={selectedTargetId === p.playerId}
+                      onChange={() => setSelectedTargetId(p.playerId)}
+                      className="accent-blue-500"
+                    />
+                    <span className="text-xs text-gray-700 dark:text-gray-300">{p.playerName}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <span className="text-xs text-gray-700 dark:text-gray-300">
+                {players.find((p) => p.playerId === defaultTargetId)?.playerName ?? "—"}
+              </span>
+            )}
+          </div>
+
+          {/* Offer section */}
+          <div className="flex flex-col gap-3">
+            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400">
               What will you offer?{" "}
               <span className="font-normal text-gray-400">(optional)</span>
             </p>
 
-            {groups.length === 0 ? (
+            {handGroups.length === 0 && !hasCenterSection ? (
               <p className="text-xs text-gray-400 italic">No cards available to offer.</p>
             ) : (
-              <div className="grid grid-cols-4 gap-x-2 gap-y-4">
-                {groups.map((group) => {
-                  const qty = quantities[group.cardName] ?? 0;
-                  return (
-                    <div key={group.cardName} className="flex flex-col items-center gap-1.5">
-                      <CardComponent
-                        card={group.display}
-                        highlightColor={qty > 0 ? "#60a5fa" : undefined}
-                        noRaise
-                        noTransition
-                      />
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => adjust(group.cardName, -1)}
-                          disabled={qty === 0}
-                          className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold leading-none disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        >
-                          −
-                        </button>
-                        <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 tabular-nums w-8 text-center">
-                          {qty}/{group.available.length}
-                        </span>
-                        <button
-                          onClick={() => adjust(group.cardName, 1)}
-                          disabled={qty >= group.available.length}
-                          className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold leading-none disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        >
-                          +
-                        </button>
-                      </div>
+              <>
+                {/* Hand cards */}
+                {handGroups.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    {hasCenterSection && (
+                      <p className="text-[11px] font-semibold text-blue-400 uppercase tracking-wide">
+                        Hand
+                      </p>
+                    )}
+                    <div className="grid grid-cols-4 gap-x-2 gap-y-4">
+                      {handGroups.map((group) =>
+                        renderGroup(group, handQty[group.cardName] ?? 0, "hand"),
+                      )}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                )}
+
+                {/* Center cards */}
+                {hasCenterSection && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[11px] font-semibold text-amber-400 uppercase tracking-wide">
+                      Center
+                    </p>
+                    <div className="grid grid-cols-4 gap-x-2 gap-y-4">
+                      {centerGroups.map((group) =>
+                        renderGroup(group, centerQty[group.cardName] ?? 0, "center"),
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
-            {groups.length > 0 && (
-              <p className={`mt-3 text-xs italic transition-opacity duration-150 ${totalOffered === 0 ? "text-gray-400 opacity-100" : "opacity-0 pointer-events-none"}`}>
+            {(handGroups.length > 0 || hasCenterSection) && (
+              <p className={`text-xs italic transition-opacity duration-150 ${totalOffered === 0 ? "text-gray-400 opacity-100" : "opacity-0 pointer-events-none"}`}>
                 Nothing selected — asking for free.
               </p>
             )}

@@ -25,6 +25,7 @@ type Props = {
     offerId: string,
     action: "accept" | "reject" | "cancel",
   ) => void;
+  onAcceptOffer: (offer: Offer) => void;
   onCounterOffer: (
     parentId: string,
     offered: OfferCard[],
@@ -52,6 +53,7 @@ export default function TradedCardsArea({
   centerCards,
   isTurnPlayer,
   onRespondOffer,
+  onAcceptOffer,
   onCounterOffer,
   selection,
   clearSelection,
@@ -129,6 +131,7 @@ export default function TradedCardsArea({
                 isTurnPlayer={isTurnPlayer}
                 offerIndex={0}
                 onRespond={onRespondOffer}
+                onAccept={onAcceptOffer}
                 onCounter={onCounterOffer}
                 onHover={onOfferHover}
               />
@@ -153,6 +156,7 @@ export default function TradedCardsArea({
                 isTurnPlayer={isTurnPlayer}
                 offerIndex={idx}
                 onRespond={onRespondOffer}
+                onAccept={onAcceptOffer}
                 onCounter={onCounterOffer}
                 onHover={onOfferHover}
               />

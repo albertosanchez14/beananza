@@ -48,6 +48,7 @@ type Props = {
   isTurnPlayer?: boolean;
   offerIndex?: number;
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
+  onAccept: (offer: Offer) => void;
   onCounter: (
     parentOfferId: string,
     offered: OfferCard[],
@@ -65,6 +66,7 @@ export default function InlineOfferTag({
   isTurnPlayer = false,
   offerIndex = 0,
   onRespond,
+  onAccept,
   onHover,
 }: Props) {
   const isIncoming = offer.creator_id !== myPlayerId;
@@ -91,15 +93,35 @@ export default function InlineOfferTag({
     .map((type) => cardLookup.get(type))
     .filter((ct): ct is CardType => ct !== undefined);
 
-  const canAccept =
-    isIncoming &&
-    offer.cards_requested.every((c) =>
-      c.card_id
-        ? hand.some((h) => h.cardId === c.card_id) ||
-          (isTurnPlayer && centerCards.some((h) => h.cardId === c.card_id))
-        : hand.some((h) => h.cardName === c.card_type) ||
-          (isTurnPlayer && centerCards.some((h) => h.cardName === c.card_type)),
-    );
+  const canAccept = (() => {
+    if (!isIncoming) return false;
+    // Count available cards per type (hand + center if turn player).
+    const handCounts: Record<string, number> = {};
+    for (const c of hand) handCounts[c.cardName] = (handCounts[c.cardName] ?? 0) + 1;
+    const centerCounts: Record<string, number> = {};
+    if (isTurnPlayer) {
+      for (const c of centerCards)
+        centerCounts[c.cardName] = (centerCounts[c.cardName] ?? 0) + 1;
+    }
+    // For explicit card_id requests check exact presence; for type-only requests
+    // compare total available count against total requested count per type.
+    const needed: Record<string, number> = {};
+    for (const c of offer.cards_requested) {
+      if (c.card_id) {
+        const has =
+          hand.some((h) => h.cardId === c.card_id) ||
+          (isTurnPlayer && centerCards.some((h) => h.cardId === c.card_id));
+        if (!has) return false;
+      } else {
+        needed[c.card_type] = (needed[c.card_type] ?? 0) + 1;
+      }
+    }
+    for (const [type, count] of Object.entries(needed)) {
+      const available = (handCounts[type] ?? 0) + (centerCounts[type] ?? 0);
+      if (available < count) return false;
+    }
+    return true;
+  })();
 
   if (dismissed) return null;
 
@@ -114,9 +136,8 @@ export default function InlineOfferTag({
     onRespond(id, "reject");
   };
 
-  const handleAccept = (id: string) => {
-    setDismissed(true);
-    onRespond(id, "accept");
+  const handleAccept = () => {
+    onAccept(offer);
   };
 
   const borderCls = rejectFlash
@@ -169,13 +190,13 @@ export default function InlineOfferTag({
         {isIncoming ? (
           <>
             {!canAccept && (
-              <div className="text-[8px] text-red-400/90 leading-tight px-0.5">
+              <div className="text-[10px] font-semibold text-red-300 leading-tight px-0.5 drop-shadow-sm">
                 Missing cards
               </div>
             )}
             <div className="flex gap-1">
               <button
-                onClick={() => handleAccept(offer.id)}
+                onClick={() => handleAccept()}
                 title={canAccept ? "Accept" : "You don't have the required cards"}
                 disabled={!canAccept}
                 className="flex-1 text-[9px] font-semibold py-0.5

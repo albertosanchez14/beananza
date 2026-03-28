@@ -34,7 +34,7 @@ type GameContextValue = {
     targetPlayerId: string | undefined,
   ) => void;
   offers: Offer[];
-  onRespondOffer: (offerId: string, action: "accept" | "reject" | "cancel") => void;
+  onRespondOffer: (offerId: string, action: "accept" | "reject" | "cancel", cardsToGive?: OfferCard[]) => void;
   onCounterOffer: (parentId: string, offered: OfferCard[], requested: OfferCard[]) => void;
 };
 
@@ -62,7 +62,7 @@ type GameProviderProps = {
     card: CardType,
     targetPlayerId: string | undefined,
   ) => void;
-  onRespondOffer: (offerId: string, action: "accept" | "reject" | "cancel") => void;
+  onRespondOffer: (offerId: string, action: "accept" | "reject" | "cancel", cardsToGive?: OfferCard[]) => void;
   onCounterOffer: (parentId: string, offered: OfferCard[], requested: OfferCard[]) => void;
 };
 

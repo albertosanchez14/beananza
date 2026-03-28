@@ -26,6 +26,7 @@ import Player from "@/components/player";
 import { FlyingCard } from "@/components/flying-card";
 import { PlantFlyingCard } from "@/components/plant-flying-card";
 import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
+import AcceptCardPicker from "@/components/accept-card-picker";
 
 type FlyingCardEntry = {
   id: string;
@@ -137,6 +138,7 @@ export default function Board() {
     null,
   );
   const [hoveredOfferId, setHoveredOfferId] = useState<string | null>(null);
+  const [acceptPickerOffer, setAcceptPickerOffer] = useState<(typeof offers)[0] | null>(null);
 
   const {
     centerCards,
@@ -192,7 +194,8 @@ export default function Board() {
     for (const offer of rootPending) {
       const isOwn = offer.creator_id === myPlayerId;
       const isIncoming =
-        offer.target_id === myPlayerId && offer.creator_id !== myPlayerId;
+        (offer.target_id === myPlayerId || offer.target_id === "") &&
+        offer.creator_id !== myPlayerId;
       if (!isOwn && !isIncoming) continue;
 
       // Cards from my side (my hand or my center).
@@ -201,29 +204,34 @@ export default function Board() {
       const myCards = isOwn ? offer.cards_offered : offer.cards_requested;
       const amTurnPlayer = myPlayerId === playerTurn;
       for (const c of myCards) {
-        const color =
-          isIncoming && !amTurnPlayer
-            ? c.card_id
+        if (c.card_id) {
+          // Explicit card ID — resolve color from the specific card's location.
+          const color =
+            isIncoming && !amTurnPlayer
               ? hand.some((h) => h.cardId === c.card_id)
                 ? ORIGIN_COLORS.hand
                 : null
-              : hand.some((h) => h.cardName === c.card_type)
-                ? ORIGIN_COLORS.hand
-                : null
-            : getOriginColor(c.card_id, c.card_type);
-        if (!color) continue;
-        if (c.card_id) {
-          if (!cardH.has(c.card_id)) cardH.set(c.card_id, color);
+              : getOriginColor(c.card_id, c.card_type);
+          if (color && !cardH.has(c.card_id)) cardH.set(c.card_id, color);
         } else {
-          const pool =
-            color === ORIGIN_COLORS.hand
-              ? hand
-              : color === ORIGIN_COLORS.center
-                ? centerCards
-                : [];
-          for (const hc of pool) {
-            if (hc.cardName === c.card_type && !cardH.has(hc.cardId))
-              cardH.set(hc.cardId, color);
+          // Type-only request: highlight exactly one unclaimed card.
+          // Priority: center cards first (turn player only), then hand — first in array order.
+          const priorityPool: Array<{ card: CardType; color: string }> = [];
+          if (amTurnPlayer) {
+            for (const cc of centerCards) {
+              if (cc.cardName === c.card_type)
+                priorityPool.push({ card: cc, color: ORIGIN_COLORS.center });
+            }
+          }
+          for (const hc of hand) {
+            if (hc.cardName === c.card_type)
+              priorityPool.push({ card: hc, color: ORIGIN_COLORS.hand });
+          }
+          for (const { card, color } of priorityPool) {
+            if (!cardH.has(card.cardId)) {
+              cardH.set(card.cardId, color);
+              break;
+            }
           }
         }
       }
@@ -260,6 +268,47 @@ export default function Board() {
     playerTurn,
     hoveredOfferId,
   ]);
+
+  // Ghost cards: missing cards for the hovered incoming offer, shown as non-interactive
+  // phantoms appended to the player's hand (only the deficit — cards they don't have).
+  const ghostCards = useMemo<CardType[]>(() => {
+    if (!hoveredOfferId || phase !== "turnTrade") return [];
+    const offer = offers.find(
+      (o) =>
+        o.id === hoveredOfferId &&
+        o.creator_id !== myPlayerId &&
+        o.parent_offer_id === "" &&
+        o.status === "pending",
+    );
+    if (!offer) return [];
+
+    const availableCounts: Record<string, number> = {};
+    for (const c of hand) {
+      availableCounts[c.cardName] = (availableCounts[c.cardName] ?? 0) + 1;
+    }
+    if (isTurnPlayer) {
+      for (const c of centerCards) {
+        availableCounts[c.cardName] = (availableCounts[c.cardName] ?? 0) + 1;
+      }
+    }
+
+    const requestedCounts: Record<string, number> = {};
+    for (const c of offer.cards_requested) {
+      requestedCounts[c.card_type] = (requestedCounts[c.card_type] ?? 0) + 1;
+    }
+
+    const ghosts: CardType[] = [];
+    let idx = 0;
+    for (const [cardType, needed] of Object.entries(requestedCounts)) {
+      const deficit = Math.max(0, needed - (availableCounts[cardType] ?? 0));
+      const base = cardLookup.get(cardType);
+      if (!base || deficit === 0) continue;
+      for (let i = 0; i < deficit; i++) {
+        ghosts.push({ ...base, cardId: `ghost_${hoveredOfferId}_${idx++}` });
+      }
+    }
+    return ghosts;
+  }, [hoveredOfferId, offers, hand, centerCards, myPlayerId, isTurnPlayer, phase, cardLookup]);
 
   const deckRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
@@ -708,55 +757,46 @@ export default function Board() {
           const color = OFFER_ACCENT_HEX[idx % OFFER_ACCENT_HEX.length];
           const tagCenter = elCenter(tagEl);
 
-          // Receiving arrow: cards_requested origin → tag
-          const centerRequested = offer.cards_requested.find(
-            (c) =>
-              c.card_id && centerCards.some((cc) => cc.cardId === c.card_id),
-          );
-          const recvInCenter = !!centerRequested;
-          const recvEl = recvInCenter
-            ? (cardRefs.current.get(centerRequested!.card_id) ??
-              centerCardsRef.current)
-            : (opponentHandContainerRefs.current.get(offer.target_id) ?? null);
-          if (recvEl) {
-            next.set(`${offer.id}_r`, {
-              pathStr: quadBezierPath(
-                elCenter(recvEl),
-                tagCenter,
-              ),
-              color,
-            });
+          // Receiving arrows: one per unique origin element for requested cards → tag.
+          // Collapse cards sharing the same DOM element (e.g. multiple hidden hand cards).
+          const seenRecvEls = new Set<HTMLElement>();
+          let recvIdx = 0;
+          for (const c of offer.cards_requested) {
+            const inCenter = !!(
+              c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
+            );
+            const el = inCenter
+              ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
+              : (opponentHandContainerRefs.current.get(offer.target_id) ?? null);
+            if (el && !seenRecvEls.has(el)) {
+              seenRecvEls.add(el);
+              next.set(`${offer.id}_r_${recvIdx++}`, {
+                pathStr: quadBezierPath(elCenter(el), tagCenter),
+                color,
+              });
+            }
           }
 
-          // Offering arrow: my hand/center → target player's field
+          // Offering arrows: one per offered card (all have explicit card_id) → target's field.
           if (offer.cards_offered.length > 0) {
             const targetEl =
               opponentFieldRefs.current.get(offer.target_id) ?? null;
             if (targetEl) {
-              const centerOffered = offer.cards_offered.find(
-                (c) =>
+              offer.cards_offered.forEach((c, i) => {
+                const inCenter = !!(
                   c.card_id &&
-                  centerCards.some((cc) => cc.cardId === c.card_id),
-              );
-              const offInCenter = !!centerOffered;
-              const firstHandOffered = offer.cards_offered.find(
-                (c) => !centerCards.some((cc) => cc.cardId === c.card_id),
-              );
-              const offEl = offInCenter
-                ? (cardRefs.current.get(centerOffered!.card_id) ??
-                  centerCardsRef.current)
-                : firstHandOffered
-                  ? (handCardEl(
-                      firstHandOffered.card_id,
-                      firstHandOffered.card_type,
-                    ) ?? handRef.current)
-                  : handRef.current;
-              if (offEl) {
-                next.set(`${offer.id}_o`, {
-                  pathStr: quadBezierPath(elCenter(offEl), elCenter(targetEl)),
-                  color,
-                });
-              }
+                  centerCards.some((cc) => cc.cardId === c.card_id)
+                );
+                const offEl = inCenter
+                  ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
+                  : (cardRefs.current.get(c.card_id) ?? handRef.current);
+                if (offEl) {
+                  next.set(`${offer.id}_o_${i}`, {
+                    pathStr: quadBezierPath(elCenter(offEl), elCenter(targetEl)),
+                    color,
+                  });
+                }
+              });
             }
           }
         });
@@ -764,7 +804,7 @@ export default function Board() {
       offers
         .filter(
           (o) =>
-            o.target_id === myPlayerId &&
+            (o.target_id === myPlayerId || o.target_id === "") &&
             o.creator_id !== myPlayerId &&
             o.parent_offer_id === "" &&
             o.status === "pending",
@@ -776,57 +816,99 @@ export default function Board() {
           const color = isFree ? FREE_REQUEST_HEX : INCOMING_OFFER_HEX;
           const tagCenter = elCenter(tagEl);
 
-          // Receiving arrow: cards_offered origin (creator hand/center) → tag
-          const centerOffered = offer.cards_offered.find(
-            (c) =>
-              c.card_id && centerCards.some((cc) => cc.cardId === c.card_id),
-          );
-          const recvInCenter = !!centerOffered;
-          const recvEl = recvInCenter
-            ? (cardRefs.current.get(centerOffered!.card_id) ??
-              centerCardsRef.current)
-            : (opponentHandContainerRefs.current.get(offer.creator_id) ?? null);
-          if (recvEl) {
-            next.set(`${offer.id}_r`, {
-              pathStr: quadBezierPath(
-                elCenter(recvEl),
-                tagCenter,
-              ),
-              color,
-            });
-          }
-
-          // Offering arrow: center/hand card → creator's field (the card going to the requester)
-          const creatorEl =
-            opponentFieldRefs.current.get(offer.creator_id) ?? null;
-          if (creatorEl) {
-            const centerRequested = offer.cards_requested.find(
-              (c) =>
-                c.card_id && centerCards.some((cc) => cc.cardId === c.card_id),
+          // Receiving arrows: one per unique origin element for offered cards → tag.
+          const seenRecvEls = new Set<HTMLElement>();
+          let recvIdx = 0;
+          for (const c of offer.cards_offered) {
+            const inCenter = !!(
+              c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
             );
-            const offInCenter = !!centerRequested;
-            const firstHandRequested = offer.cards_requested.find(
-              (c) => !centerCards.some((cc) => cc.cardId === c.card_id),
-            );
-            const offEl = offInCenter
-              ? (cardRefs.current.get(centerRequested!.card_id) ??
-                centerCardsRef.current)
-              : isFree
-                ? null
-                : firstHandRequested
-                  ? (handCardEl(
-                      firstHandRequested.card_id,
-                      firstHandRequested.card_type,
-                    ) ?? handRef.current)
-                  : null;
-            if (offEl) {
-              next.set(`${offer.id}_o`, {
-                pathStr: quadBezierPath(elCenter(offEl), elCenter(creatorEl)),
+            const el = inCenter
+              ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
+              : (opponentHandContainerRefs.current.get(offer.creator_id) ?? null);
+            if (el && !seenRecvEls.has(el)) {
+              seenRecvEls.add(el);
+              next.set(`${offer.id}_r_${recvIdx++}`, {
+                pathStr: quadBezierPath(elCenter(el), tagCenter),
                 color,
               });
             }
           }
+
+          // Offering arrows: one per requested card using priorityPool
+          // (center first for turn player, then hand) → creator's field.
+          const creatorEl =
+            opponentFieldRefs.current.get(offer.creator_id) ?? null;
+          if (creatorEl) {
+            const claimed = new Set<string>();
+            let offIdx = 0;
+            for (const c of offer.cards_requested) {
+              let offEl: HTMLElement | null = null;
+
+              if (isTurnPlayer) {
+                for (const cc of centerCards) {
+                  const matches = c.card_id
+                    ? cc.cardId === c.card_id
+                    : cc.cardName === c.card_type;
+                  if (matches && !claimed.has(cc.cardId)) {
+                    offEl =
+                      cardRefs.current.get(cc.cardId) ??
+                      centerCardsRef.current;
+                    claimed.add(cc.cardId);
+                    break;
+                  }
+                }
+              }
+
+              if (!offEl) {
+                for (const hc of hand) {
+                  const matches = c.card_id
+                    ? hc.cardId === c.card_id
+                    : hc.cardName === c.card_type;
+                  if (matches && !claimed.has(hc.cardId)) {
+                    offEl =
+                      cardRefs.current.get(hc.cardId) ?? handRef.current;
+                    claimed.add(hc.cardId);
+                    break;
+                  }
+                }
+              }
+
+              if (offEl) {
+                next.set(`${offer.id}_o_${offIdx++}`, {
+                  pathStr: quadBezierPath(
+                    elCenter(offEl),
+                    elCenter(creatorEl),
+                  ),
+                  color,
+                });
+              }
+            }
+          }
         });
+
+      // Ghost card arrows: red paths from missing hand cards → creator's field
+      if (hoveredOfferId && ghostCards.length > 0) {
+        const hoveredOffer = offers.find((o) => o.id === hoveredOfferId);
+        if (hoveredOffer) {
+          const creatorEl =
+            opponentFieldRefs.current.get(hoveredOffer.creator_id) ?? null;
+          if (creatorEl) {
+            ghostCards.forEach((ghost, i) => {
+              const ghostEl = cardRefs.current.get(ghost.cardId);
+              if (ghostEl) {
+                next.set(`${hoveredOfferId}_ghost_${i}`, {
+                  pathStr: quadBezierPath(
+                    elCenter(ghostEl),
+                    elCenter(creatorEl),
+                  ),
+                  color: "#ef4444",
+                });
+              }
+            });
+          }
+        }
+      }
 
       setOfferPaths(next);
     };
@@ -834,7 +916,7 @@ export default function Board() {
     computePaths();
     window.addEventListener("resize", computePaths);
     return () => window.removeEventListener("resize", computePaths);
-  }, [offers, phase, myPlayerId, centerCards, hand]);
+  }, [offers, phase, myPlayerId, centerCards, hand, hoveredOfferId, ghostCards, isTurnPlayer]);
 
   // A representative card for the draw deck back image.
   // Prefer a real card from the live game state (which carries backImage from the server),
@@ -849,6 +931,25 @@ export default function Board() {
     };
   const backImage = [...(cardLookup?.values() ?? [])][0]?.backImage ?? "";
 
+  const handleAcceptOffer = (offer: (typeof offers)[0]) => {
+    const requestedCounts: Record<string, number> = {};
+    for (const c of offer.cards_requested) {
+      requestedCounts[c.card_type] = (requestedCounts[c.card_type] ?? 0) + 1;
+    }
+    const hasAmbiguity = Object.entries(requestedCounts).some(([cardType, needed]) => {
+      const handCount = hand.filter((c) => c.cardName === cardType).length;
+      const centerCount = isTurnPlayer
+        ? centerCards.filter((c) => c.cardName === cardType).length
+        : 0;
+      return handCount + centerCount > needed;
+    });
+    if (hasAmbiguity) {
+      setAcceptPickerOffer(offer);
+    } else {
+      onRespondOffer(offer.id, "accept");
+    }
+  };
+
   const outgoingOffer = offers.filter(
     (o) =>
       o.creator_id === myPlayerId &&
@@ -857,7 +958,7 @@ export default function Board() {
   );
   const incomingOffer = offers.filter(
     (o) =>
-      o.target_id === myPlayerId &&
+      (o.target_id === myPlayerId || o.target_id === "") &&
       o.creator_id !== myPlayerId &&
       o.parent_offer_id === "" &&
       o.status === "pending",
@@ -1095,7 +1196,7 @@ export default function Board() {
                                       ? () =>
                                           onCardRightClick(
                                             cardForSlot,
-                                            player.playerId,
+                                            isTurnPlayer ? player.playerId : playerTurn,
                                           )
                                       : undefined
                                   }
@@ -1284,6 +1385,7 @@ export default function Board() {
             centerCards={centerCards}
             isTurnPlayer={isTurnPlayer}
             onRespondOffer={onRespondOffer}
+            onAcceptOffer={handleAcceptOffer}
             onCounterOffer={onCounterOffer}
             selection={selection}
             clearSelection={clearSelection}
@@ -1369,10 +1471,39 @@ export default function Board() {
                   </div>
                 );
               })}
+              {ghostCards.map((ghost) => (
+                <div key={ghost.cardId}>
+                  <Card
+                    card={ghost}
+                    ref={(el) => {
+                      if (el) cardRefs.current.set(ghost.cardId, el);
+                      else cardRefs.current.delete(ghost.cardId);
+                    }}
+                    draggable={false}
+                    noRaise
+                    highlightColor="#ef4444"
+                    style={{ opacity: 0.4 }}
+                  />
+                </div>
+              ))}
             </FanLayout>
           </div>
         }
       />
+      {acceptPickerOffer && (
+        <AcceptCardPicker
+          offer={acceptPickerOffer}
+          hand={hand}
+          centerCards={centerCards}
+          isTurnPlayer={isTurnPlayer}
+          cardLookup={cardLookup}
+          onConfirm={(cardsToGive) => {
+            onRespondOffer(acceptPickerOffer.id, "accept", cardsToGive);
+            setAcceptPickerOffer(null);
+          }}
+          onClose={() => setAcceptPickerOffer(null)}
+        />
+      )}
     </div>
   );
 }
