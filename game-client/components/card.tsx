@@ -62,11 +62,18 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
       onDragEnd={draggable ? handleDragEnd : undefined}
-      role={(onClick || onContextMenu) ? "button" : undefined}
-      tabIndex={(onClick || onContextMenu) ? 0 : undefined}
-      onKeyDown={onClick ? (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") onClick(e as unknown as React.MouseEvent<HTMLDivElement>); } : undefined}
+      role={onClick || onContextMenu ? "button" : undefined}
+      tabIndex={onClick || onContextMenu ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e: React.KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ")
+                onClick(e as unknown as React.MouseEvent<HTMLDivElement>);
+            }
+          : undefined
+      }
       style={{ opacity: hidden ? 0 : undefined, ...style }}
-      className={`w-24 h-36
+      className={`relative w-24 h-36
         ${draggable ? "cursor-grab active:cursor-grabbing" : ""}
         ${onClick && !draggable ? "cursor-pointer" : ""}
         ${className ?? ""}
@@ -94,17 +101,19 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
           onMouseLeave={() => setIsHovered(false)}
           animate={{
             rotateY: flipped ? 180 : 0,
-            y: (isSelected || (isHighlighted && !noRaise))
-              ? -16
-              : isHovered && onClick && !isDragging
-                ? -12
-                : 0,
+            y:
+              isSelected || (isHighlighted && !noRaise)
+                ? -16
+                : isHovered && onClick && !isDragging
+                  ? -12
+                  : 0,
             scale: isDragging ? 1.05 : 1,
-            boxShadow: (isSelected || (isHighlighted && !noRaise))
-              ? "0 20px 25px rgba(0,0,0,0.4)"
-              : isHovered && onClick && !isDragging
-                ? "0 10px 20px rgba(0,0,0,0.3)"
-                : "none",
+            boxShadow:
+              isSelected || (isHighlighted && !noRaise)
+                ? "0 20px 25px rgba(0,0,0,0.4)"
+                : isHovered && onClick && !isDragging
+                  ? "0 10px 20px rgba(0,0,0,0.3)"
+                  : "none",
           }}
           transition={
             noTransition
@@ -122,7 +131,15 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
           {/* ── BACK FACE ──────────────────────────────────────────────────── */}
           <div className="card-back rounded-xl border-2 border-gray-500 overflow-hidden">
             {card.backImage ? (
-              <Image src={card.backImage} alt="Card back" fill sizes="96px" style={{ objectFit: "cover" }} draggable={false} unoptimized />
+              <Image
+                src={card.backImage}
+                alt="Card back"
+                fill
+                sizes="96px"
+                style={{ objectFit: "cover" }}
+                draggable={false}
+                unoptimized
+              />
             ) : (
               <div className="w-full h-full bg-green-800 flex items-center justify-center">
                 <div className="w-12 h-16 rounded border-2 border-green-600 bg-green-700" />

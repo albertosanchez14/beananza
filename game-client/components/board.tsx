@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -55,6 +56,7 @@ type TurnOverFlyingCardEntry = {
 const OFFER_ACCENT_HEX = ["#3b82f6", "#a855f7", "#14b8a6", "#f43f5e"];
 const INCOMING_OFFER_HEX = "#16a34a";
 const FREE_REQUEST_HEX = "#3b82f6";
+const BROADCAST_OFFER_HEX = "#a855f7";
 
 const ARROW_SPEED_PX_S = 300; // pixels per second for arrow dots
 
@@ -138,7 +140,9 @@ export default function Board() {
     null,
   );
   const [hoveredOfferId, setHoveredOfferId] = useState<string | null>(null);
-  const [acceptPickerOffer, setAcceptPickerOffer] = useState<(typeof offers)[0] | null>(null);
+  const [acceptPickerOffer, setAcceptPickerOffer] = useState<
+    (typeof offers)[0] | null
+  >(null);
 
   const {
     centerCards,
@@ -248,6 +252,16 @@ export default function Board() {
         );
         if (inCenter) {
           if (!cardH.has(c.card_id)) cardH.set(c.card_id, ORIGIN_COLORS.center);
+        } else if (otherPlayerId === "") {
+          // Broadcast offer — highlight every other player.
+          for (const p of players) {
+            if (p.playerId === myPlayerId) continue;
+            const existing = playerH.get(p.playerId);
+            playerH.set(p.playerId, {
+              color: ORIGIN_COLORS.player,
+              count: (existing?.count ?? 0) + 1,
+            });
+          }
         } else if (otherPlayerId) {
           const existing = playerH.get(otherPlayerId);
           playerH.set(otherPlayerId, {
@@ -263,6 +277,7 @@ export default function Board() {
     offers,
     hand,
     centerCards,
+    players,
     myPlayerId,
     phase,
     playerTurn,
@@ -308,7 +323,16 @@ export default function Board() {
       }
     }
     return ghosts;
-  }, [hoveredOfferId, offers, hand, centerCards, myPlayerId, isTurnPlayer, phase, cardLookup]);
+  }, [
+    hoveredOfferId,
+    offers,
+    hand,
+    centerCards,
+    myPlayerId,
+    isTurnPlayer,
+    phase,
+    cardLookup,
+  ]);
 
   const deckRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
@@ -353,8 +377,11 @@ export default function Board() {
     Set<string>
   >(new Set());
   const [offerPaths, setOfferPaths] = useState<
-    Map<string, { pathStr: string; color: string }>
+    Map<string, { pathStr: string; color: string; playerId?: string }>
   >(new Map());
+  const [activeBroadcastPlayerId, setActiveBroadcastPlayerId] = useState<
+    string | null
+  >(null);
 
   useLayoutEffect(() => {
     const prevIds = new Set(prevHandRef.current.map((c) => c.cardId));
@@ -754,47 +781,103 @@ export default function Board() {
         .forEach((offer, idx) => {
           const tagEl = tagWrapperRefs.current.get(offer.id);
           if (!tagEl) return;
-          const color = OFFER_ACCENT_HEX[idx % OFFER_ACCENT_HEX.length];
+          const color =
+            offer.target_id === ""
+              ? BROADCAST_OFFER_HEX
+              : OFFER_ACCENT_HEX[idx % OFFER_ACCENT_HEX.length];
           const tagCenter = elCenter(tagEl);
 
           // Receiving arrows: one per unique origin element for requested cards → tag.
           // Collapse cards sharing the same DOM element (e.g. multiple hidden hand cards).
           const seenRecvEls = new Set<HTMLElement>();
           let recvIdx = 0;
-          for (const c of offer.cards_requested) {
-            const inCenter = !!(
-              c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
-            );
-            const el = inCenter
-              ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
-              : (opponentHandContainerRefs.current.get(offer.target_id) ?? null);
-            if (el && !seenRecvEls.has(el)) {
-              seenRecvEls.add(el);
-              next.set(`${offer.id}_r_${recvIdx++}`, {
-                pathStr: quadBezierPath(elCenter(el), tagCenter),
-                color,
-              });
+          if (offer.target_id === "") {
+            // Broadcast: one arrow from each other player's hand container.
+            for (const p of players) {
+              if (p.playerId === myPlayerId) continue;
+              const el =
+                opponentHandContainerRefs.current.get(p.playerId) ??
+                opponentFieldRefs.current.get(p.playerId) ??
+                null;
+              if (el && !seenRecvEls.has(el)) {
+                seenRecvEls.add(el);
+                next.set(`${offer.id}_r_${recvIdx++}`, {
+                  pathStr: quadBezierPath(elCenter(el), tagCenter),
+                  color,
+                  playerId: p.playerId,
+                });
+              }
+            }
+          } else {
+            for (const c of offer.cards_requested) {
+              const inCenter = !!(
+                c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
+              );
+              const el = inCenter
+                ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
+                : (opponentHandContainerRefs.current.get(offer.target_id) ??
+                  null);
+              if (el && !seenRecvEls.has(el)) {
+                seenRecvEls.add(el);
+                next.set(`${offer.id}_r_${recvIdx++}`, {
+                  pathStr: quadBezierPath(elCenter(el), tagCenter),
+                  color,
+                });
+              }
             }
           }
 
-          // Offering arrows: one per offered card (all have explicit card_id) → target's field.
+          // Offering arrows: one per offered card → target's field.
           if (offer.cards_offered.length > 0) {
-            const targetEl =
-              opponentFieldRefs.current.get(offer.target_id) ?? null;
-            if (targetEl) {
+            if (offer.target_id !== "") {
+              // Single target.
+              const targetEl =
+                opponentFieldRefs.current.get(offer.target_id) ?? null;
+              if (targetEl) {
+                offer.cards_offered.forEach((c, i) => {
+                  const inCenter = !!(
+                    c.card_id &&
+                    centerCards.some((cc) => cc.cardId === c.card_id)
+                  );
+                  const offEl = inCenter
+                    ? (cardRefs.current.get(c.card_id) ??
+                      centerCardsRef.current)
+                    : (cardRefs.current.get(c.card_id) ?? handRef.current);
+                  if (offEl) {
+                    next.set(`${offer.id}_o_${i}`, {
+                      pathStr: quadBezierPath(
+                        elCenter(offEl),
+                        elCenter(targetEl),
+                      ),
+                      color,
+                    });
+                  }
+                });
+              }
+            } else {
+              // Broadcast: for center-card offerings, draw one arrow per other player's field.
               offer.cards_offered.forEach((c, i) => {
                 const inCenter = !!(
-                  c.card_id &&
-                  centerCards.some((cc) => cc.cardId === c.card_id)
+                  c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
                 );
-                const offEl = inCenter
-                  ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
-                  : (cardRefs.current.get(c.card_id) ?? handRef.current);
-                if (offEl) {
-                  next.set(`${offer.id}_o_${i}`, {
-                    pathStr: quadBezierPath(elCenter(offEl), elCenter(targetEl)),
-                    color,
-                  });
+                if (!inCenter) return;
+                const offEl =
+                  cardRefs.current.get(c.card_id) ?? centerCardsRef.current;
+                if (!offEl) return;
+                let pIdx = 0;
+                for (const p of players) {
+                  const targetEl =
+                    opponentFieldRefs.current.get(p.playerId) ?? null;
+                  if (targetEl) {
+                    next.set(`${offer.id}_o_${i}_${pIdx++}`, {
+                      pathStr: quadBezierPath(
+                        elCenter(offEl),
+                        elCenter(targetEl),
+                      ),
+                      color,
+                      playerId: p.playerId,
+                    });
+                  }
                 }
               });
             }
@@ -813,7 +896,12 @@ export default function Board() {
           const tagEl = tagWrapperRefs.current.get(offer.id);
           if (!tagEl) return;
           const isFree = offer.cards_offered.length === 0;
-          const color = isFree ? FREE_REQUEST_HEX : INCOMING_OFFER_HEX;
+          const isBroadcast = offer.target_id === "";
+          const color = isBroadcast
+            ? BROADCAST_OFFER_HEX
+            : isFree
+              ? FREE_REQUEST_HEX
+              : INCOMING_OFFER_HEX;
           const tagCenter = elCenter(tagEl);
 
           // Receiving arrows: one per unique origin element for offered cards → tag.
@@ -825,7 +913,8 @@ export default function Board() {
             );
             const el = inCenter
               ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
-              : (opponentHandContainerRefs.current.get(offer.creator_id) ?? null);
+              : (opponentHandContainerRefs.current.get(offer.creator_id) ??
+                null);
             if (el && !seenRecvEls.has(el)) {
               seenRecvEls.add(el);
               next.set(`${offer.id}_r_${recvIdx++}`, {
@@ -852,8 +941,7 @@ export default function Board() {
                     : cc.cardName === c.card_type;
                   if (matches && !claimed.has(cc.cardId)) {
                     offEl =
-                      cardRefs.current.get(cc.cardId) ??
-                      centerCardsRef.current;
+                      cardRefs.current.get(cc.cardId) ?? centerCardsRef.current;
                     claimed.add(cc.cardId);
                     break;
                   }
@@ -866,8 +954,7 @@ export default function Board() {
                     ? hc.cardId === c.card_id
                     : hc.cardName === c.card_type;
                   if (matches && !claimed.has(hc.cardId)) {
-                    offEl =
-                      cardRefs.current.get(hc.cardId) ?? handRef.current;
+                    offEl = cardRefs.current.get(hc.cardId) ?? handRef.current;
                     claimed.add(hc.cardId);
                     break;
                   }
@@ -876,10 +963,7 @@ export default function Board() {
 
               if (offEl) {
                 next.set(`${offer.id}_o_${offIdx++}`, {
-                  pathStr: quadBezierPath(
-                    elCenter(offEl),
-                    elCenter(creatorEl),
-                  ),
+                  pathStr: quadBezierPath(elCenter(offEl), elCenter(creatorEl)),
                   color,
                 });
               }
@@ -916,7 +1000,48 @@ export default function Board() {
     computePaths();
     window.addEventListener("resize", computePaths);
     return () => window.removeEventListener("resize", computePaths);
-  }, [offers, phase, myPlayerId, centerCards, hand, hoveredOfferId, ghostCards, isTurnPlayer]);
+  }, [
+    offers,
+    phase,
+    myPlayerId,
+    centerCards,
+    hand,
+    hoveredOfferId,
+    ghostCards,
+    isTurnPlayer,
+  ]);
+
+  // ── Broadcast offer player-rotation effect ───────────────────────────────────
+  useEffect(() => {
+    if (!hoveredOfferId) {
+      setActiveBroadcastPlayerId(null);
+      return;
+    }
+    const hoveredOffer = offers.find((o) => o.id === hoveredOfferId);
+    if (
+      !hoveredOffer ||
+      hoveredOffer.creator_id !== myPlayerId ||
+      hoveredOffer.target_id !== ""
+    ) {
+      setActiveBroadcastPlayerId(null);
+      return;
+    }
+    // Capture stable snapshot of other player IDs — players array ref changes
+    // every render so we intentionally read it once here and omit it from deps.
+    const otherPlayerIds = players
+      .filter((p) => p.playerId !== myPlayerId)
+      .map((p) => p.playerId);
+    if (otherPlayerIds.length === 0) return;
+    setActiveBroadcastPlayerId(otherPlayerIds[0]);
+    if (otherPlayerIds.length === 1) return;
+    let idx = 0;
+    const interval = setInterval(() => {
+      idx = (idx + 1) % otherPlayerIds.length;
+      setActiveBroadcastPlayerId(otherPlayerIds[idx]);
+    }, 1200);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hoveredOfferId, offers, myPlayerId]);
 
   // A representative card for the draw deck back image.
   // Prefer a real card from the live game state (which carries backImage from the server),
@@ -936,13 +1061,15 @@ export default function Board() {
     for (const c of offer.cards_requested) {
       requestedCounts[c.card_type] = (requestedCounts[c.card_type] ?? 0) + 1;
     }
-    const hasAmbiguity = Object.entries(requestedCounts).some(([cardType, needed]) => {
-      const handCount = hand.filter((c) => c.cardName === cardType).length;
-      const centerCount = isTurnPlayer
-        ? centerCards.filter((c) => c.cardName === cardType).length
-        : 0;
-      return handCount + centerCount > needed;
-    });
+    const hasAmbiguity = Object.entries(requestedCounts).some(
+      ([cardType, needed]) => {
+        const handCount = hand.filter((c) => c.cardName === cardType).length;
+        const centerCount = isTurnPlayer
+          ? centerCards.filter((c) => c.cardName === cardType).length
+          : 0;
+        return handCount + centerCount > needed;
+      },
+    );
     if (hasAmbiguity) {
       setAcceptPickerOffer(offer);
     } else {
@@ -1002,67 +1129,78 @@ export default function Board() {
       ))}
 
       {/* Offer origin arrows */}
-      {Array.from(offerPaths.entries()).map(([key, { pathStr, color }]) => {
-        const duration = Math.min(
-          Math.max(svgPathLength(pathStr) / ARROW_SPEED_PX_S, 0.8),
-          2.5,
-        );
-        return (
-          <div
-            key={key}
-            style={{
-              opacity: hoveredOfferId && key.startsWith(hoveredOfferId) ? 1 : 0,
-              transition: "opacity 150ms ease",
-            }}
-          >
-            <svg
-              style={{
-                position: "fixed",
-                inset: 0,
-                width: "100vw",
-                height: "100vh",
-                pointerEvents: "none",
-                zIndex: 50,
-                overflow: "visible",
-              }}
-            >
-              <path
-                d={pathStr}
-                stroke={color}
-                strokeWidth={1.5}
-                fill="none"
-                strokeOpacity={0.5}
-                strokeDasharray="6 5"
-              />
-            </svg>
-            {[0, 1, 2].map((i) => (
-              <motion.div
-                key={i}
+      {Array.from(offerPaths.entries()).map(
+        ([key, { pathStr, color, playerId }]) => {
+          const duration = Math.min(
+            Math.max(svgPathLength(pathStr) / ARROW_SPEED_PX_S, 0.8),
+            2.5,
+          );
+          let opacity = 0;
+          if (hoveredOfferId && key.startsWith(hoveredOfferId)) {
+            if (playerId) {
+              opacity = playerId === activeBroadcastPlayerId ? 1 : 0.2;
+            } else {
+              opacity = 1;
+            }
+          }
+          // opacity must be set directly on each fixed-position element.
+          // A wrapper div with opacity < 1 creates a new CSS stacking context,
+          // which repositions fixed children relative to the div instead of
+          // the viewport, making them appear at the wrong coordinates.
+          return (
+            <Fragment key={key}>
+              <svg
                 style={{
                   position: "fixed",
-                  top: 0,
-                  left: 0,
+                  inset: 0,
+                  width: "100vw",
+                  height: "100vh",
                   pointerEvents: "none",
-                  zIndex: 51,
-                  offsetPath: `path("${pathStr}")`,
-                  offsetRotate: "auto",
-                  offsetAnchor: "50% 50%",
-                  // filter: `drop-shadow(0 0 4px ${color})`,
-                }}
-                animate={{ offsetDistance: ["0%", "100%"] }}
-                transition={{
-                  duration,
-                  repeat: Infinity,
-                  ease: "linear",
-                  delay: -(i * (duration / 3)),
+                  zIndex: 50,
+                  overflow: "visible",
+                  opacity,
+                  transition: "opacity 300ms ease",
                 }}
               >
-                <ArrowRight size={22} color={color} strokeWidth={2.5} />
-              </motion.div>
-            ))}
-          </div>
-        );
-      })}
+                <path
+                  d={pathStr}
+                  stroke={color}
+                  strokeWidth={1.5}
+                  fill="none"
+                  strokeOpacity={0.5}
+                  strokeDasharray="6 5"
+                />
+              </svg>
+              {[0, 1, 2].map((i) => (
+                <motion.div
+                  key={i}
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    pointerEvents: "none",
+                    zIndex: 51,
+                    offsetPath: `path("${pathStr}")`,
+                    offsetRotate: "auto",
+                    offsetAnchor: "50% 50%",
+                    opacity,
+                    transition: "opacity 300ms ease",
+                  }}
+                  animate={{ offsetDistance: ["0%", "100%"] }}
+                  transition={{
+                    duration,
+                    repeat: Infinity,
+                    ease: "linear",
+                    delay: -(i * (duration / 3)),
+                  }}
+                >
+                  <ArrowRight size={22} color={color} strokeWidth={2.5} />
+                </motion.div>
+              ))}
+            </Fragment>
+          );
+        },
+      )}
 
       <Table>
         <Opponents>
@@ -1196,7 +1334,9 @@ export default function Board() {
                                       ? () =>
                                           onCardRightClick(
                                             cardForSlot,
-                                            isTurnPlayer ? player.playerId : playerTurn,
+                                            isTurnPlayer
+                                              ? player.playerId
+                                              : playerTurn,
                                           )
                                       : undefined
                                   }

@@ -77,14 +77,24 @@ export default function InlineOfferTag({
     ? offer.cards_offered.length === 0
     : offer.cards_requested.length === 0;
 
-  const accent = isIncoming
-    ? {
-        border: "border-green-600/60",
-        bg: "bg-green-900/30",
-        badge: "bg-green-800/80 text-green-200",
-        counter: "bg-green-700 border-green-600/60",
-      }
-    : ACCENTS[offerIndex % ACCENTS.length];
+  const isBroadcast = offer.target_id === "";
+  const BROADCAST_ACCENT = {
+    border: "border-purple-500/80",
+    bg: "bg-purple-900/40",
+    badge: "bg-purple-700/80 text-purple-200",
+    counter: "bg-purple-600 border-purple-500/60",
+  };
+
+  const accent = isBroadcast
+    ? BROADCAST_ACCENT
+    : isIncoming
+      ? {
+          border: "border-green-600/60",
+          bg: "bg-green-900/30",
+          badge: "bg-green-800/80 text-green-200",
+          counter: "bg-green-700 border-green-600/60",
+        }
+      : ACCENTS[offerIndex % ACCENTS.length];
 
   const offCounts = countsByType(offer.cards_offered);
   const reqCounts = countsByType(offer.cards_requested);
