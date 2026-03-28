@@ -778,13 +778,16 @@ export default function Board() {
             o.parent_offer_id === "" &&
             o.status === "pending",
         )
-        .forEach((offer, idx) => {
+        .forEach((offer, _idx, arr) => {
           const tagEl = tagWrapperRefs.current.get(offer.id);
           if (!tagEl) return;
+          const specificIdx = arr
+            .slice(0, arr.indexOf(offer))
+            .filter((o) => o.target_id !== "").length;
           const color =
             offer.target_id === ""
               ? BROADCAST_OFFER_HEX
-              : OFFER_ACCENT_HEX[idx % OFFER_ACCENT_HEX.length];
+              : OFFER_ACCENT_HEX[specificIdx % OFFER_ACCENT_HEX.length];
           const tagCenter = elCenter(tagEl);
 
           // Receiving arrows: one per unique origin element for requested cards → tag.
