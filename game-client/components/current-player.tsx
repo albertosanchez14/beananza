@@ -17,11 +17,8 @@ export default function CurrentPlayer({
   coinCount,
 }: CurrentPlayerProps) {
   return (
-    <div
-      className="absolute bottom-0 left-0 right-0 flex flex-col items-center gap-3 px-6 pb-5 pt-3"
-      style={{ zIndex: 20 }}
-    >
-      <div style={{ perspective: "700px" }}>
+    <div className="absolute bottom-0 left-0 right-0 flex flex-col items-center gap-3 px-6 pb-5 pt-3">
+      <div style={{ perspective: "700px", position: "relative", zIndex: 15 }}>
         <div
           className="flex items-center gap-3"
           style={{
@@ -50,7 +47,7 @@ export default function CurrentPlayer({
           </div>
         </div>
       </div>
-      {hand}
+      <div style={{ position: "relative", zIndex: 25 }}>{hand}</div>
     </div>
   );
 }

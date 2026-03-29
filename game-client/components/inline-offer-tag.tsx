@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Offer, OfferCard, ExternalPlayer, CardType } from "@/schemas/types";
 import { CardFrontFace } from "@/components/card-front-face";
+import { canAcceptOffer } from "@/components/offer-card";
 
 const OUTGOING_ACCENT = {
   border: "border-blue-500/80",
@@ -80,36 +81,8 @@ export default function InlineOfferTag({
     .map((type) => cardLookup.get(type))
     .filter((ct): ct is CardType => ct !== undefined);
 
-  const canAccept = (() => {
-    if (!isIncoming) return false;
-    // Count available cards per type (hand + center if turn player).
-    const handCounts: Record<string, number> = {};
-    for (const c of hand)
-      handCounts[c.cardName] = (handCounts[c.cardName] ?? 0) + 1;
-    const centerCounts: Record<string, number> = {};
-    if (isTurnPlayer) {
-      for (const c of centerCards)
-        centerCounts[c.cardName] = (centerCounts[c.cardName] ?? 0) + 1;
-    }
-    // For explicit card_id requests check exact presence; for type-only requests
-    // compare total available count against total requested count per type.
-    const needed: Record<string, number> = {};
-    for (const c of offer.cards_requested) {
-      if (c.card_id) {
-        const has =
-          hand.some((h) => h.cardId === c.card_id) ||
-          (isTurnPlayer && centerCards.some((h) => h.cardId === c.card_id));
-        if (!has) return false;
-      } else {
-        needed[c.card_type] = (needed[c.card_type] ?? 0) + 1;
-      }
-    }
-    for (const [type, count] of Object.entries(needed)) {
-      const available = (handCounts[type] ?? 0) + (centerCounts[type] ?? 0);
-      if (available < count) return false;
-    }
-    return true;
-  })();
+  const canAccept =
+    isIncoming && canAcceptOffer(offer, hand, centerCards, isTurnPlayer);
 
   if (dismissed) return null;
 
@@ -128,9 +101,10 @@ export default function InlineOfferTag({
     onAccept(offer);
   };
 
-  const borderCls = rejectFlash
-    ? "border-red-500 bg-red-900/30"
-    : `${accent.border} ${accent.bg}`;
+  const borderCls =
+    rejectFlash || (isIncoming && !canAccept)
+      ? "border-red-500 bg-red-900/30"
+      : `${accent.border} ${accent.bg}`;
 
   return (
     <div className="relative shrink-0">
@@ -146,7 +120,7 @@ export default function InlineOfferTag({
       )}
       <div
         className={`relative rounded-xl border-2 transition-all duration-200 overflow-hidden flex flex-row ${borderCls}`}
-        style={{ width: isIncoming ? undefined : 96, height: 144 }}
+        style={{ height: 144 }}
         onMouseEnter={() => onHover?.(offer.id)}
         onMouseLeave={() => onHover?.(null)}
       >

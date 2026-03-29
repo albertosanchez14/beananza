@@ -28,6 +28,7 @@ import { FlyingCard } from "@/components/flying-card";
 import { PlantFlyingCard } from "@/components/plant-flying-card";
 import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
 import AcceptCardPicker from "@/components/accept-card-picker";
+import { canAcceptOffer } from "@/components/offer-card";
 
 type FlyingCardEntry = {
   id: string;
@@ -159,6 +160,7 @@ export default function Board() {
     hand: "#38bdf8",
     center: "#a3e635",
     player: "#f472b6",
+    blocked: "#ef4444",
   } as const;
 
 
@@ -886,6 +888,12 @@ export default function Board() {
           if (!tagEl) return;
           const tagCenter = elCenter(tagEl);
           const isBroadcastIncoming = offer.target_id === "";
+          const isBlocked = !canAcceptOffer(offer, hand, centerCards, isTurnPlayer);
+          const arrowColor = isBlocked
+            ? ORIGIN_COLORS.blocked
+            : isBroadcastIncoming
+              ? ORIGIN_COLORS.player
+              : ORIGIN_COLORS.center;
 
           // Receiving arrows: one per unique origin element for offered cards → tag.
           const seenRecvEls = new Set<HTMLElement>();
@@ -902,7 +910,7 @@ export default function Board() {
               seenRecvEls.add(el);
               next.set(`${offer.id}_r_${recvIdx++}`, {
                 pathStr: quadBezierPath(elCenter(el), tagCenter),
-                color: isBroadcastIncoming ? ORIGIN_COLORS.player : ORIGIN_COLORS.center,
+                color: arrowColor,
               });
             }
           }
@@ -947,7 +955,7 @@ export default function Board() {
               if (offEl) {
                 next.set(`${offer.id}_o_${offIdx++}`, {
                   pathStr: quadBezierPath(elCenter(offEl), elCenter(creatorEl)),
-                  color: isBroadcastIncoming ? ORIGIN_COLORS.player : ORIGIN_COLORS.center,
+                  color: arrowColor,
                 });
               }
             }
@@ -1139,7 +1147,7 @@ export default function Board() {
                   width: "100vw",
                   height: "100vh",
                   pointerEvents: "none",
-                  zIndex: 50,
+                  zIndex: 20,
                   overflow: "visible",
                   opacity,
                   transition: "opacity 300ms ease",
@@ -1162,7 +1170,7 @@ export default function Board() {
                     top: 0,
                     left: 0,
                     pointerEvents: "none",
-                    zIndex: 51,
+                    zIndex: 21,
                     offsetPath: `path("${pathStr}")`,
                     offsetRotate: "auto",
                     offsetAnchor: "50% 50%",

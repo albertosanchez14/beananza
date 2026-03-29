@@ -79,6 +79,41 @@ function canCancel(offer: Offer, myPlayerId: string): boolean {
   return offer.status === "pending" && offer.creator_id === myPlayerId;
 }
 
+// Returns true if the player can fulfill the offer's requested cards.
+// Handles both card_id-specific and type-only requests.
+// Turn players may also use center cards.
+export function canAcceptOffer(
+  offer: Offer,
+  myHand: CardType[],
+  centerCards: CardType[],
+  isTurnPlayer: boolean,
+): boolean {
+  const handCounts: Record<string, number> = {};
+  for (const c of myHand)
+    handCounts[c.cardName] = (handCounts[c.cardName] ?? 0) + 1;
+  const centerCounts: Record<string, number> = {};
+  if (isTurnPlayer) {
+    for (const c of centerCards)
+      centerCounts[c.cardName] = (centerCounts[c.cardName] ?? 0) + 1;
+  }
+  const needed: Record<string, number> = {};
+  for (const c of offer.cards_requested) {
+    if (c.card_id) {
+      const has =
+        myHand.some((h) => h.cardId === c.card_id) ||
+        (isTurnPlayer && centerCards.some((h) => h.cardId === c.card_id));
+      if (!has) return false;
+    } else {
+      needed[c.card_type] = (needed[c.card_type] ?? 0) + 1;
+    }
+  }
+  for (const [type, count] of Object.entries(needed)) {
+    const available = (handCounts[type] ?? 0) + (centerCounts[type] ?? 0);
+    if (available < count) return false;
+  }
+  return true;
+}
+
 // Returns true if the player has at least the card types+quantities in cards_requested.
 // Turn players may also use center cards to fulfill an offer.
 function canFulfillOffer(
