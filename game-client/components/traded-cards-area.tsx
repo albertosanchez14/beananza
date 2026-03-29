@@ -129,7 +129,6 @@ export default function TradedCardsArea({
                 hand={hand}
                 centerCards={centerCards}
                 isTurnPlayer={isTurnPlayer}
-                offerIndex={0}
                 onRespond={onRespondOffer}
                 onAccept={onAcceptOffer}
                 onCounter={onCounterOffer}
@@ -138,9 +137,6 @@ export default function TradedCardsArea({
             </div>
           ))}
           {outgoingOffers.map((offer) => {
-            const specificIdx = outgoingOffers
-              .slice(0, outgoingOffers.indexOf(offer))
-              .filter((o) => o.target_id !== "").length;
             return (
             <div
               key={offer.id}
@@ -158,7 +154,6 @@ export default function TradedCardsArea({
                 hand={hand}
                 centerCards={centerCards}
                 isTurnPlayer={isTurnPlayer}
-                offerIndex={specificIdx}
                 onRespond={onRespondOffer}
                 onAccept={onAcceptOffer}
                 onCounter={onCounterOffer}

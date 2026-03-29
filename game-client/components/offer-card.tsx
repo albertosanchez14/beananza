@@ -5,7 +5,7 @@ import { Offer, OfferCard, ExternalPlayer, CardType } from "@/schemas/types";
 
 type OfferCardProps = {
   offer: Offer;
-  allOffers: Offer[]; // needed to render children
+  allOffers: Offer[];
   myPlayerId: string;
   myHand: CardType[];
   centerCards: CardType[];
@@ -122,28 +122,42 @@ function canCounter(
 function borderColor(offer: Offer, myPlayerId: string): string {
   if (offer.status !== "pending") return "border-gray-200 dark:border-gray-700";
   if (offer.creator_id === myPlayerId) return "border-blue-400";
-  if (offer.target_id === myPlayerId || offer.target_id === "")
-    return "border-green-400";
+  if (offer.target_id === "") return "border-pink-400";
+  if (offer.target_id === myPlayerId) return "border-green-400";
   return "border-gray-300 dark:border-gray-600";
 }
 
 function bgColor(offer: Offer, myPlayerId: string): string {
   if (offer.status !== "pending")
     return "bg-gray-50 dark:bg-gray-800/50 opacity-60";
-  if (offer.creator_id === myPlayerId)
-    return "bg-blue-50 dark:bg-blue-900/20";
-  if (offer.target_id === myPlayerId || offer.target_id === "")
-    return "bg-green-50 dark:bg-green-900/20";
+  if (offer.creator_id === myPlayerId) return "bg-blue-50 dark:bg-blue-900/20";
+  if (offer.target_id === "") return "bg-pink-50 dark:bg-pink-900/20";
+  if (offer.target_id === myPlayerId) return "bg-green-50 dark:bg-green-900/20";
   return "bg-white dark:bg-gray-800";
 }
 
 function statusBadge(status: Offer["status"]) {
   const map: Record<Offer["status"], { label: string; cls: string }> = {
-    pending: { label: "Pending", cls: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" },
-    accepted: { label: "Accepted", cls: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
-    rejected: { label: "Rejected", cls: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
-    cancelled: { label: "Cancelled", cls: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400" },
-    expired: { label: "Expired", cls: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-500" },
+    pending: {
+      label: "Pending",
+      cls: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+    },
+    accepted: {
+      label: "Accepted",
+      cls: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+    },
+    rejected: {
+      label: "Rejected",
+      cls: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+    },
+    cancelled: {
+      label: "Cancelled",
+      cls: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400",
+    },
+    expired: {
+      label: "Expired",
+      cls: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-500",
+    },
   };
   const { label, cls } = map[status];
   return (
@@ -176,7 +190,14 @@ export default function OfferCardComponent({
   const allowAcceptReject = canAcceptOrReject(offer, myPlayerId, allOffers);
   const allowCancel = canCancel(offer, myPlayerId);
   const allowCounter = canCounter(offer, myPlayerId, gamePhase);
-  const canFulfill = allowAcceptReject && canFulfillOffer(offer.cards_requested, myHand, centerCards, myPlayerId === playerTurn);
+  const canFulfill =
+    allowAcceptReject &&
+    canFulfillOffer(
+      offer.cards_requested,
+      myHand,
+      centerCards,
+      myPlayerId === playerTurn,
+    );
 
   const isOwn = offer.creator_id === myPlayerId;
   const directionLabel = isOwn
@@ -191,7 +212,8 @@ export default function OfferCardComponent({
         {/* Header row */}
         <div className="flex items-center justify-between mb-2 gap-2">
           <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">
-            {depth > 0 ? "↩ Counter: " : ""}{directionLabel}
+            {depth > 0 ? "↩ Counter: " : ""}
+            {directionLabel}
           </span>
           {statusBadge(offer.status)}
         </div>

@@ -52,12 +52,6 @@ type TurnOverFlyingCardEntry = {
   cardScale: number;
 };
 
-// ── Offer-origin arrow helpers ────────────────────────────────────────────────
-const OFFER_ACCENT_HEX = ["#3b82f6", "#a855f7", "#14b8a6", "#f43f5e"];
-const INCOMING_OFFER_HEX = "#16a34a";
-const FREE_REQUEST_HEX = "#3b82f6";
-const BROADCAST_OFFER_HEX = "#a855f7";
-
 const ARROW_SPEED_PX_S = 300; // pixels per second for arrow dots
 
 function svgPathLength(d: string): number {
@@ -162,23 +156,11 @@ export default function Board() {
 
   // ── Origin-highlight helpers ─────────────────────────────────────────────────
   const ORIGIN_COLORS = {
-    hand: "#60a5fa",
-    center: "#fbbf24",
-    player: "#c084fc",
+    hand: "#38bdf8",
+    center: "#a3e635",
+    player: "#f472b6",
   } as const;
 
-  const getOriginColor = (cardId: string, cardType: string): string => {
-    if (cardId) {
-      if (hand.some((c) => c.cardId === cardId)) return ORIGIN_COLORS.hand;
-      if (centerCards.some((c) => c.cardId === cardId))
-        return ORIGIN_COLORS.center;
-    } else {
-      if (hand.some((c) => c.cardName === cardType)) return ORIGIN_COLORS.hand;
-      if (centerCards.some((c) => c.cardName === cardType))
-        return ORIGIN_COLORS.center;
-    }
-    return ORIGIN_COLORS.player;
-  };
 
   // cardHighlights: cardId → color for cards I can see (my hand + center)
   // playerHighlights: playerId → { color, count } for opponent hand cards in offers
@@ -207,15 +189,18 @@ export default function Board() {
       // use center cards — only highlight hand matches.
       const myCards = isOwn ? offer.cards_offered : offer.cards_requested;
       const amTurnPlayer = myPlayerId === playerTurn;
+      const isBroadcast = offer.target_id === "";
+      const highlightColor = isBroadcast
+        ? ORIGIN_COLORS.player
+        : isIncoming
+          ? ORIGIN_COLORS.center
+          : ORIGIN_COLORS.hand; // outgoing non-broadcast: always cyan
       for (const c of myCards) {
         if (c.card_id) {
           // Explicit card ID — resolve color from the specific card's location.
-          const color =
-            isIncoming && !amTurnPlayer
-              ? hand.some((h) => h.cardId === c.card_id)
-                ? ORIGIN_COLORS.hand
-                : null
-              : getOriginColor(c.card_id, c.card_type);
+          const color = isIncoming && !isBroadcast && !amTurnPlayer
+            ? hand.some((h) => h.cardId === c.card_id) ? highlightColor : null
+            : highlightColor;
           if (color && !cardH.has(c.card_id)) cardH.set(c.card_id, color);
         } else {
           // Type-only request: highlight exactly one unclaimed card.
@@ -224,12 +209,12 @@ export default function Board() {
           if (amTurnPlayer) {
             for (const cc of centerCards) {
               if (cc.cardName === c.card_type)
-                priorityPool.push({ card: cc, color: ORIGIN_COLORS.center });
+                priorityPool.push({ card: cc, color: highlightColor });
             }
           }
           for (const hc of hand) {
             if (hc.cardName === c.card_type)
-              priorityPool.push({ card: hc, color: ORIGIN_COLORS.hand });
+              priorityPool.push({ card: hc, color: highlightColor });
           }
           for (const { card, color } of priorityPool) {
             if (!cardH.has(card.cardId)) {
@@ -251,7 +236,12 @@ export default function Board() {
           c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
         );
         if (inCenter) {
-          if (!cardH.has(c.card_id)) cardH.set(c.card_id, ORIGIN_COLORS.center);
+          const color = otherPlayerId === ""
+            ? ORIGIN_COLORS.player
+            : isOwn
+              ? ORIGIN_COLORS.hand
+              : ORIGIN_COLORS.center;
+          if (!cardH.has(c.card_id)) cardH.set(c.card_id, color);
         } else if (otherPlayerId === "") {
           // Broadcast offer — highlight every other player.
           for (const p of players) {
@@ -759,7 +749,10 @@ export default function Board() {
     }
 
     const computePaths = () => {
-      const next = new Map<string, { pathStr: string; color: string }>();
+      const next = new Map<
+        string,
+        { pathStr: string; color: string; playerId?: string }
+      >();
 
       // Resolve the DOM element for a specific hand card (by id or by type).
       const handCardEl = (
@@ -778,16 +771,9 @@ export default function Board() {
             o.parent_offer_id === "" &&
             o.status === "pending",
         )
-        .forEach((offer, _idx, arr) => {
+        .forEach((offer) => {
           const tagEl = tagWrapperRefs.current.get(offer.id);
           if (!tagEl) return;
-          const specificIdx = arr
-            .slice(0, arr.indexOf(offer))
-            .filter((o) => o.target_id !== "").length;
-          const color =
-            offer.target_id === ""
-              ? BROADCAST_OFFER_HEX
-              : OFFER_ACCENT_HEX[specificIdx % OFFER_ACCENT_HEX.length];
           const tagCenter = elCenter(tagEl);
 
           // Receiving arrows: one per unique origin element for requested cards → tag.
@@ -806,7 +792,7 @@ export default function Board() {
                 seenRecvEls.add(el);
                 next.set(`${offer.id}_r_${recvIdx++}`, {
                   pathStr: quadBezierPath(elCenter(el), tagCenter),
-                  color,
+                  color: ORIGIN_COLORS.player,
                   playerId: p.playerId,
                 });
               }
@@ -824,7 +810,7 @@ export default function Board() {
                 seenRecvEls.add(el);
                 next.set(`${offer.id}_r_${recvIdx++}`, {
                   pathStr: quadBezierPath(elCenter(el), tagCenter),
-                  color,
+                  color: ORIGIN_COLORS.hand,
                 });
               }
             }
@@ -852,20 +838,20 @@ export default function Board() {
                         elCenter(offEl),
                         elCenter(targetEl),
                       ),
-                      color,
+                      color: ORIGIN_COLORS.hand,
                     });
                   }
                 });
               }
             } else {
-              // Broadcast: for center-card offerings, draw one arrow per other player's field.
+              // Broadcast: one arrow per offered card per other player's field.
               offer.cards_offered.forEach((c, i) => {
                 const inCenter = !!(
                   c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
                 );
-                if (!inCenter) return;
-                const offEl =
-                  cardRefs.current.get(c.card_id) ?? centerCardsRef.current;
+                const offEl = inCenter
+                  ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
+                  : (cardRefs.current.get(c.card_id) ?? handRef.current);
                 if (!offEl) return;
                 let pIdx = 0;
                 for (const p of players) {
@@ -877,7 +863,7 @@ export default function Board() {
                         elCenter(offEl),
                         elCenter(targetEl),
                       ),
-                      color,
+                      color: ORIGIN_COLORS.player,
                       playerId: p.playerId,
                     });
                   }
@@ -898,14 +884,8 @@ export default function Board() {
         .forEach((offer) => {
           const tagEl = tagWrapperRefs.current.get(offer.id);
           if (!tagEl) return;
-          const isFree = offer.cards_offered.length === 0;
-          const isBroadcast = offer.target_id === "";
-          const color = isBroadcast
-            ? BROADCAST_OFFER_HEX
-            : isFree
-              ? FREE_REQUEST_HEX
-              : INCOMING_OFFER_HEX;
           const tagCenter = elCenter(tagEl);
+          const isBroadcastIncoming = offer.target_id === "";
 
           // Receiving arrows: one per unique origin element for offered cards → tag.
           const seenRecvEls = new Set<HTMLElement>();
@@ -922,7 +902,7 @@ export default function Board() {
               seenRecvEls.add(el);
               next.set(`${offer.id}_r_${recvIdx++}`, {
                 pathStr: quadBezierPath(elCenter(el), tagCenter),
-                color,
+                color: isBroadcastIncoming ? ORIGIN_COLORS.player : ORIGIN_COLORS.center,
               });
             }
           }
@@ -967,7 +947,7 @@ export default function Board() {
               if (offEl) {
                 next.set(`${offer.id}_o_${offIdx++}`, {
                   pathStr: quadBezierPath(elCenter(offEl), elCenter(creatorEl)),
-                  color,
+                  color: isBroadcastIncoming ? ORIGIN_COLORS.player : ORIGIN_COLORS.center,
                 });
               }
             }
@@ -1141,7 +1121,7 @@ export default function Board() {
           let opacity = 0;
           if (hoveredOfferId && key.startsWith(hoveredOfferId)) {
             if (playerId) {
-              opacity = playerId === activeBroadcastPlayerId ? 1 : 0.2;
+              opacity = playerId === activeBroadcastPlayerId ? 1 : 0.3;
             } else {
               opacity = 1;
             }
@@ -1168,9 +1148,9 @@ export default function Board() {
                 <path
                   d={pathStr}
                   stroke={color}
-                  strokeWidth={1.5}
+                  strokeWidth={3}
                   fill="none"
-                  strokeOpacity={0.5}
+                  strokeOpacity={1}
                   strokeDasharray="6 5"
                 />
               </svg>
