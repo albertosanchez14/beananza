@@ -53,7 +53,8 @@ type TurnOverFlyingCardEntry = {
   cardScale: number;
 };
 
-const ARROW_SPEED_PX_S = 300; // pixels per second for arrow dots
+const ARROW_SPEED_PX_S = 300; // pixels per second
+const ARROW_MIN_ARC_PX = 300; // minimum effective arc — prevents short paths from cycling too fast
 
 function svgPathLength(d: string): number {
   if (typeof document === "undefined") return 400;
@@ -163,7 +164,6 @@ export default function Board() {
     blocked: "#ef4444",
   } as const;
 
-
   // cardHighlights: cardId → color for cards I can see (my hand + center)
   // playerHighlights: playerId → { color, count } for opponent hand cards in offers
   const { cardHighlights, playerHighlights } = useMemo(() => {
@@ -200,9 +200,12 @@ export default function Board() {
       for (const c of myCards) {
         if (c.card_id) {
           // Explicit card ID — resolve color from the specific card's location.
-          const color = isIncoming && !isBroadcast && !amTurnPlayer
-            ? hand.some((h) => h.cardId === c.card_id) ? highlightColor : null
-            : highlightColor;
+          const color =
+            isIncoming && !isBroadcast && !amTurnPlayer
+              ? hand.some((h) => h.cardId === c.card_id)
+                ? highlightColor
+                : null
+              : highlightColor;
           if (color && !cardH.has(c.card_id)) cardH.set(c.card_id, color);
         } else {
           // Type-only request: highlight exactly one unclaimed card.
@@ -238,7 +241,7 @@ export default function Board() {
           c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
         );
         if (inCenter) {
-          const color = otherPlayerId === ""
+          const color = isBroadcast
             ? ORIGIN_COLORS.player
             : isOwn
               ? ORIGIN_COLORS.hand
@@ -888,7 +891,12 @@ export default function Board() {
           if (!tagEl) return;
           const tagCenter = elCenter(tagEl);
           const isBroadcastIncoming = offer.target_id === "";
-          const isBlocked = !canAcceptOffer(offer, hand, centerCards, isTurnPlayer);
+          const isBlocked = !canAcceptOffer(
+            offer,
+            hand,
+            centerCards,
+            isTurnPlayer,
+          );
           const arrowColor = isBlocked
             ? ORIGIN_COLORS.blocked
             : isBroadcastIncoming
@@ -1122,10 +1130,7 @@ export default function Board() {
       {/* Offer origin arrows */}
       {Array.from(offerPaths.entries()).map(
         ([key, { pathStr, color, playerId }]) => {
-          const duration = Math.min(
-            Math.max(svgPathLength(pathStr) / ARROW_SPEED_PX_S, 0.8),
-            2.5,
-          );
+          const duration = Math.max(svgPathLength(pathStr), ARROW_MIN_ARC_PX) / ARROW_SPEED_PX_S;
           let opacity = 0;
           if (hoveredOfferId && key.startsWith(hoveredOfferId)) {
             if (playerId) {
