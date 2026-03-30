@@ -8,20 +8,20 @@ help:
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
-local: ## Build and run for localhost
+local:
 	APP_HOST=localhost:$(PORT) PORT=$(PORT) docker compose up --build
 
 ifeq ($(OS),Windows_NT)
-lan: ## Build and run for LAN — auto-detects IP
+lan:
 	powershell.exe -ExecutionPolicy Bypass -File scripts\setup-lan.ps1 $(if $(IP),-IP $(IP),) -Port $(PORT)
 else
-lan: ## Build and run for LAN — auto-detects IP
+lan: 
 	@IP="$(IP)" PORT="$(PORT)" bash scripts/setup-lan.sh
 endif
 
-dev: ## Run Redis in Docker + Go server + Next.js dev
+dev: 
 	@echo "Starting Redis..."
-	@docker compose up redis -d
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up redis -d
 	@echo "Starting Go server and Next.js dev server (Ctrl+C to stop both)..."
 	@trap 'kill 0' INT; \
 		$(MAKE) -C game-server run & \
@@ -38,31 +38,31 @@ teardown-lan: ## Remove LAN firewall rules / portproxy
 	@TEARDOWN=true PORT="$(PORT)" bash scripts/setup-lan.sh
 endif
 
-up: ## Start without rebuilding
+up: 
 	docker compose up
 
-up-d: ## Start without rebuilding (detached)
+up-d: 
 	docker compose up -d
 
-down: ## Stop and remove volumes
+down: 
 	docker compose down -v
 
-restart: ## Restart all services
+restart: 
 	docker compose restart
 
-logs: ## Follow logs for all services
+logs: 
 	docker compose logs -f
 
-ps: ## Show running containers
+ps: 
 	docker compose ps
 
-redis: ## Start only Redis (detached)
-	docker compose up redis -d
+redis: 
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up redis -d
 
 # ── Dev: individual services ─────────────────────────────────────────────────
 
 dev-server:
-	@docker compose up redis -d
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up redis -d
 	@$(MAKE) -C game-server run
 
 dev-client: 
