@@ -61,22 +61,23 @@ redis: ## Start only Redis (detached)
 
 # ── Dev: individual services ─────────────────────────────────────────────────
 
-dev-server: ## Run Redis + Go server (native)
+dev-server:
 	@docker compose up redis -d
 	@$(MAKE) -C game-server run
 
-dev-client: ## Run Next.js dev server (native)
+dev-client: 
 	npm run dev --prefix game-client
 
 # ── Build / test / lint ──────────────────────────────────────────────────────
 
-build: ## Build Go binary and Next.js
+build:
 	$(MAKE) -C game-server build
 	npm run build --prefix game-client
+	docker build game-client --file game-client/Dockerfile --tag game-client:latest
 
-test: ## Run Go tests
+test: 
 	$(MAKE) -C game-server test
 
-lint: ## Lint Go and Next.js
+lint:
 	$(MAKE) -C game-server lint
 	npm run lint --prefix game-client

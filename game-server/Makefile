@@ -16,6 +16,7 @@ deps:
 
 build: 
 	$(GO) build -o $(BINARY_NAME) $(MAIN_PATH)
+	$(MAKE) docker-build 
 
 run:
 	$(GO) run $(MAIN_PATH)/main.go
