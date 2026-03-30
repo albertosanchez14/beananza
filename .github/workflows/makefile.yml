@@ -16,8 +16,8 @@ jobs:
       # - name: configure
       # run: ./configure
 
-      # - name: Install dependencies
-      # run: make
+      - name: Install dependencies
+        run: make install
 
       - name: Run build
         run: make build

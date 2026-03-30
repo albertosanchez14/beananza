@@ -70,10 +70,12 @@ dev-client:
 
 # ── Build / test / lint ──────────────────────────────────────────────────────
 
+install:
+	$(MAKE) -C game-client install 
+
 build:
 	$(MAKE) -C game-server build
-	npm run build --prefix game-client
-	docker build game-client --file game-client/Dockerfile --tag game-client:latest
+	$(MAKE) -C game-client build
 
 test: 
 	$(MAKE) -C game-server test
