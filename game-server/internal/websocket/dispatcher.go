@@ -439,7 +439,21 @@ func (c *Client) handleRespondOffer(s *game.Session, payload map[string]any) {
 		return
 	}
 
-	if err := s.HandleRespondOffer(offerID, c.PlayerId, action); err != nil {
+	var selectedCards []game.OfferCard
+	if raw, ok := payload["cards_to_give"].([]interface{}); ok {
+		for _, item := range raw {
+			if m, ok := item.(map[string]interface{}); ok {
+				cardType, _ := m["card_type"].(string)
+				cardID, _ := m["card_id"].(string)
+				selectedCards = append(selectedCards, game.OfferCard{
+					CardType: game.CardType(cardType),
+					CardID:   cardID,
+				})
+			}
+		}
+	}
+
+	if err := s.HandleRespondOffer(offerID, c.PlayerId, action, selectedCards); err != nil {
 		c.sendGameError(err)
 	}
 }

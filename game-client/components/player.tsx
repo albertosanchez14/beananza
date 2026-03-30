@@ -23,6 +23,7 @@ type ActivePlayerProps = {
   field?: ReactNode;
   hand?: ReactNode;
   isDragTarget?: boolean;
+  dragBlockMessage?: string;
   onDragOver?: (e: React.DragEvent) => void;
   onDragLeave?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
@@ -104,6 +105,7 @@ function ActivePlayer({
   field,
   hand,
   isDragTarget = false,
+  dragBlockMessage,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -128,7 +130,7 @@ function ActivePlayer({
           }}
         >
           <p
-            className="text-[10px] font-bold text-white leading-tight max-w-18 text-center truncate"
+            className="text-sm font-bold text-white leading-tight tracking-widest max-w-18 text-center truncate"
             style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}
           >
             {playerName}
@@ -136,7 +138,7 @@ function ActivePlayer({
 
           <div className="flex items-center gap-2">
             {playerCoins !== undefined && (
-              <div className="flex items-center gap-1 text-[10px] text-gray-200">
+              <div className="flex items-center gap-1 text-sm text-gray-200">
                 <Coins
                   size={9}
                   strokeWidth={2}
@@ -170,8 +172,9 @@ function ActivePlayer({
           style={
             isDragTarget
               ? {
-                  filter:
-                    "drop-shadow(0 0 8px #4ade80) drop-shadow(0 0 3px #4ade80)",
+                  filter: dragBlockMessage
+                    ? "drop-shadow(0 0 8px #ef4444) drop-shadow(0 0 3px #ef4444)"
+                    : "drop-shadow(0 0 8px #4ade80) drop-shadow(0 0 3px #4ade80)",
                   transition: "filter 0.15s",
                 }
               : undefined
@@ -195,6 +198,14 @@ function ActivePlayer({
             />
           )}
         </div>
+
+        {dragBlockMessage && (
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 z-50 pointer-events-none">
+            <span className="whitespace-nowrap rounded bg-red-900/90 px-2 py-1 text-[10px] text-red-200 shadow">
+              {dragBlockMessage}
+            </span>
+          </div>
+        )}
 
         {hand && (
           <div

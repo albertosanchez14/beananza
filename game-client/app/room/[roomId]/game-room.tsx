@@ -92,8 +92,9 @@ export default function GameRoom({
   const handleRespondOffer = (
     offerId: string,
     action: "accept" | "reject" | "cancel",
+    cardsToGive?: OfferCard[],
   ) => {
-    respondOffer(offerId, action);
+    respondOffer(offerId, action, cardsToGive);
   };
 
   return (
@@ -106,24 +107,29 @@ export default function GameRoom({
       onHarvestField={(slotId) => harvestField(slotId)}
       onTurnOverBean={() => turnOverBean()}
       onDrawCards={() => drawCards()}
-      onGiveDrop={(player, cardsToGive) => setGiveModal({ player, cardsToGive })}
+      onGiveDrop={(player, cardsToGive) =>
+        setGiveModal({ player, cardsToGive })
+      }
       onRequestDrop={(cardsRequested) => setRequestModal({ cardsRequested })}
       onCardRightClick={(card, targetPlayerId) =>
         setRightClickModal({ cardRequested: card, targetPlayerId })
       }
+      onRespondOffer={handleRespondOffer}
+      onCounterOffer={handleCounterOffer}
     >
       <div className="flex flex-col h-full w-full overflow-hidden">
         <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">
           {gameState.phase === "turnTrade" && (
             <button
               onClick={() => setOfferPanelOpen(true)}
-              className="relative flex items-center justify-between gap-2 px-3
-						py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold
-						rounded-xl shadow transition-colors"
+              className={`relative flex items-center justify-between gap-2 px-3
+						py-2 bg-amber-700 hover:bg-amber-600 text-white text-xs font-semibold
+						rounded-xl border border-amber-800 shadow transition-colors
+						${pendingIncomingCount > 0 ? "animate-pulse [box-shadow:0_0_12px_3px_rgba(234,179,8,0.30)]" : ""}`}
             >
               <span>Trade Offers</span>
               {pendingIncomingCount > 0 && (
-                <span className="px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full leading-none">
+                <span className="px-1.5 py-0.5 bg-orange-600 text-white text-xs rounded-full leading-none">
                   {pendingIncomingCount}
                 </span>
               )}
@@ -154,12 +160,25 @@ export default function GameRoom({
           <RequestCardsModal
             cardsRequested={requestModal.cardsRequested}
             myHand={gameState.hand}
-            onSubmit={(cardsOffered) => {
+            centerCards={
+              playerId === gameState.playerTurn
+                ? gameState.centerCards
+                : undefined
+            }
+            isTurnPlayer={playerId === gameState.playerTurn}
+            players={gameState.players.filter((p) => p.playerId !== playerId)}
+            defaultTargetId={playerId !== gameState.playerTurn ? gameState.playerTurn : undefined}
+            onSubmit={(cardsOffered, targetPlayerId) => {
+              const isTurnPlayer = playerId === gameState.playerTurn;
+              const allCenter = requestModal.cardsRequested.every((c) =>
+                gameState.centerCards.some((cc) => cc.cardId === c.cardId),
+              );
+              const useSpecificIds = !isTurnPlayer && allCenter;
               const reqCards = requestModal.cardsRequested.map((c) => ({
                 card_type: c.cardName,
-                card_id: c.cardId,
+                card_id: useSpecificIds ? c.cardId : "",
               }));
-              handleCreateOffer(cardsOffered, reqCards, gameState.playerTurn);
+              handleCreateOffer(cardsOffered, reqCards, targetPlayerId);
               setRequestModal(null);
             }}
             onClose={() => setRequestModal(null)}
@@ -175,18 +194,23 @@ export default function GameRoom({
                 ? gameState.centerCards
                 : undefined
             }
-            onSubmit={(cardsOffered) => {
+            isTurnPlayer={playerId === gameState.playerTurn}
+            players={gameState.players.filter((p) => p.playerId !== playerId)}
+            defaultTargetId={rightClickModal.targetPlayerId}
+            onSubmit={(cardsOffered, targetPlayerId) => {
+              const isTurnPlayer = playerId === gameState.playerTurn;
+              const isCenter = gameState.centerCards.some(
+                (cc) => cc.cardId === rightClickModal.cardRequested.cardId,
+              );
               const reqCards = [
                 {
                   card_type: rightClickModal.cardRequested.cardName,
-                  card_id: rightClickModal.cardRequested.cardId,
+                  card_id: !isTurnPlayer && isCenter
+                    ? rightClickModal.cardRequested.cardId
+                    : "",
                 },
               ];
-              handleCreateOffer(
-                cardsOffered,
-                reqCards,
-                rightClickModal.targetPlayerId,
-              );
+              handleCreateOffer(cardsOffered, reqCards, targetPlayerId);
               setRightClickModal(null);
             }}
             onClose={() => setRightClickModal(null)}

@@ -915,7 +915,7 @@ func (s *State) CounterOffer(parentOfferID, creatorID string, cardsOffered, card
 //
 // On success, the offer is marked accepted, sibling offers (same parent) are
 // expired, and the card swap is executed via TradeBeans.
-func (s *State) AcceptOffer(offerID, acceptorID string) error {
+func (s *State) AcceptOffer(offerID, acceptorID string, selectedCards []OfferCard) error {
 	if s.Phase != PhaseTypeTurnTrade {
 		return NewInvalidPhaseError(s.Phase)
 	}
@@ -967,36 +967,46 @@ func (s *State) AcceptOffer(offerID, acceptorID string) error {
 		return NewPlayerNotFoundError(acceptorID)
 	}
 	requestedIDs := make([]string, 0, len(offer.CardsRequested))
-	// Track which acceptor hand indices have already been claimed so the same
-	// card is not resolved twice when multiple cards of the same type are requested.
-	claimed := make(map[int]bool)
-	for _, c := range offer.CardsRequested {
-		if c.CardID != "" {
-			// Explicit ID (e.g. from a counteroffer where IDs are known).
+	if len(selectedCards) > 0 {
+		// Client provided explicit card IDs (player chose which cards to give).
+		for _, c := range selectedCards {
 			requestedIDs = append(requestedIDs, c.CardID)
-			continue
 		}
-		// Resolve by card type.
-		resolved := false
-		for i, card := range acceptor.Hand {
-			if !claimed[i] && card.Name == c.CardType {
-				requestedIDs = append(requestedIDs, card.ID)
-				claimed[i] = true
-				resolved = true
-				break
+	} else {
+		// Auto-resolve by card type — take the first matching card from the acceptor's hand.
+		// Track which acceptor hand indices have already been claimed so the same
+		// card is not resolved twice when multiple cards of the same type are requested.
+		claimed := make(map[int]bool)
+		claimedCenter := make(map[string]bool)
+		for _, c := range offer.CardsRequested {
+			if c.CardID != "" {
+				// Explicit ID (e.g. from a counteroffer where IDs are known).
+				requestedIDs = append(requestedIDs, c.CardID)
+				continue
 			}
-		}
-		if !resolved && acceptorID == s.TurnOrder[s.CurrentTurn] {
-			for _, card := range s.CenterCards {
-				if card.Name == c.CardType {
+			// Resolve by card type.
+			resolved := false
+			for i, card := range acceptor.Hand {
+				if !claimed[i] && card.Name == c.CardType {
 					requestedIDs = append(requestedIDs, card.ID)
+					claimed[i] = true
 					resolved = true
 					break
 				}
 			}
-		}
-		if !resolved {
-			return NewCardNotInHandError(acceptorID, string(c.CardType))
+			if !resolved && acceptorID == s.TurnOrder[s.CurrentTurn] {
+				for _, card := range s.CenterCards {
+					if card.Name == c.CardType && !claimedCenter[card.ID] {
+						requestedIDs = append(requestedIDs, card.ID)
+						claimedCenter[card.ID] = true
+						resolved = true
+						break
+					}
+				}
+			}
+			if !resolved {
+				return NewCardNotInHandError(acceptorID, string(c.CardType))
+			}
 		}
 	}
 

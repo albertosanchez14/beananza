@@ -473,14 +473,14 @@ func (s *Session) HandleCounterOffer(parentOfferID, creatorID string, cardsOffer
 
 // HandleRespondOffer handles a player accepting, rejecting, or cancelling an offer.
 // action must be one of "accept", "reject", "cancel".
-func (s *Session) HandleRespondOffer(offerID, playerID, action string) error {
+func (s *Session) HandleRespondOffer(offerID, playerID, action string, selectedCards []OfferCard) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var err error
 	switch action {
 	case "accept":
-		err = s.gameState.AcceptOffer(offerID, playerID)
+		err = s.gameState.AcceptOffer(offerID, playerID, selectedCards)
 	case "reject":
 		err = s.gameState.RejectOffer(offerID, playerID)
 	case "cancel":
