@@ -1,16 +1,23 @@
 "use client";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { m } from "motion/react";
 import Image from "next/image";
+import { m } from "motion/react";
 
 export default function HomeClient() {
   const router = useRouter();
+
   const [flying, setFlying] = useState(false);
 
+  useEffect(() => {
+    router.prefetch("/room");
+  }, [router]);
+
   async function handlePlayNow() {
+    if (flying) return;
     setFlying(true);
-    await new Promise((r) => setTimeout(r, 2400));
+    router.prefetch("/room");
+    await new Promise((r) => setTimeout(r, 1800));
     router.push("/room");
   }
 
@@ -255,6 +262,8 @@ export default function HomeClient() {
 
         <div className="flex flex-col sm:flex-row gap-4 w-full max-w-xs sm:max-w-sm">
           <button
+            onMouseEnter={() => router.prefetch("/room")}
+            // onFocus={() => router.prefetch("/room")}
             onClick={handlePlayNow}
             className="flex-1 rounded-xl bg-amber-700 hover:bg-amber-600
 						active:bg-amber-800 border border-amber-500 text-white
