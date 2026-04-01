@@ -31,7 +31,10 @@ type OfferPanelProps = {
     cardsOffered: OfferCard[],
     cardsRequested: OfferCard[],
   ) => void;
-  onRespondOffer: (offerId: string, action: "accept" | "reject" | "cancel") => void;
+  onRespondOffer: (
+    offerId: string,
+    action: "accept" | "reject" | "cancel",
+  ) => void;
 };
 
 export default function OfferPanel({
@@ -103,7 +106,9 @@ export default function OfferPanel({
       <div
         role="presentation"
         onClick={onClose}
-        onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose();
+        }}
         className={`fixed inset-0 bg-black/30 z-40 transition-opacity duration-300
           ${isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
       />
@@ -143,7 +148,8 @@ export default function OfferPanel({
         {gamePhase !== "turnTrade" && (
           <div className="mx-4 mt-3 px-3 py-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
             <p className="text-xs text-yellow-700 dark:text-yellow-400">
-              Offers can only be created during the <strong>Trade phase</strong>. You can still view existing offers.
+              Offers can only be created during the <strong>Trade phase</strong>
+              . You can still view existing offers.
             </p>
           </div>
         )}
@@ -159,9 +165,13 @@ export default function OfferPanel({
               myPlayerId={myPlayerId}
               isTurnPlayer={isTurnPlayer}
               turnPlayerId={playerTurn}
-              parentOfferId={wizard.mode === "counter" ? wizard.parentOfferId : undefined}
+              parentOfferId={
+                wizard.mode === "counter" ? wizard.parentOfferId : undefined
+              }
               parentOfferCreatorId={
-                wizard.mode === "counter" ? wizard.parentOfferCreatorId : undefined
+                wizard.mode === "counter"
+                  ? wizard.parentOfferCreatorId
+                  : undefined
               }
               onSubmit={handleWizardSubmit}
               onCancel={() => setWizard(null)}
@@ -177,9 +187,10 @@ export default function OfferPanel({
                   key={key}
                   onClick={() => setActiveTab(key)}
                   className={`flex items-center gap-1.5 pb-2 px-3 text-sm font-medium border-b-2 transition-colors
-                    ${activeTab === key
-                      ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                      : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                    ${
+                      activeTab === key
+                        ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                        : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                     }`}
                 >
                   {label}

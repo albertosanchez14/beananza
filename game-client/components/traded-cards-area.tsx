@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { CardType, ExternalPlayer, Offer, OfferCard } from "@/schemas/types";
+import { CardType, ExternalPlayer, Offer } from "@/schemas/types";
 import TradedCards from "@/components/traded-cards";
 import InlineOfferTag from "@/components/inline-offer-tag";
+import { getOfferSubtree } from "@/utils/offer-tree";
 
 type Props = {
   phase: string;
@@ -26,11 +27,7 @@ type Props = {
     action: "accept" | "reject" | "cancel",
   ) => void;
   onAcceptOffer: (offer: Offer) => void;
-  onCounterOffer: (
-    parentId: string,
-    offered: OfferCard[],
-    requested: OfferCard[],
-  ) => void;
+  onCounterOffer: (offer: Offer) => void;
   selection: CardType[];
   clearSelection: () => void;
   onRequestDrop: (cards: CardType[]) => void;
@@ -80,6 +77,8 @@ export default function TradedCardsArea({
     }
   };
 
+  const rootOffers = [...incomingOffers, ...outgoingOffers];
+
   return (
     <div
       onDragOver={
@@ -112,54 +111,31 @@ export default function TradedCardsArea({
 
       {phase === "turnTrade" && (
         <>
-          {incomingOffers.map((offer) => (
-            <div
-              key={offer.id}
-              ref={(el) => {
-                if (el) tagWrapperRefs.current.set(offer.id, el);
-                else tagWrapperRefs.current.delete(offer.id);
-              }}
-            >
-              <InlineOfferTag
-                offer={offer}
-                allOffers={allOffers}
-                players={players}
-                myPlayerId={myPlayerId}
-                cardLookup={cardLookup}
-                hand={hand}
-                centerCards={centerCards}
-                isTurnPlayer={isTurnPlayer}
-                onRespond={onRespondOffer}
-                onAccept={onAcceptOffer}
-                onCounter={onCounterOffer}
-                onHover={onOfferHover}
-              />
-            </div>
-          ))}
-          {outgoingOffers.map((offer) => {
+          {rootOffers.map((rootOffer) => {
+            const subtree = getOfferSubtree(allOffers, rootOffer.id);
             return (
-            <div
-              key={offer.id}
-              ref={(el) => {
-                if (el) tagWrapperRefs.current.set(offer.id, el);
-                else tagWrapperRefs.current.delete(offer.id);
-              }}
-            >
-              <InlineOfferTag
-                offer={offer}
-                allOffers={allOffers}
-                players={players}
-                myPlayerId={myPlayerId}
-                cardLookup={cardLookup}
-                hand={hand}
-                centerCards={centerCards}
-                isTurnPlayer={isTurnPlayer}
-                onRespond={onRespondOffer}
-                onAccept={onAcceptOffer}
-                onCounter={onCounterOffer}
-                onHover={onOfferHover}
-              />
-            </div>
+              <div
+                key={rootOffer.id}
+                ref={(el) => {
+                  if (el) tagWrapperRefs.current.set(rootOffer.id, el);
+                  else tagWrapperRefs.current.delete(rootOffer.id);
+                }}
+              >
+                <InlineOfferTag
+                  rootOffer={rootOffer}
+                  subtree={subtree}
+                  players={players}
+                  myPlayerId={myPlayerId}
+                  cardLookup={cardLookup}
+                  hand={hand}
+                  centerCards={centerCards}
+                  isTurnPlayer={isTurnPlayer}
+                  onRespond={onRespondOffer}
+                  onAccept={onAcceptOffer}
+                  onCounter={onCounterOffer}
+                  onHover={onOfferHover}
+                />
+              </div>
             );
           })}
         </>

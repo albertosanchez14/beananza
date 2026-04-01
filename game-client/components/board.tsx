@@ -10,8 +10,9 @@ import {
 import { motion } from "motion/react";
 import { ArrowRight } from "lucide-react";
 
-import { CardType, ExternalPlayer, SlotType } from "@/schemas/types";
+import { CardType, ExternalPlayer, Offer, OfferCard, SlotType } from "@/schemas/types";
 import { useGameContext } from "@/components/game-context";
+import OfferWizard from "@/components/offer-wizard";
 
 import Table from "@/components/table";
 import { CardPile, CenterCards } from "@/components/card-pile";
@@ -139,6 +140,7 @@ export default function Board() {
   const [acceptPickerOffer, setAcceptPickerOffer] = useState<
     (typeof offers)[0] | null
   >(null);
+  const [counteringOffer, setCounteringOffer] = useState<Offer | null>(null);
 
   const {
     centerCards,
@@ -1522,7 +1524,7 @@ export default function Board() {
             isTurnPlayer={isTurnPlayer}
             onRespondOffer={onRespondOffer}
             onAcceptOffer={handleAcceptOffer}
-            onCounterOffer={onCounterOffer}
+            onCounterOffer={setCounteringOffer}
             selection={selection}
             clearSelection={clearSelection}
             onRequestDrop={onRequestDrop}
@@ -1639,6 +1641,35 @@ export default function Board() {
           }}
           onClose={() => setAcceptPickerOffer(null)}
         />
+      )}
+
+      {counteringOffer && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.6)" }}
+        >
+          <div
+            className="relative rounded-2xl border border-white/20 bg-[#1a120a]/95 backdrop-blur-sm shadow-2xl p-5"
+            style={{ width: 480, maxHeight: "80vh", overflowY: "auto" }}
+          >
+            <OfferWizard
+              mode="counter"
+              myHand={hand}
+              centerCards={centerCards}
+              players={players}
+              myPlayerId={myPlayerId}
+              isTurnPlayer={isTurnPlayer}
+              turnPlayerId={playerTurn}
+              parentOfferId={counteringOffer.id}
+              parentOfferCreatorId={counteringOffer.creator_id}
+              onSubmit={(cardsOffered: OfferCard[], cardsRequested: OfferCard[]) => {
+                onCounterOffer(counteringOffer.id, cardsOffered, cardsRequested);
+                setCounteringOffer(null);
+              }}
+              onCancel={() => setCounteringOffer(null)}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
