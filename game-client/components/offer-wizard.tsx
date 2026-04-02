@@ -411,8 +411,8 @@ export default function OfferWizard({
             </div>
           )}
 
-          {/* Center cards */}
-          {centerCards.length > 0 && (
+          {/* Center cards — only the turn player may offer center cards */}
+          {isTurnPlayer && centerCards.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-2">
                 Center cards

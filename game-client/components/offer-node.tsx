@@ -1,6 +1,6 @@
 "use client";
 
-import { CSSProperties } from "react";
+import { CSSProperties, forwardRef } from "react";
 import { CardType, ExternalPlayer, Offer } from "@/schemas/types";
 import { CardFrontFace } from "@/components/card-front-face";
 import { canAcceptOffer } from "@/components/offer-card";
@@ -26,7 +26,6 @@ type OfferNodeProps = {
   cardHeight: number;
   players?: ExternalPlayer[];
   style?: CSSProperties;
-  nodeRef?: (el: HTMLDivElement | null) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
@@ -34,7 +33,7 @@ type OfferNodeProps = {
   onCounter: (offer: Offer) => void;
 };
 
-export function OfferNode(props: OfferNodeProps) {
+export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(function OfferNode(props,  ref) {
   const {
     offer,
     myPlayerId,
@@ -66,6 +65,7 @@ export function OfferNode(props: OfferNodeProps) {
     .filter((ct): ct is CardType => ct !== undefined);
 
   const isFree = relevantCards.length === 0;
+  const nodeWidth = cardTypes.length > 1 ? width * cardTypes.length : width;
   const canAccept =
     isIncoming &&
     isPending &&
@@ -101,7 +101,13 @@ export function OfferNode(props: OfferNodeProps) {
   );
 
   return (
-    <div ref={props.nodeRef} className="flex flex-col" style={{ ...style, width }} onMouseEnter={props.onMouseEnter} onMouseLeave={props.onMouseLeave}>
+    <div
+      ref={ref}
+      className="flex flex-col"
+      style={{ ...style, width: nodeWidth }}
+      onMouseEnter={props.onMouseEnter}
+      onMouseLeave={props.onMouseLeave}
+    >
       <div
         className={`rounded-xl border-2 overflow-hidden 
 						flex flex-row relative ${accent.border} ${accent.bg}`}
@@ -110,8 +116,17 @@ export function OfferNode(props: OfferNodeProps) {
         {isFree
           ? crossSvg
           : cardTypes.map((ct) => (
-              <div key={ct.cardName} className="absolute inset-0">
+              <div key={ct.cardName} className="relative flex-1 min-w-0">
                 <CardFrontFace card={ct} />
+                {counts[ct.cardName] > 1 && (
+                  <span
+                    className="absolute top-0.5 right-0.5 z-20 min-w-3.5 h-3.5 
+										flex items-center justify-center 
+										text-black font-bold px-0.5"
+                  >
+                    {counts[ct.cardName]}
+                  </span>
+                )}
               </div>
             ))}
 
@@ -147,8 +162,10 @@ export function OfferNode(props: OfferNodeProps) {
             </button>
           )}
           <button
-            onClick={() => onRespond(offer.id, "reject")}
-            title="Reject"
+            onClick={() =>
+              onRespond(offer.id, isIncoming ? "reject" : "cancel")
+            }
+            title={isIncoming ? "Reject" : "Cancel"}
             className="flex-1 text-[8px] font-semibold py-0.5 
 						rounded bg-red-900/60 hover:bg-red-800 
 						text-red-300 border border-red-700/50 transition-colors"
@@ -171,4 +188,4 @@ export function OfferNode(props: OfferNodeProps) {
       </div>
     </div>
   );
-}
+});

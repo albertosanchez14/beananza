@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { Offer, ExternalPlayer, CardType } from "@/schemas/types";
 import { canAcceptOffer } from "@/components/offer-card";
 import { getLeaves } from "@/utils/offer-tree";
@@ -16,7 +16,7 @@ type Props = {
   hand: CardType[];
   centerCards: CardType[];
   isTurnPlayer?: boolean;
-  tagWrapperRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
+  tagWrapperRefs: React.RefObject<Map<string, HTMLDivElement>>;
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
   onAccept: (offer: Offer) => void;
   onCounter: (offer: Offer) => void;
@@ -39,25 +39,26 @@ export default function InlineOfferTag({
   onHover,
 }: Props) {
   const isIncoming = rootOffer.creator_id !== myPlayerId;
-  const isBroadcast = rootOffer.target_id === "";
   const [treeOpen, setTreeOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
 
   const leaves = getLeaves(subtree);
 
   if (leaves.length === 0) return null;
 
-  const accent = isBroadcast
-    ? { border: "border-pink-500/80", bg: "bg-pink-900/40" }
-    : isIncoming
-      ? { border: "border-green-600/60", bg: "bg-green-900/30" }
-      : { border: "border-blue-500/80", bg: "bg-blue-900/40" };
+  const offerAccent = (offer: Offer) => {
+    if (offer.target_id === "")
+      return { border: "border-pink-500/80", bg: "bg-pink-900/40" };
+    if (offer.creator_id !== myPlayerId)
+      return { border: "border-green-600/60", bg: "bg-green-900/30" };
+    return { border: "border-blue-500/80", bg: "bg-blue-900/40" };
+  };
 
   const hasMultipleNodes = subtree.length > 1;
 
   return (
     <div
-      ref={containerRef}
+      ref={setContainerEl}
       className="relative shrink-0"
       onMouseLeave={() => !treeOpen && onHover?.(null)}
     >
@@ -76,7 +77,7 @@ export default function InlineOfferTag({
           </div>
         )}
 
-      <div className="flex" style={{ height: 144 }}>
+      <div className="flex gap-0.5" style={{ height: 144 }}>
         {leaves.map((leaf) => (
           <OfferNode
             key={leaf.id}
@@ -90,15 +91,18 @@ export default function InlineOfferTag({
             onRespond={onRespond}
             onAccept={onAccept}
             onCounter={onCounter}
-            nodeRef={(el) => {
+            ref={(el) => {
               if (el) tagWrapperRefs.current.set(leaf.id, el);
               else tagWrapperRefs.current.delete(leaf.id);
             }}
             onMouseEnter={() => !treeOpen && onHover?.(leaf.id)}
             width={96}
             cardHeight={144}
-            accent={accent}
-            style={{ opacity: "45%" }}
+            accent={offerAccent(leaf)}
+            style={{
+              opacity: treeOpen ? 0 : 1,
+              pointerEvents: treeOpen ? "none" : undefined,
+            }}
           />
         ))}
 
@@ -111,12 +115,7 @@ export default function InlineOfferTag({
             title="Show offer history"
             className={`absolute top-1 left-1 z-20 w-5 h-5
               flex items-center justify-center rounded-full border
-              text-[9px] font-bold transition-colors
-              ${
-                treeOpen
-                  ? "bg-amber-500 border-amber-400 text-white"
-                  : "bg-white/10 border-white/20 text-white/60 hover:bg-white/20 hover:text-white/90"
-              }`}
+              text-[9px] text-black font-bold transition-colors`}
           >
             ⌥
           </button>
@@ -127,7 +126,7 @@ export default function InlineOfferTag({
         <OfferTreeOverlay
           subtree={subtree}
           rootOfferId={rootOffer.id}
-          containerEl={containerRef?.current}
+          containerEl={containerEl}
           myPlayerId={myPlayerId}
           players={players}
           cardLookup={cardLookup}

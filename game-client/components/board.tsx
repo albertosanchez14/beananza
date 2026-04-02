@@ -10,7 +10,13 @@ import {
 import { motion } from "motion/react";
 import { ArrowRight } from "lucide-react";
 
-import { CardType, ExternalPlayer, Offer, OfferCard, SlotType } from "@/schemas/types";
+import {
+  CardType,
+  ExternalPlayer,
+  Offer,
+  OfferCard,
+  SlotType,
+} from "@/schemas/types";
 import { useGameContext } from "@/components/game-context";
 import OfferWizard from "@/components/offer-wizard";
 
@@ -774,11 +780,7 @@ export default function Board() {
         tagWrapperRefs.current.get(offer.id) ?? null;
 
       offers
-        .filter(
-          (o) =>
-            o.creator_id === myPlayerId &&
-            o.status === "pending",
-        )
+        .filter((o) => o.creator_id === myPlayerId && o.status === "pending")
         .forEach((offer) => {
           const tagEl = getTagEl(offer);
           if (!tagEl) return;
@@ -1133,7 +1135,9 @@ export default function Board() {
       {/* Offer origin arrows */}
       {Array.from(offerPaths.entries()).map(
         ([key, { pathStr, color, playerId }]) => {
-          const duration = Math.max(svgPathLength(pathStr), ARROW_MIN_ARC_PX) / ARROW_SPEED_PX_S;
+          const duration =
+            Math.max(svgPathLength(pathStr), ARROW_MIN_ARC_PX) /
+            ARROW_SPEED_PX_S;
           let opacity = 0;
           if (hoveredOfferId && key.startsWith(hoveredOfferId)) {
             if (playerId) {
@@ -1663,8 +1667,15 @@ export default function Board() {
               turnPlayerId={playerTurn}
               parentOfferId={counteringOffer.id}
               parentOfferCreatorId={counteringOffer.creator_id}
-              onSubmit={(cardsOffered: OfferCard[], cardsRequested: OfferCard[]) => {
-                onCounterOffer(counteringOffer.id, cardsOffered, cardsRequested);
+              onSubmit={(
+                cardsOffered: OfferCard[],
+                cardsRequested: OfferCard[],
+              ) => {
+                onCounterOffer(
+                  counteringOffer.id,
+                  cardsOffered,
+                  cardsRequested,
+                );
                 setCounteringOffer(null);
               }}
               onCancel={() => setCounteringOffer(null)}

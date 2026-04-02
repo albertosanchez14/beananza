@@ -112,7 +112,13 @@ export default function TradedCardsArea({
       {phase === "turnTrade" && (
         <>
           {rootOffers.map((rootOffer) => {
-            const subtree = getOfferSubtree(allOffers, rootOffer.id);
+            const subtree = getOfferSubtree(allOffers, rootOffer.id).filter(
+              (offer) =>
+                offer.id === rootOffer.id ||
+                offer.creator_id === myPlayerId ||
+                offer.target_id === myPlayerId ||
+                offer.target_id === "",
+            );
             return (
               <div
                 key={rootOffer.id}

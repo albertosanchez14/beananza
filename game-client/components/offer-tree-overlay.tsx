@@ -71,7 +71,7 @@ type Props = {
   hand: CardType[];
   centerCards: CardType[];
   isTurnPlayer: boolean;
-  tagWrapperRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
+  tagWrapperRefs: React.RefObject<Map<string, HTMLDivElement>>;
   onClose: () => void;
   onHover?: (id: string | null) => void;
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
@@ -155,10 +155,12 @@ export default function OfferTreeOverlay({
         // Leaves at top (depth=maxDepth, translateY=0); root shifted down to peek below.
         const left = isRoot ? (totalW - ROOT_W) / 2 : pos.x;
         const translateY = (maxDepth - pos.depth) * PEEK_OFFSET;
-        const isIncoming = subtree[0].creator_id !== myPlayerId;
-        const accent = isIncoming
-          ? { border: "border-green-600/60", bg: "bg-green-900/30" }
-          : { border: "border-blue-500/80", bg: "bg-blue-900/40" };
+        const accent =
+          offer.target_id === ""
+            ? { border: "border-pink-500/80", bg: "bg-pink-900/40" }
+            : offer.creator_id !== myPlayerId
+              ? { border: "border-green-600/60", bg: "bg-green-900/30" }
+              : { border: "border-blue-500/80", bg: "bg-blue-900/40" };
         return (
           <OfferNode
             key={offer.id}
@@ -173,7 +175,7 @@ export default function OfferTreeOverlay({
             onRespond={onRespond}
             onAccept={onAccept}
             onCounter={onCounter}
-            nodeRef={(el) => {
+            ref={(el) => {
               if (el) tagWrapperRefs.current.set(offer.id, el);
               else tagWrapperRefs.current.delete(offer.id);
             }}
