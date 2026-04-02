@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { CardType, ExternalPlayer, Offer } from "@/schemas/types";
 import { buildChildrenMap } from "@/utils/offer-tree";
 import { OfferNode } from "@/components/offer-node";
@@ -71,7 +71,9 @@ type Props = {
   hand: CardType[];
   centerCards: CardType[];
   isTurnPlayer: boolean;
+  tagWrapperRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
   onClose: () => void;
+  onHover?: (id: string | null) => void;
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
   onAccept: (offer: Offer) => void;
   onCounter: (offer: Offer) => void;
@@ -87,7 +89,9 @@ export default function OfferTreeOverlay({
   hand,
   centerCards,
   isTurnPlayer,
+  tagWrapperRefs,
   onClose,
+  onHover,
   onRespond,
   onAccept,
   onCounter,
@@ -169,6 +173,12 @@ export default function OfferTreeOverlay({
             onRespond={onRespond}
             onAccept={onAccept}
             onCounter={onCounter}
+            nodeRef={(el) => {
+              if (el) tagWrapperRefs.current.set(offer.id, el);
+              else tagWrapperRefs.current.delete(offer.id);
+            }}
+            onMouseEnter={() => onHover?.(offer.id)}
+            onMouseLeave={() => onHover?.(null)}
             width={nodeW}
             cardHeight={CARD_H}
             style={{

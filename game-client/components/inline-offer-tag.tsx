@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { Offer, ExternalPlayer, CardType } from "@/schemas/types";
 import { canAcceptOffer } from "@/components/offer-card";
 import { getLeaves } from "@/utils/offer-tree";
@@ -16,6 +16,7 @@ type Props = {
   hand: CardType[];
   centerCards: CardType[];
   isTurnPlayer?: boolean;
+  tagWrapperRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
   onAccept: (offer: Offer) => void;
   onCounter: (offer: Offer) => void;
@@ -31,6 +32,7 @@ export default function InlineOfferTag({
   hand,
   centerCards,
   isTurnPlayer = false,
+  tagWrapperRefs,
   onRespond,
   onAccept,
   onCounter,
@@ -57,8 +59,7 @@ export default function InlineOfferTag({
     <div
       ref={containerRef}
       className="relative shrink-0"
-      onMouseEnter={() => onHover?.(rootOffer.id)}
-      onMouseLeave={() => onHover?.(null)}
+      onMouseLeave={() => !treeOpen && onHover?.(null)}
     >
       {/* Missing cards warning for incoming leaves */}
       {isIncoming &&
@@ -89,6 +90,11 @@ export default function InlineOfferTag({
             onRespond={onRespond}
             onAccept={onAccept}
             onCounter={onCounter}
+            nodeRef={(el) => {
+              if (el) tagWrapperRefs.current.set(leaf.id, el);
+              else tagWrapperRefs.current.delete(leaf.id);
+            }}
+            onMouseEnter={() => !treeOpen && onHover?.(leaf.id)}
             width={96}
             cardHeight={144}
             accent={accent}
@@ -98,7 +104,10 @@ export default function InlineOfferTag({
 
         {hasMultipleNodes && (
           <button
-            onClick={() => setTreeOpen((v) => !v)}
+            onClick={() => {
+              setTreeOpen((v) => !v);
+              onHover?.(null);
+            }}
             title="Show offer history"
             className={`absolute top-1 left-1 z-20 w-5 h-5
               flex items-center justify-center rounded-full border
@@ -118,14 +127,16 @@ export default function InlineOfferTag({
         <OfferTreeOverlay
           subtree={subtree}
           rootOfferId={rootOffer.id}
-          containerEl={containerRef.current ?? undefined}
+          containerEl={containerRef?.current}
           myPlayerId={myPlayerId}
           players={players}
           cardLookup={cardLookup}
           hand={hand}
           centerCards={centerCards}
           isTurnPlayer={isTurnPlayer}
+          tagWrapperRefs={tagWrapperRefs}
           onClose={() => setTreeOpen(false)}
+          onHover={onHover}
           onRespond={onRespond}
           onAccept={onAccept}
           onCounter={(offer) => {

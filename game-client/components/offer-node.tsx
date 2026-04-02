@@ -26,6 +26,9 @@ type OfferNodeProps = {
   cardHeight: number;
   players?: ExternalPlayer[];
   style?: CSSProperties;
+  nodeRef?: (el: HTMLDivElement | null) => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
   onAccept: (offer: Offer) => void;
   onCounter: (offer: Offer) => void;
@@ -98,7 +101,7 @@ export function OfferNode(props: OfferNodeProps) {
   );
 
   return (
-    <div className="flex flex-col" style={{ ...style, width }}>
+    <div ref={props.nodeRef} className="flex flex-col" style={{ ...style, width }} onMouseEnter={props.onMouseEnter} onMouseLeave={props.onMouseLeave}>
       <div
         className={`rounded-xl border-2 overflow-hidden 
 						flex flex-row relative ${accent.border} ${accent.bg}`}

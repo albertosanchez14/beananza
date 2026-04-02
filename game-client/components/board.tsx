@@ -137,6 +137,7 @@ export default function Board() {
     null,
   );
   const [hoveredOfferId, setHoveredOfferId] = useState<string | null>(null);
+
   const [acceptPickerOffer, setAcceptPickerOffer] = useState<
     (typeof offers)[0] | null
   >(null);
@@ -175,10 +176,7 @@ export default function Board() {
       return { cardHighlights: cardH, playerHighlights: playerH };
 
     const rootPending = offers.filter(
-      (o) =>
-        o.status === "pending" &&
-        o.parent_offer_id === "" &&
-        o.id === hoveredOfferId,
+      (o) => o.status === "pending" && o.id === hoveredOfferId,
     );
 
     for (const offer of rootPending) {
@@ -289,7 +287,6 @@ export default function Board() {
       (o) =>
         o.id === hoveredOfferId &&
         o.creator_id !== myPlayerId &&
-        o.parent_offer_id === "" &&
         o.status === "pending",
     );
     if (!offer) return [];
@@ -771,15 +768,19 @@ export default function Board() {
         return match ? (cardRefs.current.get(match.cardId) ?? null) : null;
       };
 
+      // Resolve the tag element for an offer — each OfferNode registers its own
+      // div under offer.id, so we look up directly without walking up the tree.
+      const getTagEl = (offer: Offer): HTMLDivElement | null =>
+        tagWrapperRefs.current.get(offer.id) ?? null;
+
       offers
         .filter(
           (o) =>
             o.creator_id === myPlayerId &&
-            o.parent_offer_id === "" &&
             o.status === "pending",
         )
         .forEach((offer) => {
-          const tagEl = tagWrapperRefs.current.get(offer.id);
+          const tagEl = getTagEl(offer);
           if (!tagEl) return;
           const tagCenter = elCenter(tagEl);
 
@@ -885,11 +886,10 @@ export default function Board() {
           (o) =>
             (o.target_id === myPlayerId || o.target_id === "") &&
             o.creator_id !== myPlayerId &&
-            o.parent_offer_id === "" &&
             o.status === "pending",
         )
         .forEach((offer) => {
-          const tagEl = tagWrapperRefs.current.get(offer.id);
+          const tagEl = getTagEl(offer);
           if (!tagEl) return;
           const tagCenter = elCenter(tagEl);
           const isBroadcastIncoming = offer.target_id === "";
@@ -1018,12 +1018,13 @@ export default function Board() {
       setActiveBroadcastPlayerId(null);
       return;
     }
-    const hoveredOffer = offers.find((o) => o.id === hoveredOfferId);
-    if (
-      !hoveredOffer ||
-      hoveredOffer.creator_id !== myPlayerId ||
-      hoveredOffer.target_id !== ""
-    ) {
+    const hoveredOffer = offers.find(
+      (o) =>
+        o.id === hoveredOfferId &&
+        o.creator_id === myPlayerId &&
+        o.target_id === "",
+    );
+    if (!hoveredOffer) {
       setActiveBroadcastPlayerId(null);
       return;
     }

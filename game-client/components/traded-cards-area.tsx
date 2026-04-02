@@ -130,6 +130,7 @@ export default function TradedCardsArea({
                   hand={hand}
                   centerCards={centerCards}
                   isTurnPlayer={isTurnPlayer}
+                  tagWrapperRefs={tagWrapperRefs}
                   onRespond={onRespondOffer}
                   onAccept={onAcceptOffer}
                   onCounter={onCounterOffer}
