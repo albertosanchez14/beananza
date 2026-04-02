@@ -70,7 +70,8 @@ export default function RequestCardsModal({
       const max = groups.find((g) => g.cardName === cardName)?.available.length ?? 0;
       const next = Math.max(0, Math.min(max, (prev[cardName] ?? 0) + delta));
       if (next === 0) {
-        const { [cardName]: _removed, ...rest } = prev;
+        const rest = { ...prev };
+        delete rest[cardName];
         return rest;
       }
       return { ...prev, [cardName]: next };

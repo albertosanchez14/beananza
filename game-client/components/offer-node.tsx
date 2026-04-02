@@ -5,14 +5,6 @@ import { CardType, ExternalPlayer, Offer } from "@/schemas/types";
 import { CardFrontFace } from "@/components/card-front-face";
 import { canAcceptOffer } from "@/components/offer-card";
 
-const STATUS_COLOR: Record<string, string> = {
-  pending: "bg-yellow-600/80 text-yellow-100",
-  accepted: "bg-green-700/80 text-green-100",
-  rejected: "bg-red-700/80 text-red-100",
-  cancelled: "bg-gray-600/80 text-gray-200",
-  expired: "bg-gray-600/80 text-gray-200",
-};
-
 type OfferNodeProps = {
   offer: Offer;
   myPlayerId: string;
@@ -21,7 +13,6 @@ type OfferNodeProps = {
   centerCards: CardType[];
   isTurnPlayer: boolean;
   accent: { border: string; bg: string };
-  variant: "standalone" | "inline";
   width: number;
   cardHeight: number;
   players?: ExternalPlayer[];

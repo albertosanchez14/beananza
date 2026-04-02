@@ -53,9 +53,10 @@ function computeLayout(subtree: Offer[], rootId: string) {
   const totalW = subtreeWidth(rootId, childrenOf);
   const positions = new Map<string, { x: number; depth: number }>();
   assignPositions(rootId, totalW / 2, 0, childrenOf, positions);
-  const maxDepth = Math.max(
-    ...Array.from(positions.values()).map((p) => p.depth),
-  );
+  let maxDepth = 0;
+  for (const { depth } of positions.values()) {
+    if (depth > maxDepth) maxDepth = depth;
+  }
   return { positions, totalW, maxDepth };
 }
 
@@ -164,7 +165,6 @@ export default function OfferTreeOverlay({
         return (
           <OfferNode
             key={offer.id}
-            variant="standalone"
             offer={offer}
             myPlayerId={myPlayerId}
             players={players}

@@ -14,8 +14,9 @@ export function getOfferSubtree(allOffers: Offer[], rootId: string): Offer[] {
 
   const result: Offer[] = [];
   const queue = [rootId];
-  while (queue.length > 0) {
-    const id = queue.shift()!;
+  let queueIndex = 0;
+  while (queueIndex < queue.length) {
+    const id = queue[queueIndex++];
     const offer = byId.get(id);
     if (!offer) continue;
     result.push(offer);
@@ -29,13 +30,16 @@ export function getOfferSubtree(allOffers: Offer[], rootId: string): Offer[] {
  * that the current player should act on.
  */
 export function getLeaves(subtree: Offer[]): Offer[] {
-  const parentIds = new Set(
-    subtree
-      .filter((o) => o.status === "pending")
-      .map((o) => o.parent_offer_id)
-      .filter((id) => id !== ""),
-  );
-  return subtree.filter((o) => !parentIds.has(o.id) && o.status === "pending");
+  const parentIds = new Set<string>();
+  const pendingOffers: Offer[] = [];
+
+  for (const offer of subtree) {
+    if (offer.status !== "pending") continue;
+    pendingOffers.push(offer);
+    if (offer.parent_offer_id) parentIds.add(offer.parent_offer_id);
+  }
+
+  return pendingOffers.filter((offer) => !parentIds.has(offer.id));
 }
 
 /** Builds a map from each offer id to its children within the subtree. */

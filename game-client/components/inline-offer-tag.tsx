@@ -37,7 +37,6 @@ export default function InlineOfferTag({
   onCounter,
   onHover,
 }: Props) {
-  const isIncoming = rootOffer.creator_id !== myPlayerId;
   const [treeOpen, setTreeOpen] = useState(false);
   const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
 
@@ -65,7 +64,6 @@ export default function InlineOfferTag({
         {leaves.map((leaf) => (
           <OfferNode
             key={leaf.id}
-            variant="inline"
             offer={leaf}
             myPlayerId={myPlayerId}
             cardLookup={cardLookup}

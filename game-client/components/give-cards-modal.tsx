@@ -30,7 +30,8 @@ export default function GiveCardsModal({
     setQuantities((prev) => {
       const next = Math.max(0, (prev[type] ?? 0) + delta);
       if (next === 0) {
-        const { [type]: _removed, ...rest } = prev;
+        const rest = { ...prev };
+        delete rest[type];
         return rest;
       }
       return { ...prev, [type]: next };

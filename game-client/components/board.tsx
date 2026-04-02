@@ -216,99 +216,99 @@ export default function Board() {
     if (phase !== "turnTrade" || !hoveredOfferId)
       return { cardHighlights: cardH, playerHighlights: playerH };
 
-    const rootPending = offers.filter(
+    const offer = offers.find(
       (o) => o.status === "pending" && o.id === hoveredOfferId,
     );
 
-    for (const offer of rootPending) {
-      const isOwn = offer.creator_id === myPlayerId;
-      const isIncoming =
-        (offer.target_id === myPlayerId || offer.target_id === "") &&
-        offer.creator_id !== myPlayerId;
-      if (!isOwn && !isIncoming) continue;
+    if (!offer) return { cardHighlights: cardH, playerHighlights: playerH };
 
-      // Cards from my side (my hand or my center).
-      // For incoming offers the current player is not the turn player and cannot
-      // use center cards — only highlight hand matches.
-      const myCards = isOwn ? offer.cards_offered : offer.cards_requested;
-      const amTurnPlayer = myPlayerId === playerTurn;
-      const isBroadcast = offer.target_id === "";
-      const highlightColor = isBroadcast
-        ? ORIGIN_COLORS.player
-        : isIncoming
-          ? ORIGIN_COLORS.center
-          : ORIGIN_COLORS.hand; // outgoing non-broadcast: always cyan
-      for (const c of myCards) {
-        if (c.card_id) {
-          // Explicit card ID — resolve color from the specific card's location.
-          const color =
-            isIncoming && !isBroadcast && !amTurnPlayer
-              ? hand.some((h) => h.cardId === c.card_id)
-                ? highlightColor
-                : null
-              : highlightColor;
-          if (color && !cardH.has(c.card_id)) cardH.set(c.card_id, color);
-        } else {
-          // Type-only request: highlight exactly one unclaimed card.
-          // Priority: center cards first (turn player only), then hand — first in array order.
-          const priorityPool: Array<{ card: CardType; color: string }> = [];
-          if (amTurnPlayer) {
-            for (const cc of centerCards) {
-              if (cc.cardName === c.card_type)
-                priorityPool.push({ card: cc, color: highlightColor });
-            }
+    const isOwn = offer.creator_id === myPlayerId;
+    const isIncoming =
+      (offer.target_id === myPlayerId || offer.target_id === "") &&
+      offer.creator_id !== myPlayerId;
+    if (!isOwn && !isIncoming)
+      return { cardHighlights: cardH, playerHighlights: playerH };
+
+    // Cards from my side (my hand or my center).
+    // For incoming offers the current player is not the turn player and cannot
+    // use center cards — only highlight hand matches.
+    const myCards = isOwn ? offer.cards_offered : offer.cards_requested;
+    const amTurnPlayer = myPlayerId === playerTurn;
+    const isBroadcast = offer.target_id === "";
+    const highlightColor = isBroadcast
+      ? ORIGIN_COLORS.player
+      : isIncoming
+        ? ORIGIN_COLORS.center
+        : ORIGIN_COLORS.hand; // outgoing non-broadcast: always cyan
+    for (const c of myCards) {
+      if (c.card_id) {
+        // Explicit card ID — resolve color from the specific card's location.
+        const color =
+          isIncoming && !isBroadcast && !amTurnPlayer
+            ? hand.some((h) => h.cardId === c.card_id)
+              ? highlightColor
+              : null
+            : highlightColor;
+        if (color && !cardH.has(c.card_id)) cardH.set(c.card_id, color);
+      } else {
+        // Type-only request: highlight exactly one unclaimed card.
+        // Priority: center cards first (turn player only), then hand — first in array order.
+        const priorityPool: Array<{ card: CardType; color: string }> = [];
+        if (amTurnPlayer) {
+          for (const cc of centerCards) {
+            if (cc.cardName === c.card_type)
+              priorityPool.push({ card: cc, color: highlightColor });
           }
-          for (const hc of hand) {
-            if (hc.cardName === c.card_type)
-              priorityPool.push({ card: hc, color: highlightColor });
-          }
-          for (const { card, color } of priorityPool) {
-            if (!cardH.has(card.cardId)) {
-              cardH.set(card.cardId, color);
-              break;
-            }
+        }
+        for (const hc of hand) {
+          if (hc.cardName === c.card_type)
+            priorityPool.push({ card: hc, color: highlightColor });
+        }
+        for (const { card, color } of priorityPool) {
+          if (!cardH.has(card.cardId)) {
+            cardH.set(card.cardId, color);
+            break;
           }
         }
       }
+    }
 
-      // Cards on the other player's side — only highlight center cards when
-      // we have an exact card_id match. Type fallback is unreliable here: the
-      // same card type may exist in the center while the request targets a
-      // player's hand, so we must not highlight the center card in that case.
-      const theirCards = isOwn ? offer.cards_requested : offer.cards_offered;
-      const otherPlayerId = isOwn ? offer.target_id : offer.creator_id;
-      for (const c of theirCards) {
-        const inCenter = !!(
-          c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
-        );
-        if (inCenter) {
-          const color = isBroadcast
-            ? ORIGIN_COLORS.player
-            : isOwn
-              ? ORIGIN_COLORS.hand
-              : ORIGIN_COLORS.center;
-          if (!cardH.has(c.card_id)) cardH.set(c.card_id, color);
-        } else if (otherPlayerId === "") {
-          // Broadcast offer — highlight every other player.
-          for (const p of players) {
-            if (p.playerId === myPlayerId) continue;
-            const existing = playerH.get(p.playerId);
-            playerH.set(p.playerId, {
-              color: ORIGIN_COLORS.player,
-              count: (existing?.count ?? 0) + 1,
-            });
-          }
-        } else if (otherPlayerId) {
-          const existing = playerH.get(otherPlayerId);
-          playerH.set(otherPlayerId, {
+    // Cards on the other player's side — only highlight center cards when
+    // we have an exact card_id match. Type fallback is unreliable here: the
+    // same card type may exist in the center while the request targets a
+    // player's hand, so we must not highlight the center card in that case.
+    const theirCards = isOwn ? offer.cards_requested : offer.cards_offered;
+    const otherPlayerId = isOwn ? offer.target_id : offer.creator_id;
+    for (const c of theirCards) {
+      const inCenter = !!(
+        c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
+      );
+      if (inCenter) {
+        const color = isBroadcast
+          ? ORIGIN_COLORS.player
+          : isOwn
+            ? ORIGIN_COLORS.hand
+            : ORIGIN_COLORS.center;
+        if (!cardH.has(c.card_id)) cardH.set(c.card_id, color);
+      } else if (otherPlayerId === "") {
+        // Broadcast offer — highlight every other player.
+        for (const p of players) {
+          if (p.playerId === myPlayerId) continue;
+          const existing = playerH.get(p.playerId);
+          playerH.set(p.playerId, {
             color: ORIGIN_COLORS.player,
             count: (existing?.count ?? 0) + 1,
           });
         }
+      } else if (otherPlayerId) {
+        const existing = playerH.get(otherPlayerId);
+        playerH.set(otherPlayerId, {
+          color: ORIGIN_COLORS.player,
+          count: (existing?.count ?? 0) + 1,
+        });
       }
     }
     return { cardHighlights: cardH, playerHighlights: playerH };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     offers,
     hand,
@@ -1003,9 +1003,6 @@ export default function Board() {
           }
 
           // Offering arrows: collapse to one arrow per origin element.
-          // For hand-sourced cards we intentionally use the hand container as
-          // origin, so multiple requested hand cards don't render duplicate
-          // arrows from the same hand.
           const creatorEl =
             opponentFieldRefs.current.get(offer.creator_id) ?? null;
           if (creatorEl) {
@@ -1035,9 +1032,7 @@ export default function Board() {
                     ? hc.cardId === c.card_id
                     : hc.cardName === c.card_type;
                   if (matches && !claimed.has(hc.cardId)) {
-                    offEl = c.card_id
-                      ? (cardRefs.current.get(hc.cardId) ?? null)
-                      : handRef.current;
+                    offEl = cardRefs.current.get(hc.cardId) ?? handRef.current;
                     claimed.add(hc.cardId);
                     break;
                   }
@@ -1336,6 +1331,7 @@ export default function Board() {
         <Opponents>
           {players.map((player) => {
             const isTurnPlayer = myPlayerId === playerTurn;
+            const playerHighlight = playerHighlights.get(player.playerId);
             const isEligibleTarget =
               phase === "turnTrade" &&
               (isTurnPlayer || player.playerId === playerTurn);
@@ -1506,8 +1502,8 @@ export default function Board() {
                           flipped={true}
                           highlightColor={
                             index <
-                            (playerHighlights.get(player.playerId)?.count ?? 0)
-                              ? playerHighlights.get(player.playerId)?.color
+                            (playerHighlight?.count ?? 0)
+                              ? playerHighlight?.color
                               : undefined
                           }
                         />
