@@ -1,5 +1,4 @@
 import {
-  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -7,8 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { motion } from "motion/react";
-import { ArrowRight } from "lucide-react";
 
 import {
   CardType,
@@ -17,7 +14,9 @@ import {
   OfferCard,
   SlotType,
 } from "@/schemas/types";
+
 import { useGameContext } from "@/components/game-context";
+
 import OfferWizard from "@/components/offer-wizard";
 
 import Table from "@/components/table";
@@ -36,6 +35,16 @@ import { PlantFlyingCard } from "@/components/plant-flying-card";
 import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
 import AcceptCardPicker from "@/components/accept-card-picker";
 import { canAcceptOffer } from "@/components/offer-card";
+import Arrow from "@/components/arrow";
+import {
+  addPath,
+  addPathsToTargets,
+  broadcastTargets,
+  claimCard,
+  getTagEl,
+  OfferPathEntry,
+  resolveOfferedEl,
+} from "@/utils/offer-arrow-utils";
 
 type FlyingCardEntry = {
   id: string;
@@ -60,46 +69,12 @@ type TurnOverFlyingCardEntry = {
   cardScale: number;
 };
 
-const ARROW_SPEED_PX_S = 300; // pixels per second
-const ARROW_MIN_ARC_PX = 300; // minimum effective arc — prevents short paths from cycling too fast
 const ORIGIN_COLORS = {
   hand: "#38bdf8",
   center: "#a3e635",
   player: "#f472b6",
   blocked: "#ef4444",
 } as const;
-
-function svgPathLength(d: string): number {
-  if (typeof document === "undefined") return 400;
-  const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  el.setAttribute("d", d);
-  return el.getTotalLength();
-}
-
-function elCenter(el: HTMLElement): { x: number; y: number } {
-  const r = el.getBoundingClientRect();
-  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-}
-
-function quadBezierPath(
-  start: { x: number; y: number },
-  end: { x: number; y: number },
-): string {
-  const mx = (start.x + end.x) / 2;
-  const my = (start.y + end.y) / 2;
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const len = Math.hypot(dx, dy);
-  if (len < 1) return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
-  const px = -dy / len;
-  const py = dx / len;
-  // Always bow upward: sign chosen so cpy = my + sign*py*bow < my
-  const sign = py >= 0 ? -1 : 1;
-  const bow = Math.min(len * 0.15, 80);
-  const cpx = mx + sign * px * bow;
-  const cpy = my + sign * py * bow;
-  return `M ${start.x} ${start.y} Q ${cpx} ${cpy} ${end.x} ${end.y}`;
-}
 
 function canProvideOfferedCards(
   offer: Offer,
@@ -325,7 +300,9 @@ export default function Board() {
   // Non-interactive phantoms are appended to the player's hand for deficits.
   const ghostCards = useMemo<CardType[]>(() => {
     if (!hoveredOfferId || phase !== "turnTrade") return [];
-    const offer = offers.find((o) => o.id === hoveredOfferId && o.status === "pending");
+    const offer = offers.find(
+      (o) => o.id === hoveredOfferId && o.status === "pending",
+    );
     if (!offer) return [];
 
     const isOwn = offer.creator_id === myPlayerId;
@@ -430,9 +407,9 @@ export default function Board() {
   const [animatingOpponentSlotIds, setAnimatingOpponentSlotIds] = useState<
     Set<string>
   >(new Set());
-  const [offerPaths, setOfferPaths] = useState<
-    Map<string, { pathStr: string; color: string; playerId?: string }>
-  >(new Map());
+  const [offerPaths, setOfferPaths] = useState<Map<string, OfferPathEntry>>(
+    new Map(),
+  );
   const [activeBroadcastPlayerId, setActiveBroadcastPlayerId] = useState<
     string | null
   >(null);
@@ -813,306 +790,171 @@ export default function Board() {
     }
 
     const computePaths = () => {
-      const next = new Map<
-        string,
-        { pathStr: string; color: string; playerId?: string }
-      >();
-
-      // Resolve the DOM element for a specific hand card (by id or by type).
-      const handCardEl = (
-        card_id: string,
-        card_type: string,
-      ): HTMLDivElement | null => {
-        if (card_id) return cardRefs.current.get(card_id) ?? null;
-        const match = hand.find((h) => h.cardName === card_type);
-        return match ? (cardRefs.current.get(match.cardId) ?? null) : null;
-      };
-
-      // Resolve the tag element for an offer — each OfferNode registers its own
-      // div under offer.id, so we look up directly without walking up the tree.
-      const getTagEl = (offer: Offer): HTMLDivElement | null =>
-        tagWrapperRefs.current.get(offer.id) ?? null;
-
-      offers
-        .filter((o) => o.creator_id === myPlayerId && o.status === "pending")
-        .forEach((offer) => {
-          const tagEl = getTagEl(offer);
-          if (!tagEl) return;
-          const tagCenter = elCenter(tagEl);
-          const isBroadcast = offer.target_id === "";
-          const isBlocked = !canProvideOfferedCards(
-            offer,
-            hand,
-            centerCards,
-            isTurnPlayer,
-          );
-          const arrowColor = isBlocked
-            ? ORIGIN_COLORS.blocked
-            : isBroadcast
-              ? ORIGIN_COLORS.player
-              : ORIGIN_COLORS.hand;
-
-          // Receiving arrows: one per unique origin element for requested cards → tag.
-          // Collapse cards sharing the same DOM element (e.g. multiple hidden hand cards).
-          const seenRecvEls = new Set<HTMLElement>();
-          let recvIdx = 0;
-          if (offer.target_id === "") {
-            // Broadcast: one arrow from each other player's hand container,
-            // skipping players who have already rejected the offer.
-            const rejectedSet = new Set(offer.rejected_by ?? []);
-            for (const p of players) {
-              if (p.playerId === myPlayerId) continue;
-              if (rejectedSet.has(p.playerId)) continue;
-              const el =
-                opponentHandContainerRefs.current.get(p.playerId) ??
-                opponentFieldRefs.current.get(p.playerId) ??
-                null;
-              if (el && !seenRecvEls.has(el)) {
-                seenRecvEls.add(el);
-                next.set(`${offer.id}_r_${recvIdx++}`, {
-                  pathStr: quadBezierPath(elCenter(el), tagCenter),
-                  color: arrowColor,
-                  playerId: p.playerId,
-                });
-              }
-            }
-          } else {
-            for (const c of offer.cards_requested) {
-              const inCenter = !!(
-                c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
-              );
-              const el = inCenter
-                ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
-                : (opponentHandContainerRefs.current.get(offer.target_id) ??
-                  null);
-              if (el && !seenRecvEls.has(el)) {
-                seenRecvEls.add(el);
-                next.set(`${offer.id}_r_${recvIdx++}`, {
-                  pathStr: quadBezierPath(elCenter(el), tagCenter),
-                  color: arrowColor,
-                });
-              }
-            }
-          }
-
-          // Offering arrows: one per offered card → target's field.
-          if (offer.cards_offered.length > 0) {
-            if (offer.target_id !== "") {
-              // Single target.
-              const targetEl =
-                opponentFieldRefs.current.get(offer.target_id) ?? null;
-              if (targetEl) {
-                offer.cards_offered.forEach((c, i) => {
-                  const inCenter = !!(
-                    c.card_id &&
-                    centerCards.some((cc) => cc.cardId === c.card_id)
-                  );
-                  const offEl = c.card_id
-                    ? inCenter
-                      ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
-                      : (cardRefs.current.get(c.card_id) ?? null)
-                    : handCardEl(c.card_id, c.card_type);
-                  if (offEl) {
-                    next.set(`${offer.id}_o_${i}`, {
-                      pathStr: quadBezierPath(
-                        elCenter(offEl),
-                        elCenter(targetEl),
-                      ),
-                      color: arrowColor,
-                    });
-                  }
-                });
-              }
-            } else {
-              // Broadcast: one arrow per offered card per other player's field,
-              // skipping players who have already rejected the offer.
-              const rejectedSet = new Set(offer.rejected_by ?? []);
-              offer.cards_offered.forEach((c, i) => {
-                const inCenter = !!(
-                  c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
-                );
-                const offEl = c.card_id
-                  ? inCenter
-                    ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
-                    : (cardRefs.current.get(c.card_id) ?? null)
-                  : handCardEl(c.card_id, c.card_type);
-                if (!offEl) return;
-                let pIdx = 0;
-                for (const p of players) {
-                  if (rejectedSet.has(p.playerId)) continue;
-                  const targetEl =
-                    opponentFieldRefs.current.get(p.playerId) ?? null;
-                  if (targetEl) {
-                    next.set(`${offer.id}_o_${i}_${pIdx++}`, {
-                      pathStr: quadBezierPath(
-                        elCenter(offEl),
-                        elCenter(targetEl),
-                      ),
-                      color: arrowColor,
-                      playerId: p.playerId,
-                    });
-                  }
-                }
-              });
-            }
-          }
-        });
+      const next = new Map<string, OfferPathEntry>();
+      const crefs = cardRefs.current;
+      const oFieldRefs = opponentFieldRefs.current;
+      const oHandRefs = opponentHandContainerRefs.current;
 
       offers
         .filter(
           (o) =>
-            (o.target_id === myPlayerId || o.target_id === "") &&
-            o.creator_id !== myPlayerId &&
-            o.status === "pending",
+            o.status === "pending" &&
+            (o.creator_id === myPlayerId ||
+              ((o.target_id === myPlayerId || o.target_id === "") &&
+                o.creator_id !== myPlayerId)),
         )
         .forEach((offer) => {
-          const tagEl = getTagEl(offer);
+          const isOutgoing = offer.creator_id === myPlayerId;
+          const tagEl = getTagEl(offer, tagWrapperRefs.current);
           if (!tagEl) return;
-          const tagCenter = elCenter(tagEl);
-          const isBroadcastIncoming = offer.target_id === "";
-          const isBlocked = !canAcceptOffer(
-            offer,
-            hand,
-            centerCards,
-            isTurnPlayer,
-          );
-          const arrowColor = isBlocked
+          const isBroadcast = offer.target_id === "";
+          const isBlocked = isOutgoing
+            ? !canProvideOfferedCards(offer, hand, centerCards, isTurnPlayer)
+            : !canAcceptOffer(offer, hand, centerCards, isTurnPlayer);
+          const color = isBlocked
             ? ORIGIN_COLORS.blocked
-            : isBroadcastIncoming
+            : isBroadcast
               ? ORIGIN_COLORS.player
-              : ORIGIN_COLORS.center;
+              : isOutgoing
+                ? ORIGIN_COLORS.hand
+                : ORIGIN_COLORS.center;
+          const targets = isBroadcast
+            ? broadcastTargets(offer, players, myPlayerId)
+            : null;
 
-          // Receiving arrows: one per unique origin element for offered cards → tag.
-          const seenRecvEls = new Set<HTMLElement>();
-          let recvIdx = 0;
-          for (const c of offer.cards_offered) {
-            const inCenter = !!(
-              c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
-            );
-            const el = inCenter
-              ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
-              : (opponentHandContainerRefs.current.get(offer.creator_id) ??
-                null);
-            if (el && !seenRecvEls.has(el)) {
-              seenRecvEls.add(el);
-              next.set(`${offer.id}_r_${recvIdx++}`, {
-                pathStr: quadBezierPath(elCenter(el), tagCenter),
-                color: arrowColor,
-              });
+          // Receiving arrows: one per unique source element → tag.
+          const seenRecv = new Set<HTMLElement>();
+          let ri = 0;
+          if (isOutgoing && isBroadcast) {
+            targets!.forEach((p) => {
+              const el =
+                oHandRefs.get(p.playerId) ?? oFieldRefs.get(p.playerId) ?? null;
+              if (el && !seenRecv.has(el)) {
+                seenRecv.add(el);
+                addPath(
+                  next,
+                  `${offer.id}_r_${ri++}`,
+                  el,
+                  tagEl,
+                  color,
+                  p.playerId,
+                );
+              }
+            });
+          } else {
+            const peerId = isOutgoing ? offer.target_id : offer.creator_id;
+            const fallbackEl = oHandRefs.get(peerId) ?? null;
+            const recvCards = isOutgoing
+              ? offer.cards_requested
+              : offer.cards_offered;
+            for (const c of recvCards) {
+              const inCenter = !!(
+                c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
+              );
+              const el = inCenter
+                ? (crefs.get(c.card_id) ?? centerCardsRef.current)
+                : fallbackEl;
+              if (el && !seenRecv.has(el)) {
+                seenRecv.add(el);
+                addPath(next, `${offer.id}_r_${ri++}`, el, tagEl, color);
+              }
             }
           }
 
-          // Offering arrows: collapse to one arrow per origin element.
-          const creatorEl =
-            opponentFieldRefs.current.get(offer.creator_id) ?? null;
-          if (creatorEl) {
-            const claimed = new Set<string>();
-            const seenOfferEls = new Set<HTMLElement>();
-            let offIdx = 0;
-            for (const c of offer.cards_requested) {
-              let offEl: HTMLElement | null = null;
-
-              if (isTurnPlayer) {
-                for (const cc of centerCards) {
-                  const matches = c.card_id
-                    ? cc.cardId === c.card_id
-                    : cc.cardName === c.card_type;
-                  if (matches && !claimed.has(cc.cardId)) {
-                    offEl =
-                      cardRefs.current.get(cc.cardId) ?? centerCardsRef.current;
-                    claimed.add(cc.cardId);
-                    break;
-                  }
-                }
+          // Offering arrows: one per unique source element → destination field.
+          if (isOutgoing) {
+            offer.cards_offered.forEach((c, i) => {
+              const offEl = resolveOfferedEl(
+                c,
+                centerCards,
+                crefs,
+                centerCardsRef.current,
+                hand,
+              );
+              if (!offEl) return;
+              if (isBroadcast) {
+                addPathsToTargets(
+                  next,
+                  oFieldRefs,
+                  `${offer.id}_o_${i}`,
+                  offEl,
+                  targets!,
+                  color,
+                );
+              } else {
+                const targetEl = oFieldRefs.get(offer.target_id) ?? null;
+                if (targetEl)
+                  addPath(next, `${offer.id}_o_${i}`, offEl, targetEl, color);
               }
-
-              if (!offEl) {
-                for (const hc of hand) {
-                  const matches = c.card_id
-                    ? hc.cardId === c.card_id
-                    : hc.cardName === c.card_type;
-                  if (matches && !claimed.has(hc.cardId)) {
-                    offEl = cardRefs.current.get(hc.cardId) ?? handRef.current;
-                    claimed.add(hc.cardId);
-                    break;
-                  }
+            });
+          } else {
+            const creatorEl = oFieldRefs.get(offer.creator_id) ?? null;
+            if (creatorEl) {
+              const claimed = new Set<string>();
+              const seenOffer = new Set<HTMLElement>();
+              let oi = 0;
+              for (const c of offer.cards_requested) {
+                const offEl =
+                  (isTurnPlayer
+                    ? claimCard(
+                        centerCards,
+                        c,
+                        claimed,
+                        centerCardsRef.current,
+                        crefs,
+                      )
+                    : null) ??
+                  claimCard(hand, c, claimed, handRef.current, crefs);
+                if (offEl && !seenOffer.has(offEl)) {
+                  seenOffer.add(offEl);
+                  addPath(
+                    next,
+                    `${offer.id}_o_${oi++}`,
+                    offEl,
+                    creatorEl,
+                    color,
+                  );
                 }
-              }
-
-              if (offEl && !seenOfferEls.has(offEl)) {
-                seenOfferEls.add(offEl);
-                next.set(`${offer.id}_o_${offIdx++}`, {
-                  pathStr: quadBezierPath(elCenter(offEl), elCenter(creatorEl)),
-                  color: arrowColor,
-                });
               }
             }
           }
         });
 
-      // Ghost card arrows: red paths from missing cards in hand
-      // to the hovered offer's destination field(s).
+      // Ghost card arrows: blocked paths from missing cards → destination field(s).
       if (hoveredOfferId && ghostCards.length > 0) {
         const hoveredOffer = offers.find((o) => o.id === hoveredOfferId);
         if (hoveredOffer) {
-          if (hoveredOffer.creator_id === myPlayerId) {
-            if (hoveredOffer.target_id === "") {
-              const rejectedSet = new Set(hoveredOffer.rejected_by ?? []);
-              ghostCards.forEach((ghost, i) => {
-                const ghostEl = cardRefs.current.get(ghost.cardId);
-                if (!ghostEl) return;
-                let pIdx = 0;
-                for (const p of players) {
-                  if (p.playerId === myPlayerId) continue;
-                  if (rejectedSet.has(p.playerId)) continue;
-                  const targetEl = opponentFieldRefs.current.get(p.playerId) ?? null;
-                  if (!targetEl) continue;
-                  next.set(`${hoveredOfferId}_ghost_${i}_${pIdx++}`, {
-                    pathStr: quadBezierPath(
-                      elCenter(ghostEl),
-                      elCenter(targetEl),
-                    ),
-                    color: ORIGIN_COLORS.blocked,
-                    playerId: p.playerId,
-                  });
-                }
-              });
-            } else {
-              const targetEl =
-                opponentFieldRefs.current.get(hoveredOffer.target_id) ?? null;
-              if (targetEl) {
-                ghostCards.forEach((ghost, i) => {
-                  const ghostEl = cardRefs.current.get(ghost.cardId);
-                  if (ghostEl) {
-                    next.set(`${hoveredOfferId}_ghost_${i}`, {
-                      pathStr: quadBezierPath(
-                        elCenter(ghostEl),
-                        elCenter(targetEl),
-                      ),
-                      color: ORIGIN_COLORS.blocked,
-                    });
-                  }
-                });
-              }
+          const isBroadcastGhost = hoveredOffer.target_id === "";
+          const targets = isBroadcastGhost
+            ? broadcastTargets(hoveredOffer, players, myPlayerId)
+            : null;
+          const destEl =
+            hoveredOffer.creator_id === myPlayerId
+              ? (oFieldRefs.get(hoveredOffer.target_id) ?? null)
+              : (oFieldRefs.get(hoveredOffer.creator_id) ?? null);
+
+          ghostCards.forEach((ghost, i) => {
+            const ghostEl = crefs.get(ghost.cardId);
+            if (!ghostEl) return;
+            if (isBroadcastGhost && targets) {
+              addPathsToTargets(
+                next,
+                oFieldRefs,
+                `${hoveredOfferId}_ghost_${i}`,
+                ghostEl,
+                targets,
+                ORIGIN_COLORS.blocked,
+              );
+            } else if (destEl) {
+              addPath(
+                next,
+                `${hoveredOfferId}_ghost_${i}`,
+                ghostEl,
+                destEl,
+                ORIGIN_COLORS.blocked,
+              );
             }
-          } else {
-            const creatorEl =
-              opponentFieldRefs.current.get(hoveredOffer.creator_id) ?? null;
-            if (creatorEl) {
-              ghostCards.forEach((ghost, i) => {
-                const ghostEl = cardRefs.current.get(ghost.cardId);
-                if (ghostEl) {
-                  next.set(`${hoveredOfferId}_ghost_${i}`, {
-                    pathStr: quadBezierPath(
-                      elCenter(ghostEl),
-                      elCenter(creatorEl),
-                    ),
-                    color: ORIGIN_COLORS.blocked,
-                  });
-                }
-              });
-            }
-          }
+          });
         }
       }
 
@@ -1254,12 +1096,8 @@ export default function Board() {
         />
       ))}
 
-      {/* Offer origin arrows */}
       {Array.from(offerPaths.entries()).map(
         ([key, { pathStr, color, playerId }]) => {
-          const duration =
-            Math.max(svgPathLength(pathStr), ARROW_MIN_ARC_PX) /
-            ARROW_SPEED_PX_S;
           let opacity = 0;
           if (hoveredOfferId && key.startsWith(hoveredOfferId)) {
             if (playerId) {
@@ -1268,61 +1106,13 @@ export default function Board() {
               opacity = 1;
             }
           }
-          // opacity must be set directly on each fixed-position element.
-          // A wrapper div with opacity < 1 creates a new CSS stacking context,
-          // which repositions fixed children relative to the div instead of
-          // the viewport, making them appear at the wrong coordinates.
           return (
-            <Fragment key={key}>
-              <svg
-                style={{
-                  position: "fixed",
-                  inset: 0,
-                  width: "100vw",
-                  height: "100vh",
-                  pointerEvents: "none",
-                  zIndex: 20,
-                  overflow: "visible",
-                  opacity,
-                  transition: "opacity 300ms ease",
-                }}
-              >
-                <path
-                  d={pathStr}
-                  stroke={color}
-                  strokeWidth={3}
-                  fill="none"
-                  strokeOpacity={1}
-                  strokeDasharray="6 5"
-                />
-              </svg>
-              {[0, 1, 2].map((i) => (
-                <motion.div
-                  key={i}
-                  style={{
-                    position: "fixed",
-                    top: 0,
-                    left: 0,
-                    pointerEvents: "none",
-                    zIndex: 21,
-                    offsetPath: `path("${pathStr}")`,
-                    offsetRotate: "auto",
-                    offsetAnchor: "50% 50%",
-                    opacity,
-                    transition: "opacity 300ms ease",
-                  }}
-                  animate={{ offsetDistance: ["0%", "100%"] }}
-                  transition={{
-                    duration,
-                    repeat: Infinity,
-                    ease: "linear",
-                    delay: -(i * (duration / 3)),
-                  }}
-                >
-                  <ArrowRight size={22} color={color} strokeWidth={2.5} />
-                </motion.div>
-              ))}
-            </Fragment>
+            <Arrow
+              key={key}
+              pathStr={pathStr}
+              color={color}
+              opacity={opacity}
+            />
           );
         },
       )}
@@ -1501,8 +1291,7 @@ export default function Board() {
                           card={{ backImage }}
                           flipped={true}
                           highlightColor={
-                            index <
-                            (playerHighlight?.count ?? 0)
+                            index < (playerHighlight?.count ?? 0)
                               ? playerHighlight?.color
                               : undefined
                           }
