@@ -1,6 +1,10 @@
 import { CardType, ExternalPlayer, Offer, OfferCard } from "@/schemas/types";
 
-export type OfferPathEntry = { pathStr: string; color: string; playerId?: string };
+export type OfferPathEntry = {
+  pathStr: string;
+  color: string;
+  playerId?: string;
+};
 
 export function getCenter(el: HTMLElement): { x: number; y: number } {
   const r = el.getBoundingClientRect();

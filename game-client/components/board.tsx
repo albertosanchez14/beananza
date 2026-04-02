@@ -1008,8 +1008,7 @@ export default function Board() {
       setActiveBroadcastPlayerId(otherPlayerIds[idx]);
     }, 1200);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hoveredOfferId, offers, myPlayerId]);
+  }, [hoveredOfferId, offers, myPlayerId, players]);
 
   // A representative card for the draw deck back image.
   // Prefer a real card from the live game state (which carries backImage from the server),
