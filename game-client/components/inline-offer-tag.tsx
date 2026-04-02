@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import { Offer, ExternalPlayer, CardType } from "@/schemas/types";
-import { canAcceptOffer } from "@/components/offer-card";
 import { getLeaves } from "@/utils/offer-tree";
 import OfferTreeOverlay from "@/components/offer-tree-overlay";
 import { OfferNode } from "@/components/offer-node";
@@ -62,21 +61,6 @@ export default function InlineOfferTag({
       className="relative shrink-0"
       onMouseLeave={() => !treeOpen && onHover?.(null)}
     >
-      {/* Missing cards warning for incoming leaves */}
-      {isIncoming &&
-        leaves.every(
-          (l) => !canAcceptOffer(l, hand, centerCards, isTurnPlayer),
-        ) && (
-          <div
-            className="absolute inset-x-0 z-10 flex justify-center pointer-events-none"
-            style={{ bottom: "calc(100% + 1rem)" }}
-          >
-            <span className="text-xs font-semibold text-white px-2 py-1 rounded bg-red-700/80">
-              Missing cards
-            </span>
-          </div>
-        )}
-
       <div className="flex gap-0.5" style={{ height: 144 }}>
         {leaves.map((leaf) => (
           <OfferNode

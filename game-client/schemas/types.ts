@@ -92,6 +92,7 @@ export type Offer = {
   cards_offered: OfferCard[];
   cards_requested: OfferCard[];
   status: OfferStatus;
+  rejected_by: string[];
   created_at: string;
 };
 

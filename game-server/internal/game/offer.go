@@ -26,14 +26,15 @@ type OfferCard struct {
 // and counteroffers point to their parent. Multiple counteroffers against the
 // same parent are allowed (parallel branches).
 type Offer struct {
-	ID             string      `json:"id"`
-	CreatorID      string      `json:"creator_id"`
-	TargetID       string      `json:"target_id"`       // "" means open to any player
-	ParentOfferID  string      `json:"parent_offer_id"` // "" means root offer
-	CardsOffered   []OfferCard `json:"cards_offered"`   // cards the creator puts on the table
-	CardsRequested []OfferCard `json:"cards_requested"` // cards the creator wants in return
-	Status         OfferStatus `json:"status"`
-	CreatedAt      time.Time   `json:"created_at"`
+	ID             string          `json:"id"`
+	CreatorID      string          `json:"creator_id"`
+	TargetID       string          `json:"target_id"`       // "" means open to any player
+	ParentOfferID  string          `json:"parent_offer_id"` // "" means root offer
+	CardsOffered   []OfferCard     `json:"cards_offered"`   // cards the creator puts on the table
+	CardsRequested []OfferCard     `json:"cards_requested"` // cards the creator wants in return
+	Status         OfferStatus     `json:"status"`
+	Rejections     map[string]bool `json:"rejections,omitempty"` // per-player rejections for broadcast offers
+	CreatedAt      time.Time       `json:"created_at"`
 }
 
 // newOfferID generates a unique offer ID using nanosecond timestamp.

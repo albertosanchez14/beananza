@@ -114,10 +114,11 @@ export default function TradedCardsArea({
           {rootOffers.map((rootOffer) => {
             const subtree = getOfferSubtree(allOffers, rootOffer.id).filter(
               (offer) =>
-                offer.id === rootOffer.id ||
-                offer.creator_id === myPlayerId ||
-                offer.target_id === myPlayerId ||
-                offer.target_id === "",
+                offer.status === "pending" &&
+                (offer.id === rootOffer.id ||
+                  offer.creator_id === myPlayerId ||
+                  offer.target_id === myPlayerId ||
+                  offer.target_id === ""),
             );
             return (
               <div

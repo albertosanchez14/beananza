@@ -30,7 +30,10 @@ export function getOfferSubtree(allOffers: Offer[], rootId: string): Offer[] {
  */
 export function getLeaves(subtree: Offer[]): Offer[] {
   const parentIds = new Set(
-    subtree.map((o) => o.parent_offer_id).filter((id) => id !== ""),
+    subtree
+      .filter((o) => o.status === "pending")
+      .map((o) => o.parent_offer_id)
+      .filter((id) => id !== ""),
   );
   return subtree.filter((o) => !parentIds.has(o.id) && o.status === "pending");
 }

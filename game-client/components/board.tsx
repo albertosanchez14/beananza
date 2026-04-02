@@ -62,6 +62,12 @@ type TurnOverFlyingCardEntry = {
 
 const ARROW_SPEED_PX_S = 300; // pixels per second
 const ARROW_MIN_ARC_PX = 300; // minimum effective arc — prevents short paths from cycling too fast
+const ORIGIN_COLORS = {
+  hand: "#38bdf8",
+  center: "#a3e635",
+  player: "#f472b6",
+  blocked: "#ef4444",
+} as const;
 
 function svgPathLength(d: string): number {
   if (typeof document === "undefined") return 400;
@@ -93,6 +99,42 @@ function quadBezierPath(
   const cpx = mx + sign * px * bow;
   const cpy = my + sign * py * bow;
   return `M ${start.x} ${start.y} Q ${cpx} ${cpy} ${end.x} ${end.y}`;
+}
+
+function canProvideOfferedCards(
+  offer: Offer,
+  myHand: CardType[],
+  centerCards: CardType[],
+  isTurnPlayer: boolean,
+): boolean {
+  const availableIds = new Set<string>();
+  const availableCounts: Record<string, number> = {};
+
+  for (const c of myHand) {
+    availableIds.add(c.cardId);
+    availableCounts[c.cardName] = (availableCounts[c.cardName] ?? 0) + 1;
+  }
+  if (isTurnPlayer) {
+    for (const c of centerCards) {
+      availableIds.add(c.cardId);
+      availableCounts[c.cardName] = (availableCounts[c.cardName] ?? 0) + 1;
+    }
+  }
+
+  const neededByType: Record<string, number> = {};
+  for (const c of offer.cards_offered) {
+    if (c.card_id) {
+      if (!availableIds.has(c.card_id)) return false;
+      continue;
+    }
+    neededByType[c.card_type] = (neededByType[c.card_type] ?? 0) + 1;
+  }
+
+  for (const [type, needed] of Object.entries(neededByType)) {
+    if ((availableCounts[type] ?? 0) < needed) return false;
+  }
+
+  return true;
 }
 
 type PlantFlyingCardEntry = {
@@ -166,13 +208,6 @@ export default function Board() {
   const isTurnPlayer = myPlayerId === playerTurn;
 
   // ── Origin-highlight helpers ─────────────────────────────────────────────────
-  const ORIGIN_COLORS = {
-    hand: "#38bdf8",
-    center: "#a3e635",
-    player: "#f472b6",
-    blocked: "#ef4444",
-  } as const;
-
   // cardHighlights: cardId → color for cards I can see (my hand + center)
   // playerHighlights: playerId → { color, count } for opponent hand cards in offers
   const { cardHighlights, playerHighlights } = useMemo(() => {
@@ -285,37 +320,56 @@ export default function Board() {
     hoveredOfferId,
   ]);
 
-  // Ghost cards: missing cards for the hovered incoming offer, shown as non-interactive
-  // phantoms appended to the player's hand (only the deficit — cards they don't have).
+  // Ghost cards: missing cards for the hovered offer that this player must provide
+  // (incoming: cards_requested, own outgoing/counter: cards_offered).
+  // Non-interactive phantoms are appended to the player's hand for deficits.
   const ghostCards = useMemo<CardType[]>(() => {
     if (!hoveredOfferId || phase !== "turnTrade") return [];
-    const offer = offers.find(
-      (o) =>
-        o.id === hoveredOfferId &&
-        o.creator_id !== myPlayerId &&
-        o.status === "pending",
-    );
+    const offer = offers.find((o) => o.id === hoveredOfferId && o.status === "pending");
     if (!offer) return [];
 
+    const isOwn = offer.creator_id === myPlayerId;
+    const isIncoming =
+      !isOwn && (offer.target_id === myPlayerId || offer.target_id === "");
+    if (!isOwn && !isIncoming) return [];
+
+    const requiredCards = isOwn ? offer.cards_offered : offer.cards_requested;
+
     const availableCounts: Record<string, number> = {};
+    const availableIds = new Set<string>();
     for (const c of hand) {
+      availableIds.add(c.cardId);
       availableCounts[c.cardName] = (availableCounts[c.cardName] ?? 0) + 1;
     }
     if (isTurnPlayer) {
       for (const c of centerCards) {
+        availableIds.add(c.cardId);
         availableCounts[c.cardName] = (availableCounts[c.cardName] ?? 0) + 1;
       }
     }
 
-    const requestedCounts: Record<string, number> = {};
-    for (const c of offer.cards_requested) {
-      requestedCounts[c.card_type] = (requestedCounts[c.card_type] ?? 0) + 1;
+    const requiredByType: Record<string, number> = {};
+    const missingByType: Record<string, number> = {};
+    for (const c of requiredCards) {
+      if (c.card_id) {
+        if (!availableIds.has(c.card_id)) {
+          missingByType[c.card_type] = (missingByType[c.card_type] ?? 0) + 1;
+        }
+        continue;
+      }
+      requiredByType[c.card_type] = (requiredByType[c.card_type] ?? 0) + 1;
     }
 
     const ghosts: CardType[] = [];
     let idx = 0;
-    for (const [cardType, needed] of Object.entries(requestedCounts)) {
+    for (const [cardType, needed] of Object.entries(requiredByType)) {
       const deficit = Math.max(0, needed - (availableCounts[cardType] ?? 0));
+      if (deficit > 0) {
+        missingByType[cardType] = (missingByType[cardType] ?? 0) + deficit;
+      }
+    }
+
+    for (const [cardType, deficit] of Object.entries(missingByType)) {
       const base = cardLookup.get(cardType);
       if (!base || deficit === 0) continue;
       for (let i = 0; i < deficit; i++) {
@@ -785,15 +839,30 @@ export default function Board() {
           const tagEl = getTagEl(offer);
           if (!tagEl) return;
           const tagCenter = elCenter(tagEl);
+          const isBroadcast = offer.target_id === "";
+          const isBlocked = !canProvideOfferedCards(
+            offer,
+            hand,
+            centerCards,
+            isTurnPlayer,
+          );
+          const arrowColor = isBlocked
+            ? ORIGIN_COLORS.blocked
+            : isBroadcast
+              ? ORIGIN_COLORS.player
+              : ORIGIN_COLORS.hand;
 
           // Receiving arrows: one per unique origin element for requested cards → tag.
           // Collapse cards sharing the same DOM element (e.g. multiple hidden hand cards).
           const seenRecvEls = new Set<HTMLElement>();
           let recvIdx = 0;
           if (offer.target_id === "") {
-            // Broadcast: one arrow from each other player's hand container.
+            // Broadcast: one arrow from each other player's hand container,
+            // skipping players who have already rejected the offer.
+            const rejectedSet = new Set(offer.rejected_by ?? []);
             for (const p of players) {
               if (p.playerId === myPlayerId) continue;
+              if (rejectedSet.has(p.playerId)) continue;
               const el =
                 opponentHandContainerRefs.current.get(p.playerId) ??
                 opponentFieldRefs.current.get(p.playerId) ??
@@ -802,7 +871,7 @@ export default function Board() {
                 seenRecvEls.add(el);
                 next.set(`${offer.id}_r_${recvIdx++}`, {
                   pathStr: quadBezierPath(elCenter(el), tagCenter),
-                  color: ORIGIN_COLORS.player,
+                  color: arrowColor,
                   playerId: p.playerId,
                 });
               }
@@ -820,7 +889,7 @@ export default function Board() {
                 seenRecvEls.add(el);
                 next.set(`${offer.id}_r_${recvIdx++}`, {
                   pathStr: quadBezierPath(elCenter(el), tagCenter),
-                  color: ORIGIN_COLORS.hand,
+                  color: arrowColor,
                 });
               }
             }
@@ -838,33 +907,39 @@ export default function Board() {
                     c.card_id &&
                     centerCards.some((cc) => cc.cardId === c.card_id)
                   );
-                  const offEl = inCenter
-                    ? (cardRefs.current.get(c.card_id) ??
-                      centerCardsRef.current)
-                    : (cardRefs.current.get(c.card_id) ?? handRef.current);
+                  const offEl = c.card_id
+                    ? inCenter
+                      ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
+                      : (cardRefs.current.get(c.card_id) ?? null)
+                    : handCardEl(c.card_id, c.card_type);
                   if (offEl) {
                     next.set(`${offer.id}_o_${i}`, {
                       pathStr: quadBezierPath(
                         elCenter(offEl),
                         elCenter(targetEl),
                       ),
-                      color: ORIGIN_COLORS.hand,
+                      color: arrowColor,
                     });
                   }
                 });
               }
             } else {
-              // Broadcast: one arrow per offered card per other player's field.
+              // Broadcast: one arrow per offered card per other player's field,
+              // skipping players who have already rejected the offer.
+              const rejectedSet = new Set(offer.rejected_by ?? []);
               offer.cards_offered.forEach((c, i) => {
                 const inCenter = !!(
                   c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
                 );
-                const offEl = inCenter
-                  ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
-                  : (cardRefs.current.get(c.card_id) ?? handRef.current);
+                const offEl = c.card_id
+                  ? inCenter
+                    ? (cardRefs.current.get(c.card_id) ?? centerCardsRef.current)
+                    : (cardRefs.current.get(c.card_id) ?? null)
+                  : handCardEl(c.card_id, c.card_type);
                 if (!offEl) return;
                 let pIdx = 0;
                 for (const p of players) {
+                  if (rejectedSet.has(p.playerId)) continue;
                   const targetEl =
                     opponentFieldRefs.current.get(p.playerId) ?? null;
                   if (targetEl) {
@@ -873,7 +948,7 @@ export default function Board() {
                         elCenter(offEl),
                         elCenter(targetEl),
                       ),
-                      color: ORIGIN_COLORS.player,
+                      color: arrowColor,
                       playerId: p.playerId,
                     });
                   }
@@ -927,12 +1002,15 @@ export default function Board() {
             }
           }
 
-          // Offering arrows: one per requested card using priorityPool
-          // (center first for turn player, then hand) → creator's field.
+          // Offering arrows: collapse to one arrow per origin element.
+          // For hand-sourced cards we intentionally use the hand container as
+          // origin, so multiple requested hand cards don't render duplicate
+          // arrows from the same hand.
           const creatorEl =
             opponentFieldRefs.current.get(offer.creator_id) ?? null;
           if (creatorEl) {
             const claimed = new Set<string>();
+            const seenOfferEls = new Set<HTMLElement>();
             let offIdx = 0;
             for (const c of offer.cards_requested) {
               let offEl: HTMLElement | null = null;
@@ -957,14 +1035,17 @@ export default function Board() {
                     ? hc.cardId === c.card_id
                     : hc.cardName === c.card_type;
                   if (matches && !claimed.has(hc.cardId)) {
-                    offEl = cardRefs.current.get(hc.cardId) ?? handRef.current;
+                    offEl = c.card_id
+                      ? (cardRefs.current.get(hc.cardId) ?? null)
+                      : handRef.current;
                     claimed.add(hc.cardId);
                     break;
                   }
                 }
               }
 
-              if (offEl) {
+              if (offEl && !seenOfferEls.has(offEl)) {
+                seenOfferEls.add(offEl);
                 next.set(`${offer.id}_o_${offIdx++}`, {
                   pathStr: quadBezierPath(elCenter(offEl), elCenter(creatorEl)),
                   color: arrowColor,
@@ -974,25 +1055,68 @@ export default function Board() {
           }
         });
 
-      // Ghost card arrows: red paths from missing hand cards → creator's field
+      // Ghost card arrows: red paths from missing cards in hand
+      // to the hovered offer's destination field(s).
       if (hoveredOfferId && ghostCards.length > 0) {
         const hoveredOffer = offers.find((o) => o.id === hoveredOfferId);
         if (hoveredOffer) {
-          const creatorEl =
-            opponentFieldRefs.current.get(hoveredOffer.creator_id) ?? null;
-          if (creatorEl) {
-            ghostCards.forEach((ghost, i) => {
-              const ghostEl = cardRefs.current.get(ghost.cardId);
-              if (ghostEl) {
-                next.set(`${hoveredOfferId}_ghost_${i}`, {
-                  pathStr: quadBezierPath(
-                    elCenter(ghostEl),
-                    elCenter(creatorEl),
-                  ),
-                  color: "#ef4444",
+          if (hoveredOffer.creator_id === myPlayerId) {
+            if (hoveredOffer.target_id === "") {
+              const rejectedSet = new Set(hoveredOffer.rejected_by ?? []);
+              ghostCards.forEach((ghost, i) => {
+                const ghostEl = cardRefs.current.get(ghost.cardId);
+                if (!ghostEl) return;
+                let pIdx = 0;
+                for (const p of players) {
+                  if (p.playerId === myPlayerId) continue;
+                  if (rejectedSet.has(p.playerId)) continue;
+                  const targetEl = opponentFieldRefs.current.get(p.playerId) ?? null;
+                  if (!targetEl) continue;
+                  next.set(`${hoveredOfferId}_ghost_${i}_${pIdx++}`, {
+                    pathStr: quadBezierPath(
+                      elCenter(ghostEl),
+                      elCenter(targetEl),
+                    ),
+                    color: ORIGIN_COLORS.blocked,
+                    playerId: p.playerId,
+                  });
+                }
+              });
+            } else {
+              const targetEl =
+                opponentFieldRefs.current.get(hoveredOffer.target_id) ?? null;
+              if (targetEl) {
+                ghostCards.forEach((ghost, i) => {
+                  const ghostEl = cardRefs.current.get(ghost.cardId);
+                  if (ghostEl) {
+                    next.set(`${hoveredOfferId}_ghost_${i}`, {
+                      pathStr: quadBezierPath(
+                        elCenter(ghostEl),
+                        elCenter(targetEl),
+                      ),
+                      color: ORIGIN_COLORS.blocked,
+                    });
+                  }
                 });
               }
-            });
+            }
+          } else {
+            const creatorEl =
+              opponentFieldRefs.current.get(hoveredOffer.creator_id) ?? null;
+            if (creatorEl) {
+              ghostCards.forEach((ghost, i) => {
+                const ghostEl = cardRefs.current.get(ghost.cardId);
+                if (ghostEl) {
+                  next.set(`${hoveredOfferId}_ghost_${i}`, {
+                    pathStr: quadBezierPath(
+                      elCenter(ghostEl),
+                      elCenter(creatorEl),
+                    ),
+                    color: ORIGIN_COLORS.blocked,
+                  });
+                }
+              });
+            }
           }
         }
       }
@@ -1012,6 +1136,7 @@ export default function Board() {
     hoveredOfferId,
     ghostCards,
     isTurnPlayer,
+    players,
   ]);
 
   // ── Broadcast offer player-rotation effect ───────────────────────────────────
@@ -1032,8 +1157,10 @@ export default function Board() {
     }
     // Capture stable snapshot of other player IDs — players array ref changes
     // every render so we intentionally read it once here and omit it from deps.
+    // Exclude players who have already rejected the offer.
+    const rejectedSet = new Set(hoveredOffer.rejected_by ?? []);
     const otherPlayerIds = players
-      .filter((p) => p.playerId !== myPlayerId)
+      .filter((p) => p.playerId !== myPlayerId && !rejectedSet.has(p.playerId))
       .map((p) => p.playerId);
     if (otherPlayerIds.length === 0) return;
     setActiveBroadcastPlayerId(otherPlayerIds[0]);
@@ -1650,7 +1777,7 @@ export default function Board() {
 
       {counteringOffer && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center"
+          className="fixed inset-0 z-9999flex items-center justify-center"
           style={{ background: "rgba(0,0,0,0.6)" }}
         >
           <div

@@ -1021,8 +1021,18 @@ func (s *State) AcceptOffer(offerID, acceptorID string, selectedCards []OfferCar
 
 	offer.Status = OfferStatusAccepted
 
-	// Expire all sibling pending offers (same parent, different ID).
-	s.expireSiblings(offerID, offer.ParentOfferID)
+	// Expire every other pending offer in the same negotiation tree.
+	// Walk up to the root ancestor, then expire the whole tree except the
+	// accepted offer (its children are also expired — they are moot now).
+	rootID := offerID
+	for {
+		o := s.findOffer(rootID)
+		if o == nil || o.ParentOfferID == "" {
+			break
+		}
+		rootID = o.ParentOfferID
+	}
+	s.expireTreeExcept(rootID, offerID)
 
 	s.markDirty()
 	return nil
@@ -1062,7 +1072,33 @@ func (s *State) RejectOffer(offerID, rejectorID string) error {
 		}
 	}
 
-	offer.Status = OfferStatusRejected
+	// For broadcast offers (TargetID == ""), track the rejection per-player so
+	// that other players can still independently accept or reject the offer.
+	// Once every non-creator player has rejected, mark the offer globally rejected.
+	if offer.TargetID == "" && offer.ParentOfferID == "" {
+		if offer.Rejections == nil {
+			offer.Rejections = make(map[string]bool)
+		}
+		offer.Rejections[rejectorID] = true
+
+		allRejected := true
+		for playerID := range s.Players {
+			if playerID != offer.CreatorID && !offer.Rejections[playerID] {
+				allRejected = false
+				break
+			}
+		}
+		if allRejected {
+			offer.Status = OfferStatusRejected
+		}
+	} else {
+		offer.Status = OfferStatusRejected
+	}
+
+	// Expire any counteroffers the rejector created against this offer, and
+	// all of their descendants — they are moot now that the parent is rejected.
+	s.expireChildrenByCreator(offerID, rejectorID)
+
 	s.markDirty()
 	return nil
 }
@@ -1103,6 +1139,37 @@ func (s *State) expireOffersForPhase() {
 }
 
 // findOffer returns the offer with the given ID, or nil.
+// GetOffersForPlayer returns the offers list with statuses adjusted for the
+// given player. For broadcast offers (TargetID == "") that are still pending,
+// the status is shown as "rejected" only to players who have personally
+// rejected it, so other players continue to see it as "pending".
+func (s *State) GetOffersForPlayer(playerID string) []map[string]any {
+	result := make([]map[string]any, 0, len(s.Offers))
+	for _, offer := range s.Offers {
+		status := offer.Status
+		if offer.TargetID == "" && offer.ParentOfferID == "" &&
+			offer.Status == OfferStatusPending && offer.Rejections[playerID] {
+			status = OfferStatusRejected
+		}
+		rejectedBy := make([]string, 0, len(offer.Rejections))
+		for id := range offer.Rejections {
+			rejectedBy = append(rejectedBy, id)
+		}
+		result = append(result, map[string]any{
+			"id":              offer.ID,
+			"creator_id":      offer.CreatorID,
+			"target_id":       offer.TargetID,
+			"parent_offer_id": offer.ParentOfferID,
+			"cards_offered":   offer.CardsOffered,
+			"cards_requested": offer.CardsRequested,
+			"status":          status,
+			"rejected_by":     rejectedBy,
+			"created_at":      offer.CreatedAt,
+		})
+	}
+	return result
+}
+
 func (s *State) findOffer(offerID string) *Offer {
 	for _, o := range s.Offers {
 		if o.ID == offerID {
@@ -1112,12 +1179,21 @@ func (s *State) findOffer(offerID string) *Offer {
 	return nil
 }
 
-// expireSiblings expires all pending offers that share the same parent as offerID
-// (excluding offerID itself).
-func (s *State) expireSiblings(acceptedOfferID, parentOfferID string) {
+// expireTreeExcept expires all pending offers in the tree rooted at nodeID,
+// except the offer with ID exceptID. It recurses into children regardless of
+// whether the node itself was expired, so descendants of exceptID are also
+// expired (they are moot once the deal is struck).
+func (s *State) expireTreeExcept(nodeID, exceptID string) {
+	node := s.findOffer(nodeID)
+	if node == nil {
+		return
+	}
+	if node.ID != exceptID && node.Status == OfferStatusPending {
+		node.Status = OfferStatusExpired
+	}
 	for _, o := range s.Offers {
-		if o.ID != acceptedOfferID && o.ParentOfferID == parentOfferID && o.Status == OfferStatusPending {
-			o.Status = OfferStatusExpired
+		if o.ParentOfferID == nodeID {
+			s.expireTreeExcept(o.ID, exceptID)
 		}
 	}
 }
@@ -1127,6 +1203,18 @@ func (s *State) expireSiblings(acceptedOfferID, parentOfferID string) {
 func (s *State) expireChildren(parentOfferID string) {
 	for _, o := range s.Offers {
 		if o.ParentOfferID == parentOfferID && o.Status == OfferStatusPending {
+			o.Status = OfferStatusExpired
+			s.expireChildren(o.ID)
+		}
+	}
+}
+
+// expireChildrenByCreator expires direct pending children of parentOfferID that
+// were created by creatorID, then recursively expires all of their descendants
+// regardless of creator.
+func (s *State) expireChildrenByCreator(parentOfferID, creatorID string) {
+	for _, o := range s.Offers {
+		if o.ParentOfferID == parentOfferID && o.CreatorID == creatorID && o.Status == OfferStatusPending {
 			o.Status = OfferStatusExpired
 			s.expireChildren(o.ID)
 		}
