@@ -5,7 +5,6 @@ import {
   CardType,
   ExternalPlayer,
   OfferCard,
-  CARD_TYPES,
 } from "@/schemas/types";
 import CardComponent from "@/components/card";
 import { useGameContext } from "@/components/game-context";
@@ -113,7 +112,7 @@ export default function GiveCardsModal({
               <span className="font-normal text-gray-400">(optional)</span>
             </p>
             <div className="grid grid-cols-4 gap-x-2 gap-y-4">
-              {CARD_TYPES.map((type) => {
+              {Array.from(cardLookup.entries()).map(([type, card]) => {
                 const qty = quantities[type] ?? 0;
                 return (
                   <div
@@ -121,13 +120,7 @@ export default function GiveCardsModal({
                     className="flex flex-col items-center gap-1.5"
                   >
                     <CardComponent
-                      card={
-                        cardLookup.get(type) ?? {
-                          backImage: "",
-                          cardId: "",
-                          cardName: type,
-                        }
-                      }
+                      card={card}
                       highlightColor={qty > 0 ? "#60a5fa" : undefined}
                       noRaise
                       noTransition

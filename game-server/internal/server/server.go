@@ -342,17 +342,17 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type configResponse struct {
-		MaxPlayers   int                `json:"max_players"`
-		MinPlayers   int                `json:"min_players"`
-		CardsPerTurn int                `json:"cards_per_turn"`
-		Cards        config.CardsConfig `json:"cards"`
+		MaxPlayers   int                      `json:"max_players"`
+		MinPlayers   int                      `json:"min_players"`
+		CardsPerTurn int                      `json:"cards_per_turn"`
+		Cards        []config.CardTypeConfig  `json:"card_types"`
 	}
 
 	resp := configResponse{
 		MaxPlayers:   s.config.Game.MaxNumberPlayers,
 		MinPlayers:   s.config.Game.MinNumberPlayers,
 		CardsPerTurn: s.config.Game.CardsPerTurn,
-		Cards:        s.config.Game.Cards,
+		Cards:        s.config.Game.Cards.CardTypes,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

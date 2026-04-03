@@ -1,11 +1,18 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 import { CardType, ExternalPlayer, Offer, OfferCard } from "@/schemas/types";
 import { GameState } from "@/hooks/state";
 
 type GameContextValue = {
   // UI state
-  selectedCard: CardType | null;
   dragOverSlot: string | null;
+  dragOverPlayerId: string | null;
+  dragOverBlockReason: string | null;
   selection: CardType[];
   // Data
   gameState: GameState;
@@ -23,6 +30,19 @@ type GameContextValue = {
   handleFieldDrop: (slotId: string, slotIndex: number, card: CardType) => void;
   handleDragOver: (e: React.DragEvent, slotId: string) => void;
   handleDragLeave: (e: React.DragEvent) => void;
+  handlePlayerDragOver: (
+    e: React.DragEvent,
+    playerId: string,
+    isEligibleTarget: boolean,
+    isTurnPlayer: boolean,
+  ) => void;
+  handlePlayerDragLeave: () => void;
+  handlePlayerDrop: (
+    e: React.DragEvent,
+    targetPlayer: ExternalPlayer,
+    isEligibleTarget: boolean,
+    isTurnPlayer: boolean,
+  ) => void;
   handleDrawDeckClick: () => void;
   onTurnOverBean: () => void;
   onDrawCards: () => void;
@@ -34,8 +54,16 @@ type GameContextValue = {
     targetPlayerId: string | undefined,
   ) => void;
   offers: Offer[];
-  onRespondOffer: (offerId: string, action: "accept" | "reject" | "cancel", cardsToGive?: OfferCard[]) => void;
-  onCounterOffer: (parentId: string, offered: OfferCard[], requested: OfferCard[]) => void;
+  onRespondOffer: (
+    offerId: string,
+    action: "accept" | "reject" | "cancel",
+    cardsToGive?: OfferCard[],
+  ) => void;
+  onCounterOffer: (
+    parentId: string,
+    offered: OfferCard[],
+    requested: OfferCard[],
+  ) => void;
 };
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -62,8 +90,16 @@ type GameProviderProps = {
     card: CardType,
     targetPlayerId: string | undefined,
   ) => void;
-  onRespondOffer: (offerId: string, action: "accept" | "reject" | "cancel", cardsToGive?: OfferCard[]) => void;
-  onCounterOffer: (parentId: string, offered: OfferCard[], requested: OfferCard[]) => void;
+  onRespondOffer: (
+    offerId: string,
+    action: "accept" | "reject" | "cancel",
+    cardsToGive?: OfferCard[],
+  ) => void;
+  onCounterOffer: (
+    parentId: string,
+    offered: OfferCard[],
+    requested: OfferCard[],
+  ) => void;
 };
 
 export function GameProvider({
@@ -82,8 +118,11 @@ export function GameProvider({
   onRespondOffer,
   onCounterOffer,
 }: GameProviderProps) {
-  const [selectedCard, setSelectedCard] = useState<CardType | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
+  const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
+  const [dragOverBlockReason, setDragOverBlockReason] = useState<string | null>(
+    null,
+  );
   const [selection, setSelection] = useState<CardType[]>([]);
 
   const toggleSelection = (card: CardType) => {
@@ -92,6 +131,14 @@ export function GameProvider({
         ? prev.filter((c) => c.cardId !== card.cardId)
         : [...prev, card],
     );
+  };
+
+  const singleClickSelect = (card: CardType) => {
+    setSelection((prev) => {
+      const isSelected = prev.some((c) => c.cardId === card.cardId);
+      if (isSelected && prev.length === 1) return [];
+      return [card];
+    });
   };
 
   const clearSelection = () => setSelection([]);
@@ -113,18 +160,14 @@ export function GameProvider({
           if (ctrlKey) {
             toggleSelection(card);
           } else {
-            if (selectedCard?.cardId === card.cardId) {
-              setSelectedCard(null);
-            } else {
-              setSelectedCard(card);
-            }
+            singleClickSelect(card);
           }
         } else {
           // Non-turn player: ctrl+click toggles, regular click single-selects
           if (ctrlKey) {
             toggleSelection(card);
           } else {
-            setSelection([card]);
+            singleClickSelect(card);
           }
         }
         return;
@@ -133,23 +176,20 @@ export function GameProvider({
       if (ctrlKey) {
         toggleSelection(card);
       } else {
-        setSelection([card]);
+        singleClickSelect(card);
       }
       return;
     }
-    if (selectedCard?.cardId === card.cardId) {
-      setSelectedCard(null);
-    } else {
-      setSelectedCard(card);
-    }
+    singleClickSelect(card);
   };
 
   const handleFieldSlotClick = (slotId: string, slotIndex: number) => {
     const slot = gameState.field.slots[slotIndex];
-    if (selectedCard) {
-      if (!slot || !slot.cardName || slot.cardName === selectedCard.cardName) {
-        onPlantBean(selectedCard.cardId, slotId);
-        setSelectedCard(null);
+    const card = selection[0];
+    if (card) {
+      if (!slot || !slot.cardName || slot.cardName === card.cardName) {
+        onPlantBean(card.cardId, slotId);
+        setSelection([]);
       }
     } else {
       if (slot && slot.cardName && slot.slotId.length > 0) {
@@ -167,7 +207,7 @@ export function GameProvider({
     const slot = gameState.field.slots[slotIndex];
     if (!slot || !slot.cardName || slot.cardName === card.cardName) {
       onPlantBean(card.cardId, slotId);
-      setSelectedCard(null);
+      setSelection([]);
     }
   };
 
@@ -183,6 +223,67 @@ export function GameProvider({
     setDragOverSlot(null);
   };
 
+  const handlePlayerDragOver = (
+    e: React.DragEvent,
+    playerId: string,
+    isEligibleTarget: boolean,
+    isTurnPlayer: boolean,
+  ) => {
+    e.preventDefault();
+    let blockReason: string | null = null;
+    if (!isEligibleTarget) {
+      blockReason = "Can't trade with a non-turn player";
+    } else if (
+      !isTurnPlayer &&
+      e.dataTransfer.types.includes("application/drag-has-center")
+    ) {
+      blockReason = "Can't give center cards";
+    }
+    setDragOverPlayerId(playerId);
+    setDragOverBlockReason(blockReason);
+  };
+
+  const handlePlayerDragLeave = () => {
+    setDragOverPlayerId(null);
+    setDragOverBlockReason(null);
+  };
+
+  const handlePlayerDrop = (
+    e: React.DragEvent,
+    targetPlayer: ExternalPlayer,
+    isEligibleTarget: boolean,
+    isTurnPlayer: boolean,
+  ) => {
+    e.preventDefault();
+    setDragOverPlayerId(null);
+    setDragOverBlockReason(null);
+    if (!isEligibleTarget) return;
+    const raw = e.dataTransfer.getData("application/card");
+    if (!raw) return;
+    try {
+      const dragged = JSON.parse(raw) as CardType;
+      const isDraggedInSelection = selection.some(
+        (c) => c.cardId === dragged.cardId,
+      );
+      const cardsToDrop = isDraggedInSelection ? [...selection] : [dragged];
+
+      if (!isTurnPlayer) {
+        const hasCenterCard = cardsToDrop.some((c) =>
+          gameState.centerCards.some((cc) => cc.cardId === c.cardId),
+        );
+        if (hasCenterCard) {
+          clearSelection();
+          return;
+        }
+      }
+
+      clearSelection();
+      if (cardsToDrop.length > 0) onGiveDrop(targetPlayer, cardsToDrop);
+    } catch {
+      // ignore malformed payload
+    }
+  };
+
   const handleDrawDeckClick = () => {
     if (gameState.phase === "plantHand") {
       onTurnOverBean();
@@ -194,17 +295,21 @@ export function GameProvider({
   const value: GameContextValue = {
     gameState,
     cardsPerTurn,
-    selectedCard,
     dragOverSlot,
+    dragOverPlayerId,
+    dragOverBlockReason,
     selection,
     cardLookup,
-    highlightEmpty: !!selectedCard,
+    highlightEmpty: selection.length === 1,
     myPlayerId,
     handleCardClick,
     handleFieldSlotClick,
     handleFieldDrop,
     handleDragOver,
     handleDragLeave,
+    handlePlayerDragOver,
+    handlePlayerDragLeave,
+    handlePlayerDrop,
     handleDrawDeckClick,
     onTurnOverBean,
     onDrawCards,

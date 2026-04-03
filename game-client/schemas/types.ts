@@ -9,7 +9,6 @@ export type CardType = BaseCard & {
   money_exchange?: Record<string, number>;
 };
 
-/** A single card type as returned by GET /config */
 export type CardTypeConfig = {
   name: string;
   count: number;
@@ -18,14 +17,11 @@ export type CardTypeConfig = {
   exchange_rates: Record<string, number>;
 };
 
-/** Full game configuration returned by GET /config */
 export type GameConfig = {
   max_players: number;
   min_players: number;
   cards_per_turn: number;
-  cards: {
-    card_types: CardTypeConfig[];
-  };
+  card_types: CardTypeConfig[];
 };
 
 export type SlotType = {
@@ -96,16 +92,67 @@ export type Offer = {
   created_at: string;
 };
 
-// All 8 bean card types available in the game
-export const CARD_TYPES = [
-  "Judicultor",
-  "Judia Colora",
-  "Rocky Judia",
-  "Hippy Judia",
-  "La Pocha",
-  "La Apestosa",
-  "Judia Boom",
-  "Judia Bill",
-] as const;
-
-export type CardTypeName = (typeof CARD_TYPES)[number];
+// DEFAULT VALUES
+export const DEFAULT_GAME_CONFIG: GameConfig = {
+  max_players: 5,
+  min_players: 3,
+  cards_per_turn: 2,
+  card_types: [
+    {
+      name: "Judicultor",
+      count: 6,
+      front_image: "/cards/card.jpg",
+      back_image: "/cards/bohnanza-back.jpg",
+      exchange_rates: { "2": 2, "3": 3 },
+    },
+    {
+      name: "Judia Colora",
+      count: 8,
+      front_image: "/cards/card.jpg",
+      back_image: "/cards/bohnanza-back.jpg",
+      exchange_rates: { "2": 1, "3": 2, "4": 3, "5": 4 },
+    },
+    {
+      name: "Rocky Judia",
+      count: 10,
+      front_image: "/cards/card.jpg",
+      back_image: "/cards/bohnanza-back.jpg",
+      exchange_rates: { "2": 1, "4": 2, "5": 3, "6": 4 },
+    },
+    {
+      name: "Hippy Judia",
+      count: 12,
+      front_image: "/cards/card.jpg",
+      back_image: "/cards/bohnanza-back.jpg",
+      exchange_rates: { "2": 1, "4": 2, "6": 3, "7": 4 },
+    },
+    {
+      name: "La Pocha",
+      count: 14,
+      front_image: "/cards/card.jpg",
+      back_image: "/cards/bohnanza-back.jpg",
+      exchange_rates: { "3": 1, "5": 2, "6": 3, "7": 4 },
+    },
+    {
+      name: "La Apestosa",
+      count: 16,
+      front_image: "/cards/card.jpg",
+      back_image: "/cards/bohnanza-back.jpg",
+      exchange_rates: { "3": 1, "5": 2, "7": 3, "8": 4 },
+    },
+    {
+      name: "Judia Boom",
+      count: 18,
+      front_image: "/cards/card.jpg",
+      back_image: "/cards/bohnanza-back.jpg",
+      exchange_rates: { "3": 1, "6": 2, "8": 3, "9": 4 },
+    },
+    {
+      name: "Judia Bill",
+      count: 20,
+      front_image: "/cards/card.jpg",
+      back_image: "/cards/bohnanza-back.jpg",
+      exchange_rates: { "4": 1, "6": 2, "8": 3, "10": 4 },
+    },
+  ],
+};

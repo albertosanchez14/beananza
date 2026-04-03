@@ -5,7 +5,6 @@ import {
   CardType,
   ExternalPlayer,
   OfferCard,
-  CARD_TYPES,
 } from "@/schemas/types";
 import CardComponent from "@/components/card";
 import { useGameContext } from "@/components/game-context";
@@ -52,6 +51,7 @@ export default function OfferWizard({
   onCancel,
 }: OfferWizardProps) {
   const { cardLookup } = useGameContext();
+  const cardTypes = Array.from(cardLookup.keys());
   const [step, setStep] = useState(1);
 
   // Step 2: cards to offer (from hand, by card ID)
@@ -86,16 +86,16 @@ export default function OfferWizard({
     }
   };
 
-  const currentType = CARD_TYPES[carouselIndex];
+  const currentType = cardTypes[carouselIndex];
 
   const currentRequestedQty = (type: string): number =>
     requestedEntries.find((e) => e.card_type === type)?.quantity ?? 0;
 
   const navigate = (dir: number) => {
     const newIndex =
-      (carouselIndex + dir + CARD_TYPES.length) % CARD_TYPES.length;
+      (carouselIndex + dir + cardTypes.length) % cardTypes.length;
     setCarouselIndex(newIndex);
-    setStagingQty(Math.max(1, currentRequestedQty(CARD_TYPES[newIndex])));
+    setStagingQty(Math.max(1, currentRequestedQty(cardTypes[newIndex])));
   };
 
   const setRequestedQty = (type: string, qty: number) => {

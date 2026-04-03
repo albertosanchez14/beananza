@@ -9,7 +9,6 @@ import { getOfferSubtree } from "@/utils/offer-tree";
 type Props = {
   phase: string;
   pickedCards: CardType[];
-  selectedCard: CardType | null;
   onCardClick: (card: CardType) => void;
   incomingOffers: Offer[];
   outgoingOffers: Offer[];
@@ -36,7 +35,6 @@ type Props = {
 export default function TradedCardsArea({
   phase,
   pickedCards,
-  selectedCard,
   onCardClick,
   incomingOffers,
   outgoingOffers,
@@ -104,7 +102,7 @@ export default function TradedCardsArea({
     >
       <TradedCards
         pickedCards={pickedCards}
-        selectedCard={selectedCard}
+        selection={selection}
         onCardClick={onCardClick}
         phase={phase}
       />

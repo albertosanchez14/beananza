@@ -80,7 +80,13 @@ export default function Slot({
           onClick={handleClick}
           role={isInteractive ? "button" : undefined}
           tabIndex={isInteractive ? 0 : undefined}
-          onKeyDown={handleClick ? (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") handleClick(); } : undefined}
+          onKeyDown={
+            handleClick
+              ? (e: React.KeyboardEvent) => {
+                  if (e.key === "Enter" || e.key === " ") handleClick();
+                }
+              : undefined
+          }
           {...sharedDragProps}
         >
           <AnimatePresence>
@@ -130,7 +136,13 @@ export default function Slot({
         onClick={handleClick}
         role={isInteractive ? "button" : undefined}
         tabIndex={isInteractive ? 0 : undefined}
-        onKeyDown={handleClick ? (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") handleClick(); } : undefined}
+        onKeyDown={
+          handleClick
+            ? (e: React.KeyboardEvent) => {
+                if (e.key === "Enter" || e.key === " ") handleClick();
+              }
+            : undefined
+        }
         {...sharedDragProps}
       >
         {isInteractive && (

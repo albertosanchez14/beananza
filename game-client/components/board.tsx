@@ -133,7 +133,6 @@ type PlantFlyingCardEntry = {
 export default function Board() {
   const {
     gameState,
-    selectedCard,
     selection,
     clearSelection,
     cardsPerTurn,
@@ -146,19 +145,18 @@ export default function Board() {
     handleDragOver,
     handleDragLeave,
     dragOverSlot,
+    dragOverPlayerId,
+    dragOverBlockReason,
+    handlePlayerDragOver,
+    handlePlayerDragLeave,
+    handlePlayerDrop,
     highlightEmpty,
-    onGiveDrop,
     onRequestDrop,
     onCardRightClick,
     offers,
     onRespondOffer,
     onCounterOffer,
   } = useGameContext();
-
-  const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
-  const [dragOverBlockReason, setDragOverBlockReason] = useState<string | null>(
-    null,
-  );
   const [hoveredOfferId, setHoveredOfferId] = useState<string | null>(null);
 
   const [acceptPickerOffer, setAcceptPickerOffer] = useState<
@@ -1125,70 +1123,29 @@ export default function Board() {
               phase === "turnTrade" &&
               (isTurnPlayer || player.playerId === playerTurn);
 
-            const handlePlayerDragOver =
+            const onPlayerDragOver =
               phase === "turnTrade"
-                ? (e: React.DragEvent) => {
-                    e.preventDefault();
-                    let blockReason: string | null = null;
-                    if (!isEligibleTarget) {
-                      blockReason = "Can't trade with a non-turn player";
-                    } else if (
-                      !isTurnPlayer &&
-                      e.dataTransfer.types.includes(
-                        "application/drag-has-center",
-                      )
-                    ) {
-                      blockReason = "Can't give center cards";
-                    }
-                    setDragOverPlayerId(player.playerId);
-                    setDragOverBlockReason(blockReason);
-                  }
+                ? (e: React.DragEvent) =>
+                    handlePlayerDragOver(
+                      e,
+                      player.playerId,
+                      isEligibleTarget,
+                      isTurnPlayer,
+                    )
                 : undefined;
 
-            const handlePlayerDragLeave =
+            const onPlayerDragLeave =
+              phase === "turnTrade" ? handlePlayerDragLeave : undefined;
+
+            const onPlayerDrop =
               phase === "turnTrade"
-                ? () => {
-                    setDragOverPlayerId(null);
-                    setDragOverBlockReason(null);
-                  }
-                : undefined;
-
-            const handlePlayerDrop =
-              phase === "turnTrade"
-                ? (e: React.DragEvent) => {
-                    e.preventDefault();
-                    setDragOverPlayerId(null);
-                    setDragOverBlockReason(null);
-                    if (!isEligibleTarget) return;
-                    const raw = e.dataTransfer.getData("application/card");
-                    if (!raw) return;
-                    try {
-                      const dragged = JSON.parse(raw) as CardType;
-                      const isDraggedInSelection = selection.some(
-                        (c) => c.cardId === dragged.cardId,
-                      );
-                      const cardsToDrop = isDraggedInSelection
-                        ? [...selection]
-                        : [dragged];
-
-                      // Block if non-turn player tries to give center cards
-                      if (!isTurnPlayer) {
-                        const hasCenterCard = cardsToDrop.some((c) =>
-                          centerCards.some((cc) => cc.cardId === c.cardId),
-                        );
-                        if (hasCenterCard) {
-                          clearSelection();
-                          return;
-                        }
-                      }
-
-                      clearSelection();
-                      if (cardsToDrop.length > 0)
-                        onGiveDrop(player as ExternalPlayer, cardsToDrop);
-                    } catch {
-                      // ignore malformed payload
-                    }
-                  }
+                ? (e: React.DragEvent) =>
+                    handlePlayerDrop(
+                      e,
+                      player as ExternalPlayer,
+                      isEligibleTarget,
+                      isTurnPlayer,
+                    )
                 : undefined;
 
             return (
@@ -1208,9 +1165,9 @@ export default function Board() {
                     ? (dragOverBlockReason ?? undefined)
                     : undefined
                 }
-                onDragOver={handlePlayerDragOver}
-                onDragLeave={handlePlayerDragLeave}
-                onDrop={handlePlayerDrop}
+                onDragOver={onPlayerDragOver}
+                onDragLeave={onPlayerDragLeave}
+                onDrop={onPlayerDrop}
                 field={
                   <div
                     ref={(el) => {
@@ -1222,7 +1179,7 @@ export default function Board() {
                     <Field>
                       {player.playerField.slots.map((slot, index) => {
                         const cardForSlot = slot.cardName
-                          ? (cardLookup?.get(slot.cardName) ?? null)
+                          ? (cardLookup.get(slot.cardName) ?? null)
                           : null;
                         return (
                           <div
@@ -1343,7 +1300,7 @@ export default function Board() {
                         ? "#a855f7"
                         : cardHighlights.get(card.cardId)
                     }
-                    isSelected={selectedCard?.cardId === card.cardId}
+                    isSelected={selection.some((c) => c.cardId === card.cardId)}
                     draggable={true}
                     onClick={(e: React.MouseEvent) =>
                       handleCardClick(card, "center", e.ctrlKey || e.metaKey)
@@ -1425,7 +1382,6 @@ export default function Board() {
           <TradedCardsArea
             phase={phase}
             pickedCards={pickedCards}
-            selectedCard={selectedCard}
             onCardClick={handleCardClick}
             incomingOffers={incomingOffer}
             outgoingOffers={outgoingOffer}
@@ -1464,10 +1420,9 @@ export default function Board() {
             ))}
             <FanLayout phase={phase}>
               {hand.map((card) => {
-                const isSelected =
-                  phase === "turnTrade"
-                    ? selection.some((c) => c.cardId === card.cardId)
-                    : selectedCard?.cardId === card.cardId;
+                const isSelected = selection.some(
+                  (c) => c.cardId === card.cardId,
+                );
                 return (
                   <div
                     key={card.cardId}
@@ -1565,7 +1520,8 @@ export default function Board() {
           style={{ background: "rgba(0,0,0,0.6)" }}
         >
           <div
-            className="relative rounded-2xl border border-white/20 bg-[#1a120a]/95 backdrop-blur-sm shadow-2xl p-5"
+            className="relative rounded-2xl border border-white/20 
+						bg-[#1a120a]/95 backdrop-blur-sm shadow-2xl p-5"
             style={{ width: 480, maxHeight: "80vh", overflowY: "auto" }}
           >
             <OfferWizard

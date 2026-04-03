@@ -1,20 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CardType, CardTypeConfig, GameConfig } from "@/schemas/types";
+import {
+  CardType,
+  CardTypeConfig,
+  GameConfig,
+  DEFAULT_GAME_CONFIG,
+} from "@/schemas/types";
 import { apiBaseUrl } from "@/lib/config";
 
-export type { GameConfig, CardTypeConfig };
-
 export type GameConfigState = {
-  config: GameConfig | null;
-  /** A lookup map from card name → CardType (for rendering card images/exchange rates). */
+  maxPlayers: number;
+  minPlayers: number;
+  cardsPerTurn: number;
   cardLookup: Map<string, CardType>;
   loading: boolean;
   error: string | null;
 };
 
-/** Converts a CardTypeConfig from /config into the CardType shape used by UI components. */
 function toCardType(ct: CardTypeConfig): CardType {
   return {
     cardId: ct.name,
@@ -32,8 +35,12 @@ function toCardType(ct: CardTypeConfig): CardType {
  */
 export function useGameConfig(): GameConfigState {
   const [state, setState] = useState<GameConfigState>({
-    config: null,
-    cardLookup: new Map(),
+    maxPlayers: DEFAULT_GAME_CONFIG.max_players,
+    minPlayers: DEFAULT_GAME_CONFIG.min_players,
+    cardsPerTurn: DEFAULT_GAME_CONFIG.cards_per_turn,
+    cardLookup: new Map(
+      DEFAULT_GAME_CONFIG.card_types.map((ct) => [ct.name, toCardType(ct)]),
+    ),
     loading: true,
     error: null,
   });
@@ -48,17 +55,17 @@ export function useGameConfig(): GameConfigState {
           throw new Error(`GET /config returned ${res.status}`);
         }
         const data: GameConfig = await res.json();
-        console.log("data", data);
 
         const lookup = new Map<string, CardType>();
-        for (const ct of data.cards.card_types) {
+        for (const ct of data.card_types) {
           lookup.set(ct.name, toCardType(ct));
         }
-        console.log("state", lookup);
 
         if (!cancelled) {
           setState({
-            config: data,
+            maxPlayers: data.max_players,
+            minPlayers: data.min_players,
+            cardsPerTurn: data.cards_per_turn,
             cardLookup: lookup,
             loading: false,
             error: null,

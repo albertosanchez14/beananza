@@ -5,14 +5,14 @@ import { CardType } from "@/schemas/types";
 
 type Props = {
   pickedCards: Array<CardType>;
-  selectedCard: CardType | null;
+  selection: CardType[];
   onCardClick: (card: CardType, source?: "hand" | "picked" | "center") => void;
   phase?: string;
 };
 
 export default function TradedCards({
   pickedCards,
-  selectedCard,
+  selection,
   onCardClick,
   phase,
 }: Props) {
@@ -67,10 +67,9 @@ export default function TradedCards({
                 card={topCard}
                 flipped={false}
                 draggable={phase === "plantTrade"}
-                isSelected={
-                  selectedCard != null &&
-                  cards.some((c) => c.cardId === selectedCard.cardId)
-                }
+                isSelected={cards.some((c) =>
+                  selection.some((s) => s.cardId === c.cardId),
+                )}
                 onClick={phase === "plantTrade" ? () => onCardClick(topCard, "picked") : undefined}
               />
             </div>

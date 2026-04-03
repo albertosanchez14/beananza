@@ -65,7 +65,7 @@ type GameConfig struct {
 }
 
 type CardsConfig struct {
-	CardTypes []CardTypeConfig `yaml:"card_types" json:"card_types"`
+	CardTypes []CardTypeConfig `yaml:"card_types"`
 }
 
 type CardTypeConfig struct {

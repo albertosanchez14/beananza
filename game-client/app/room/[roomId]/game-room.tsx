@@ -1,11 +1,13 @@
+import { useState, useEffect } from "react";
+
+import { GameRoomContext } from "@/hooks/useGameRoom";
+import { CardType, ExternalPlayer } from "@/schemas/types";
+
 import { GameProvider } from "@/components/game-context";
 import Board from "@/components/board";
 import OfferPanel from "@/components/offer-panel";
 import GiveCardsModal from "@/components/give-cards-modal";
 import RequestCardsModal from "@/components/request-cards-modal";
-import { GameRoomContext } from "@/hooks/useGameRoom";
-import { CardType, ExternalPlayer, OfferCard } from "@/schemas/types";
-import { useState, useEffect } from "react";
 
 type GameRoomProps = { roomId: string; playerId: string } & GameRoomContext;
 
@@ -13,7 +15,7 @@ export default function GameRoom({
   playerId,
   gameState,
   cardsPerTurn,
-  cardLookup: cardLookupFromConfig,
+  cardLookup,
   plantBean,
   harvestField,
   turnOverBean,
@@ -23,7 +25,6 @@ export default function GameRoom({
   respondOffer,
 }: GameRoomProps) {
   const [offerPanelOpen, setOfferPanelOpen] = useState(false);
-  const [prevPhase, setPrevPhase] = useState<string>(gameState.phase);
   const [giveModal, setGiveModal] = useState<{
     player: ExternalPlayer;
     cardsToGive: CardType[];
@@ -44,58 +45,12 @@ export default function GameRoom({
     return () => document.removeEventListener("contextmenu", handler);
   }, [gameState.phase]);
 
-  // Build a name→CardType lookup.
-  // Start from the config-sourced catalog so every card type always has images,
-  // then overlay live cards (which carry real cardIds and up-to-date data).
-  const { hand, pickedCards, centerCards, discardTopCard } = gameState;
-  const cardLookup = new Map<string, CardType>(cardLookupFromConfig);
-  for (const c of [...hand, ...pickedCards, ...centerCards]) {
-    cardLookup.set(c.cardName, c);
-  }
-  if (discardTopCard) cardLookup.set(discardTopCard.cardName, discardTopCard);
-
-  if (gameState.phase !== prevPhase) {
-    setPrevPhase(gameState.phase);
-    if (gameState.phase === "turnTrade" && prevPhase !== "turnTrade") {
-      const hasPendingIncoming = gameState.offers.some(
-        (o) =>
-          o.status === "pending" &&
-          o.creator_id !== playerId &&
-          (o.target_id === "" || o.target_id === playerId),
-      );
-      if (hasPendingIncoming) setOfferPanelOpen(true);
-    }
-  }
   const pendingIncomingCount = gameState.offers.filter(
     (o) =>
       o.status === "pending" &&
       o.creator_id !== playerId &&
       (o.target_id === "" || o.target_id === playerId),
   ).length;
-
-  const handleCreateOffer = (
-    cardsOffered: OfferCard[],
-    cardsRequested: OfferCard[],
-    targetPlayerId?: string,
-  ) => {
-    createOffer(cardsOffered, cardsRequested, targetPlayerId);
-  };
-
-  const handleCounterOffer = (
-    parentOfferId: string,
-    cardsOffered: OfferCard[],
-    cardsRequested: OfferCard[],
-  ) => {
-    counterOffer(parentOfferId, cardsOffered, cardsRequested);
-  };
-
-  const handleRespondOffer = (
-    offerId: string,
-    action: "accept" | "reject" | "cancel",
-    cardsToGive?: OfferCard[],
-  ) => {
-    respondOffer(offerId, action, cardsToGive);
-  };
 
   return (
     <GameProvider
@@ -114,8 +69,8 @@ export default function GameRoom({
       onCardRightClick={(card, targetPlayerId) =>
         setRightClickModal({ cardRequested: card, targetPlayerId })
       }
-      onRespondOffer={handleRespondOffer}
-      onCounterOffer={handleCounterOffer}
+      onRespondOffer={respondOffer}
+      onCounterOffer={counterOffer}
     >
       <div className="flex flex-col h-full w-full overflow-hidden">
         <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">
@@ -151,9 +106,9 @@ export default function GameRoom({
           players={gameState.players}
           gamePhase={gameState.phase}
           playerTurn={gameState.playerTurn}
-          onCreateOffer={handleCreateOffer}
-          onCounterOffer={handleCounterOffer}
-          onRespondOffer={handleRespondOffer}
+          onCreateOffer={createOffer}
+          onCounterOffer={counterOffer}
+          onRespondOffer={respondOffer}
         />
 
         {requestModal && (
@@ -167,7 +122,11 @@ export default function GameRoom({
             }
             isTurnPlayer={playerId === gameState.playerTurn}
             players={gameState.players.filter((p) => p.playerId !== playerId)}
-            defaultTargetId={playerId !== gameState.playerTurn ? gameState.playerTurn : undefined}
+            defaultTargetId={
+              playerId !== gameState.playerTurn
+                ? gameState.playerTurn
+                : undefined
+            }
             onSubmit={(cardsOffered, targetPlayerId) => {
               const isTurnPlayer = playerId === gameState.playerTurn;
               const allCenter = requestModal.cardsRequested.every((c) =>
@@ -178,7 +137,7 @@ export default function GameRoom({
                 card_type: c.cardName,
                 card_id: useSpecificIds ? c.cardId : "",
               }));
-              handleCreateOffer(cardsOffered, reqCards, targetPlayerId);
+              createOffer(cardsOffered, reqCards, targetPlayerId);
               setRequestModal(null);
             }}
             onClose={() => setRequestModal(null)}
@@ -205,12 +164,13 @@ export default function GameRoom({
               const reqCards = [
                 {
                   card_type: rightClickModal.cardRequested.cardName,
-                  card_id: !isTurnPlayer && isCenter
-                    ? rightClickModal.cardRequested.cardId
-                    : "",
+                  card_id:
+                    !isTurnPlayer && isCenter
+                      ? rightClickModal.cardRequested.cardId
+                      : "",
                 },
               ];
-              handleCreateOffer(cardsOffered, reqCards, targetPlayerId);
+              createOffer(cardsOffered, reqCards, targetPlayerId);
               setRightClickModal(null);
             }}
             onClose={() => setRightClickModal(null)}
@@ -226,7 +186,7 @@ export default function GameRoom({
                 card_type: c.cardName,
                 card_id: c.cardId,
               }));
-              handleCreateOffer(
+              createOffer(
                 cardsOffered,
                 cardsRequested,
                 giveModal.player.playerId,
