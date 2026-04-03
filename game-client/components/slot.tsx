@@ -11,8 +11,8 @@ type SlotProp = {
   highlightEmpty?: boolean;
   handleDragOver?: (e: React.DragEvent, slotId: string) => void;
   handleDragLeave?: (e: React.DragEvent) => void;
-  handleFieldDrop?: (slotId: string, slotIndex: number, card: CardType) => void;
-  handleSlotClick?: (slotId: string, slotIndex: number) => void;
+  handleFieldDrop?: (slotId: string, card: CardType) => void;
+  handleSlotClick?: (slotId: string) => void;
   suppressAnimation?: boolean;
 };
 
@@ -36,25 +36,22 @@ export default function Slot({
   const filled = !!(slot?.cardName && cardQuantity > 0);
   const isDragOver = dragOverSlot === slot?.slotId;
 
-  const onDrop = (e: React.DragEvent) => {
-    if (!isInteractive || !slot) return;
-    e.preventDefault();
-    const raw = e.dataTransfer.getData("application/card");
-    if (!raw) return;
-    try {
-      const card = JSON.parse(raw);
-      handleFieldDrop?.(slot.slotId, index, card);
-    } catch {
-      // ignore malformed payload
-    }
-  };
-
   const sharedDragProps =
     isInteractive && slot
       ? {
           onDragOver: (e: React.DragEvent) => handleDragOver?.(e, slot.slotId),
           onDragLeave: handleDragLeave,
-          onDrop,
+          onDrop: (e: React.DragEvent) => {
+            e.preventDefault();
+            const raw = e.dataTransfer.getData("application/card");
+            if (!raw) return;
+            try {
+              const card = JSON.parse(raw);
+              handleFieldDrop?.(slot.slotId, card);
+            } catch {
+              // ignore malformed payload
+            }
+          },
         }
       : {};
 

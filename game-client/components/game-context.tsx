@@ -12,7 +12,6 @@ type GameContextValue = {
   gameState: GameState;
   cardsPerTurn?: number;
   cardLookup: Map<string, CardType>;
-  highlightEmpty: boolean;
   myPlayerId: string;
   // Handlers
   handleCardClick: (
@@ -20,8 +19,8 @@ type GameContextValue = {
     source?: "hand" | "picked" | "center",
     ctrlKey?: boolean,
   ) => void;
-  handleFieldSlotClick: (slotId: string, slotIndex: number) => void;
-  handleFieldDrop: (slotId: string, slotIndex: number, card: CardType) => void;
+  handleFieldSlotClick: (slotId: string) => void;
+  handleFieldDrop: (slotId: string, card: CardType) => void;
   handleDragOver: (e: React.DragEvent, slotId: string) => void;
   handleDragLeave: (e: React.DragEvent) => void;
   handlePlayerDragOver: (
@@ -150,20 +149,10 @@ export function GameProvider({
     if (gameState.phase === "plantTrade" && source === "hand") return;
     if (gameState.phase === "turnTrade") {
       if (source === "center") {
-        if (myPlayerId === gameState.playerTurn) {
-          // Turn player: ctrl+click adds to trade selection, regular click selects for planting
-          if (ctrlKey) {
-            toggleSelection(card);
-          } else {
-            singleClickSelect(card);
-          }
+        if (ctrlKey) {
+          toggleSelection(card);
         } else {
-          // Non-turn player: ctrl+click toggles, regular click single-selects
-          if (ctrlKey) {
-            toggleSelection(card);
-          } else {
-            singleClickSelect(card);
-          }
+          singleClickSelect(card);
         }
         return;
       }
@@ -178,8 +167,8 @@ export function GameProvider({
     singleClickSelect(card);
   };
 
-  const handleFieldSlotClick = (slotId: string, slotIndex: number) => {
-    const slot = gameState.field.slots[slotIndex];
+  const handleFieldSlotClick = (slotId: string) => {
+    const slot = gameState.field.slots.find((slot) => slot.slotId == slotId);
     const card = selection[0];
     if (card) {
       if (!slot || !slot.cardName || slot.cardName === card.cardName) {
@@ -193,13 +182,9 @@ export function GameProvider({
     }
   };
 
-  const handleFieldDrop = (
-    slotId: string,
-    slotIndex: number,
-    card: CardType,
-  ) => {
+  const handleFieldDrop = (slotId: string, card: CardType) => {
     setDragOverSlot(null);
-    const slot = gameState.field.slots[slotIndex];
+    const slot = gameState.field.slots.find((slot) => slot.slotId == slotId);
     if (!slot || !slot.cardName || slot.cardName === card.cardName) {
       onPlantBean(card.cardId, slotId);
       setSelection([]);
@@ -294,7 +279,6 @@ export function GameProvider({
     dragOverBlockReason,
     selection,
     cardLookup,
-    highlightEmpty: selection.length === 1,
     myPlayerId,
     handleCardClick,
     handleFieldSlotClick,

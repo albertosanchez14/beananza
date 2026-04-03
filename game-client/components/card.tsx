@@ -11,6 +11,7 @@ type CardProp = {
   flipped?: boolean;
   onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onContextMenu?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
   style?: React.CSSProperties;
   className?: string;
   noTransition?: boolean;
@@ -27,6 +28,7 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
     flipped = false,
     onClick,
     onContextMenu,
+    onDragStart: onDragStartProp,
     style,
     className,
     noTransition = false,
@@ -47,6 +49,7 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
     e.dataTransfer.setData("application/card", JSON.stringify(card));
     e.dataTransfer.effectAllowed = "move";
+    onDragStartProp?.(e);
     setIsDragging(true);
   };
 

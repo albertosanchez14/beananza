@@ -150,7 +150,6 @@ export default function Board() {
     handlePlayerDragOver,
     handlePlayerDragLeave,
     handlePlayerDrop,
-    highlightEmpty,
     onRequestDrop,
     onCardRightClick,
     offers,
@@ -1122,31 +1121,26 @@ export default function Board() {
             const isEligibleTarget =
               phase === "turnTrade" &&
               (isTurnPlayer || player.playerId === playerTurn);
-
-            const onPlayerDragOver =
+            const playerDragHandlers =
               phase === "turnTrade"
-                ? (e: React.DragEvent) =>
-                    handlePlayerDragOver(
-                      e,
-                      player.playerId,
-                      isEligibleTarget,
-                      isTurnPlayer,
-                    )
-                : undefined;
-
-            const onPlayerDragLeave =
-              phase === "turnTrade" ? handlePlayerDragLeave : undefined;
-
-            const onPlayerDrop =
-              phase === "turnTrade"
-                ? (e: React.DragEvent) =>
-                    handlePlayerDrop(
-                      e,
-                      player as ExternalPlayer,
-                      isEligibleTarget,
-                      isTurnPlayer,
-                    )
-                : undefined;
+                ? {
+                    onDragOver: (e: React.DragEvent) =>
+                      handlePlayerDragOver(
+                        e,
+                        player.playerId,
+                        isEligibleTarget,
+                        isTurnPlayer,
+                      ),
+                    onDragLeave: handlePlayerDragLeave,
+                    onDrop: (e: React.DragEvent) =>
+                      handlePlayerDrop(
+                        e,
+                        player as ExternalPlayer,
+                        isEligibleTarget,
+                        isTurnPlayer,
+                      ),
+                  }
+                : {};
 
             return (
               <Player
@@ -1165,9 +1159,7 @@ export default function Board() {
                     ? (dragOverBlockReason ?? undefined)
                     : undefined
                 }
-                onDragOver={onPlayerDragOver}
-                onDragLeave={onPlayerDragLeave}
-                onDrop={onPlayerDrop}
+                {...playerDragHandlers}
                 field={
                   <div
                     ref={(el) => {
@@ -1270,46 +1262,38 @@ export default function Board() {
           <div ref={centerCardsRef}>
             <CenterCards slots={cardsPerTurn ?? 3}>
               {centerCards.map((card) => (
-                <div
+                <Card
                   key={card.cardId}
+                  card={card}
+                  ref={(el) => {
+                    if (el) cardRefs.current.set(card.cardId, el);
+                    else cardRefs.current.delete(card.cardId);
+                  }}
                   onDragStart={(e) => {
-                    e.dataTransfer.setData("application/center-card", "true");
-                    e.dataTransfer.setData(
-                      "application/card",
-                      JSON.stringify(card),
-                    );
                     // Always flag center card drags so drop targets can detect blocked state
                     e.dataTransfer.setData(
                       "application/drag-has-center",
                       "true",
                     );
                   }}
-                >
-                  <Card
-                    card={card}
-                    ref={(el) => {
-                      if (el) cardRefs.current.set(card.cardId, el);
-                      else cardRefs.current.delete(card.cardId);
-                    }}
-                    hidden={hiddenCenterCardIds.has(card.cardId)}
-                    highlightColor={
-                      phase === "turnTrade" &&
-                      selection.some((c) => c.cardId === card.cardId)
-                        ? "#a855f7"
-                        : cardHighlights.get(card.cardId)
-                    }
-                    isSelected={selection.some((c) => c.cardId === card.cardId)}
-                    draggable={true}
-                    onClick={(e: React.MouseEvent) =>
-                      handleCardClick(card, "center", e.ctrlKey || e.metaKey)
-                    }
-                    onContextMenu={
-                      phase === "turnTrade" && !isTurnPlayer
-                        ? () => onCardRightClick(card, playerTurn)
-                        : undefined
-                    }
-                  />
-                </div>
+                  hidden={hiddenCenterCardIds.has(card.cardId)}
+                  highlightColor={
+                    phase === "turnTrade" &&
+                    selection.some((c) => c.cardId === card.cardId)
+                      ? "#a855f7"
+                      : cardHighlights.get(card.cardId)
+                  }
+                  isSelected={selection.some((c) => c.cardId === card.cardId)}
+                  draggable={true}
+                  onClick={(e: React.MouseEvent) =>
+                    handleCardClick(card, "center", e.ctrlKey || e.metaKey)
+                  }
+                  onContextMenu={
+                    phase === "turnTrade" && !isTurnPlayer
+                      ? () => onCardRightClick(card, playerTurn)
+                      : undefined
+                  }
+                />
               ))}
             </CenterCards>
           </div>
@@ -1329,6 +1313,7 @@ export default function Board() {
               const cardForSlot = s.cardName
                 ? (cardLookup.get(s.cardName) ?? null)
                 : null;
+              const highlightEmpty = selection.length === 1;
               return (
                 <div
                   key={s.slotId}
@@ -1344,9 +1329,9 @@ export default function Board() {
                     highlightEmpty={highlightEmpty}
                     handleDragOver={handleDragOver}
                     handleDragLeave={handleDragLeave}
-                    handleFieldDrop={(slotId, slotIndex, card) => {
+                    handleFieldDrop={(slotId, card) => {
                       dragPlantedCardIds.current.add(card.cardId);
-                      handleFieldDrop(slotId, slotIndex, card);
+                      handleFieldDrop(slotId, card);
                     }}
                     handleSlotClick={handleFieldSlotClick}
                   >
@@ -1422,8 +1407,22 @@ export default function Board() {
                   (c) => c.cardId === card.cardId,
                 );
                 return (
-                  <div
+                  <Card
                     key={card.cardId}
+                    card={card}
+                    ref={(el) => {
+                      if (el) cardRefs.current.set(card.cardId, el);
+                      else cardRefs.current.delete(card.cardId);
+                    }}
+                    isSelected={isSelected}
+                    draggable={phase !== "plantTrade"}
+                    hidden={hiddenCardIds.has(card.cardId)}
+                    highlightColor={
+                      phase === "turnTrade" &&
+                      selection.some((c) => c.cardId === card.cardId)
+                        ? "#a855f7"
+                        : cardHighlights.get(card.cardId)
+                    }
                     onDragStart={
                       phase === "turnTrade"
                         ? (e) => {
@@ -1446,36 +1445,19 @@ export default function Board() {
                           }
                         : undefined
                     }
-                  >
-                    <Card
-                      card={card}
-                      ref={(el) => {
-                        if (el) cardRefs.current.set(card.cardId, el);
-                        else cardRefs.current.delete(card.cardId);
-                      }}
-                      isSelected={isSelected}
-                      draggable={phase !== "plantTrade"}
-                      hidden={hiddenCardIds.has(card.cardId)}
-                      highlightColor={
-                        phase === "turnTrade" &&
-                        selection.some((c) => c.cardId === card.cardId)
-                          ? "#a855f7"
-                          : cardHighlights.get(card.cardId)
-                      }
-                      onClick={(e: React.MouseEvent) =>
-                        handleCardClick(card, "hand", e.ctrlKey || e.metaKey)
-                      }
-                      onContextMenu={
-                        phase === "turnTrade"
-                          ? () =>
-                              onCardRightClick(
-                                card,
-                                isTurnPlayer ? undefined : playerTurn,
-                              )
-                          : undefined
-                      }
-                    />
-                  </div>
+                    onClick={(e: React.MouseEvent) =>
+                      handleCardClick(card, "hand", e.ctrlKey || e.metaKey)
+                    }
+                    onContextMenu={
+                      phase === "turnTrade"
+                        ? () =>
+                            onCardRightClick(
+                              card,
+                              isTurnPlayer ? undefined : playerTurn,
+                            )
+                        : undefined
+                    }
+                  />
                 );
               })}
               {ghostCards.map((ghost) => (
