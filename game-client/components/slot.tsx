@@ -56,9 +56,7 @@ export default function Slot({
       : {};
 
   const handleClick =
-    isInteractive && slot
-      ? () => handleSlotClick?.(slot.slotId, index)
-      : undefined;
+    isInteractive && slot ? () => handleSlotClick?.(slot.slotId) : undefined;
 
   if (filled && children) {
     return (

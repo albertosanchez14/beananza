@@ -133,25 +133,26 @@ type PlantFlyingCardEntry = {
 export default function Board() {
   const {
     gameState,
-    selection,
-    clearSelection,
     cardsPerTurn,
     cardLookup,
     myPlayerId,
+    selection,
+    clearSelection,
     handleCardClick,
-    handleDrawDeckClick,
-    handleFieldSlotClick,
-    handleFieldDrop,
-    handleDragOver,
-    handleDragLeave,
+    handleCardRightClick,
+    handleCardDrag,
     dragOverSlot,
+    handleSlotClick,
+    handleSlotDrop,
+    handleSlotDragOver,
+    handleSlotDragLeave,
     dragOverPlayerId,
     dragOverBlockReason,
     handlePlayerDragOver,
     handlePlayerDragLeave,
     handlePlayerDrop,
+    handleDrawDeckClick,
     onRequestDrop,
-    onCardRightClick,
     offers,
     onRespondOffer,
     onCounterOffer,
@@ -1191,16 +1192,13 @@ export default function Board() {
                                   card={cardForSlot}
                                   flipped={false}
                                   noTransition={true}
-                                  onContextMenu={
-                                    phase === "turnTrade"
-                                      ? () =>
-                                          onCardRightClick(
-                                            cardForSlot,
-                                            isTurnPlayer
-                                              ? player.playerId
-                                              : playerTurn,
-                                          )
-                                      : undefined
+                                  onContextMenu={() =>
+                                    handleCardRightClick(
+                                      cardForSlot,
+                                      isTurnPlayer
+                                        ? player.playerId
+                                        : playerTurn,
+                                    )
                                   }
                                   hidden={animatingOpponentSlotIds.has(
                                     slot.slotId,
@@ -1269,13 +1267,7 @@ export default function Board() {
                     if (el) cardRefs.current.set(card.cardId, el);
                     else cardRefs.current.delete(card.cardId);
                   }}
-                  onDragStart={(e) => {
-                    // Always flag center card drags so drop targets can detect blocked state
-                    e.dataTransfer.setData(
-                      "application/drag-has-center",
-                      "true",
-                    );
-                  }}
+                  onDragStart={(e) => handleCardDrag(e, card, "center")}
                   hidden={hiddenCenterCardIds.has(card.cardId)}
                   highlightColor={
                     phase === "turnTrade" &&
@@ -1289,8 +1281,8 @@ export default function Board() {
                     handleCardClick(card, "center", e.ctrlKey || e.metaKey)
                   }
                   onContextMenu={
-                    phase === "turnTrade" && !isTurnPlayer
-                      ? () => onCardRightClick(card, playerTurn)
+                    !isTurnPlayer
+                      ? () => handleCardRightClick(card, playerTurn)
                       : undefined
                   }
                 />
@@ -1327,13 +1319,13 @@ export default function Board() {
                     index={index}
                     dragOverSlot={dragOverSlot}
                     highlightEmpty={highlightEmpty}
-                    handleDragOver={handleDragOver}
-                    handleDragLeave={handleDragLeave}
+                    handleDragOver={handleSlotDragOver}
+                    handleDragLeave={handleSlotDragLeave}
                     handleFieldDrop={(slotId, card) => {
                       dragPlantedCardIds.current.add(card.cardId);
-                      handleFieldDrop(slotId, card);
+                      handleSlotDrop(slotId, card);
                     }}
-                    handleSlotClick={handleFieldSlotClick}
+                    handleSlotClick={handleSlotClick}
                   >
                     {cardForSlot && (
                       <Card
@@ -1344,14 +1336,11 @@ export default function Board() {
                           else mySlotCardRefs.current.delete(s.slotId);
                         }}
                         hidden={animatingOpponentSlotIds.has(s.slotId)}
-                        onContextMenu={
-                          phase === "turnTrade"
-                            ? () =>
-                                onCardRightClick(
-                                  cardForSlot,
-                                  isTurnPlayer ? undefined : playerTurn,
-                                )
-                            : undefined
+                        onContextMenu={() =>
+                          handleCardRightClick(
+                            cardForSlot,
+                            isTurnPlayer ? undefined : playerTurn,
+                          )
                         }
                       />
                     )}
@@ -1423,62 +1412,38 @@ export default function Board() {
                         ? "#a855f7"
                         : cardHighlights.get(card.cardId)
                     }
-                    onDragStart={
-                      phase === "turnTrade"
-                        ? (e) => {
-                            const isInSelection = selection.some(
-                              (c) => c.cardId === card.cardId,
-                            );
-                            if (
-                              isInSelection &&
-                              selection.some((c) =>
-                                centerCards.some(
-                                  (cc) => cc.cardId === c.cardId,
-                                ),
-                              )
-                            ) {
-                              e.dataTransfer.setData(
-                                "application/drag-has-center",
-                                "true",
-                              );
-                            }
-                          }
-                        : undefined
-                    }
+                    onDragStart={(e) => handleCardDrag(e, card, "hand")}
                     onClick={(e: React.MouseEvent) =>
                       handleCardClick(card, "hand", e.ctrlKey || e.metaKey)
                     }
-                    onContextMenu={
-                      phase === "turnTrade"
-                        ? () =>
-                            onCardRightClick(
-                              card,
-                              isTurnPlayer ? undefined : playerTurn,
-                            )
-                        : undefined
+                    onContextMenu={() =>
+                      handleCardRightClick(
+                        card,
+                        isTurnPlayer ? undefined : playerTurn,
+                      )
                     }
                   />
                 );
               })}
               {ghostCards.map((ghost) => (
-                <div key={ghost.cardId}>
-                  <Card
-                    card={ghost}
-                    ref={(el) => {
-                      if (el) cardRefs.current.set(ghost.cardId, el);
-                      else cardRefs.current.delete(ghost.cardId);
-                    }}
-                    draggable={false}
-                    noRaise
-                    highlightColor="#ef4444"
-                    style={{ opacity: 0.4 }}
-                  />
-                </div>
+                <Card
+                  key={ghost.cardId}
+                  card={ghost}
+                  ref={(el) => {
+                    if (el) cardRefs.current.set(ghost.cardId, el);
+                    else cardRefs.current.delete(ghost.cardId);
+                  }}
+                  draggable={false}
+                  noRaise
+                  highlightColor="#ef4444"
+                  style={{ opacity: 0.4 }}
+                />
               ))}
             </FanLayout>
           </div>
         }
       />
+
       {acceptPickerOffer && (
         <AcceptCardPicker
           offer={acceptPickerOffer}

@@ -1,4 +1,4 @@
-import { forwardRef, useState, useEffect } from "react";
+import { useState } from "react";
 import { m } from "motion/react";
 import Image from "next/image";
 import { BaseCard, CardType } from "@/schemas/types";
@@ -6,6 +6,7 @@ import { CardFrontFace } from "@/components/card-front-face";
 
 type CardProp = {
   card: BaseCard | CardType;
+  ref?: React.Ref<HTMLDivElement>;
   isSelected?: boolean;
   draggable?: boolean;
   flipped?: boolean;
@@ -20,36 +21,30 @@ type CardProp = {
   noRaise?: boolean;
 };
 
-const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
-  {
-    card,
-    isSelected = false,
-    draggable = false,
-    flipped = false,
-    onClick,
-    onContextMenu,
-    onDragStart: onDragStartProp,
-    style,
-    className,
-    noTransition = false,
-    hidden = false,
-    highlightColor,
-    noRaise = false,
-  },
+export default function Card({
+  card,
   ref,
-) {
+  isSelected = false,
+  draggable = false,
+  flipped = false,
+  style,
+  className,
+  noTransition = false,
+  hidden = false,
+  highlightColor,
+  noRaise = false,
+  onClick,
+  onContextMenu,
+  onDragStart,
+}: CardProp) {
   const isHighlighted = !!highlightColor;
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
-  useEffect(() => {
-    if (isSelected || isHighlighted) setIsHovered(false);
-  }, [isSelected, isHighlighted]);
+  const effectiveHover = isHovered && !isSelected && !isHighlighted;
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
-    e.dataTransfer.setData("application/card", JSON.stringify(card));
-    e.dataTransfer.effectAllowed = "move";
-    onDragStartProp?.(e);
+    onDragStart?.(e);
     setIsDragging(true);
   };
 
@@ -107,14 +102,14 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
             y:
               isSelected || (isHighlighted && !noRaise)
                 ? -16
-                : isHovered && onClick && !isDragging
+                : effectiveHover && onClick && !isDragging
                   ? -12
                   : 0,
             scale: isDragging ? 1.05 : 1,
             boxShadow:
               isSelected || (isHighlighted && !noRaise)
                 ? "0 20px 25px rgba(0,0,0,0.4)"
-                : isHovered && onClick && !isDragging
+                : effectiveHover && onClick && !isDragging
                   ? "0 10px 20px rgba(0,0,0,0.3)"
                   : "none",
           }}
@@ -162,6 +157,4 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
       </m.div>
     </div>
   );
-});
-
-export default Card;
+}
