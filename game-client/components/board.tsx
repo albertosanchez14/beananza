@@ -1178,9 +1178,7 @@ export default function Board() {
                   >
                     <Field>
                       {player.playerField.slots.map((slot, index) => {
-                        const cardForSlot = slot.cardName
-                          ? (cardLookup.get(slot.cardName) ?? null)
-                          : null;
+                        const cardForSlot = cardLookup.get(slot.cardName ?? "");
                         return (
                           <div
                             key={slot.slotId}

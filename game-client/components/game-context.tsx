@@ -1,10 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  ReactNode,
-} from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 import { CardType, ExternalPlayer, Offer, OfferCard } from "@/schemas/types";
 import { GameState } from "@/hooks/state";
 
@@ -123,29 +117,30 @@ export function GameProvider({
   const [dragOverBlockReason, setDragOverBlockReason] = useState<string | null>(
     null,
   );
-  const [selection, setSelection] = useState<CardType[]>([]);
+  const [selectionState, setSelectionState] = useState<{
+    phase: string;
+    cards: CardType[];
+  }>({ phase: gameState.phase, cards: [] });
+  const selection =
+    selectionState.phase === gameState.phase ? selectionState.cards : [];
+
+  const setSelection = (cards: CardType[]) =>
+    setSelectionState({ phase: gameState.phase, cards });
 
   const toggleSelection = (card: CardType) => {
-    setSelection((prev) =>
-      prev.some((c) => c.cardId === card.cardId)
-        ? prev.filter((c) => c.cardId !== card.cardId)
-        : [...prev, card],
+    setSelection(
+      selection.some((c) => c.cardId === card.cardId)
+        ? selection.filter((c) => c.cardId !== card.cardId)
+        : [...selection, card],
     );
   };
 
   const singleClickSelect = (card: CardType) => {
-    setSelection((prev) => {
-      const isSelected = prev.some((c) => c.cardId === card.cardId);
-      if (isSelected && prev.length === 1) return [];
-      return [card];
-    });
+    const isSelected = selection.some((c) => c.cardId === card.cardId);
+    setSelection(isSelected && selection.length === 1 ? [] : [card]);
   };
 
   const clearSelection = () => setSelection([]);
-
-  useEffect(() => {
-    setSelection([]);
-  }, [gameState.phase]);
 
   const handleCardClick = (
     card: CardType,
@@ -218,7 +213,6 @@ export function GameProvider({
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
-    // Only clear when the pointer truly leaves the slot — not when entering a child element.
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setDragOverSlot(null);
   };
