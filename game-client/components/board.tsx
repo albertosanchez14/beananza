@@ -7,17 +7,9 @@ import {
   useState,
 } from "react";
 
-import {
-  CardType,
-  ExternalPlayer,
-  Offer,
-  OfferCard,
-  SlotType,
-} from "@/schemas/types";
+import { CardType, Offer, OfferCard, SlotType } from "@/schemas/types";
 
 import { useGameContext } from "@/components/game-context";
-
-import OfferWizard from "@/components/offer-wizard";
 
 import Table from "@/components/table";
 import { CardPile, CenterCards } from "@/components/card-pile";
@@ -34,8 +26,10 @@ import { FlyingCard } from "@/components/flying-card";
 import { PlantFlyingCard } from "@/components/plant-flying-card";
 import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
 import AcceptCardPicker from "@/components/accept-card-picker";
-import { canAcceptOffer } from "@/components/offer-card";
 import Arrow from "@/components/arrow";
+import OfferWizard from "@/components/offer-wizard";
+import { canAcceptOffer } from "@/components/offer-card";
+
 import {
   addPath,
   addPathsToTargets,
@@ -1117,32 +1111,7 @@ export default function Board() {
       <Table>
         <Opponents>
           {players.map((player) => {
-            const isTurnPlayer = myPlayerId === playerTurn;
             const playerHighlight = playerHighlights.get(player.playerId);
-            const isEligibleTarget =
-              phase === "turnTrade" &&
-              (isTurnPlayer || player.playerId === playerTurn);
-            const playerDragHandlers =
-              phase === "turnTrade"
-                ? {
-                    onDragOver: (e: React.DragEvent) =>
-                      handlePlayerDragOver(
-                        e,
-                        player.playerId,
-                        isEligibleTarget,
-                        isTurnPlayer,
-                      ),
-                    onDragLeave: handlePlayerDragLeave,
-                    onDrop: (e: React.DragEvent) =>
-                      handlePlayerDrop(
-                        e,
-                        player as ExternalPlayer,
-                        isEligibleTarget,
-                        isTurnPlayer,
-                      ),
-                  }
-                : {};
-
             return (
               <Player
                 key={player.playerId}
@@ -1160,7 +1129,9 @@ export default function Board() {
                     ? (dragOverBlockReason ?? undefined)
                     : undefined
                 }
-                {...playerDragHandlers}
+                onDragOver={(e) => handlePlayerDragOver(e, player.playerId)}
+                onDragLeave={handlePlayerDragLeave}
+                onDrop={(e) => handlePlayerDrop(e, player)}
                 field={
                   <div
                     ref={(el) => {
@@ -1391,40 +1362,35 @@ export default function Board() {
               />
             ))}
             <FanLayout phase={phase}>
-              {hand.map((card) => {
-                const isSelected = selection.some(
-                  (c) => c.cardId === card.cardId,
-                );
-                return (
-                  <Card
-                    key={card.cardId}
-                    card={card}
-                    ref={(el) => {
-                      if (el) cardRefs.current.set(card.cardId, el);
-                      else cardRefs.current.delete(card.cardId);
-                    }}
-                    isSelected={isSelected}
-                    draggable={phase !== "plantTrade"}
-                    hidden={hiddenCardIds.has(card.cardId)}
-                    highlightColor={
-                      phase === "turnTrade" &&
-                      selection.some((c) => c.cardId === card.cardId)
-                        ? "#a855f7"
-                        : cardHighlights.get(card.cardId)
-                    }
-                    onDragStart={(e) => handleCardDrag(e, card, "hand")}
-                    onClick={(e: React.MouseEvent) =>
-                      handleCardClick(card, "hand", e.ctrlKey || e.metaKey)
-                    }
-                    onContextMenu={() =>
-                      handleCardRightClick(
-                        card,
-                        isTurnPlayer ? undefined : playerTurn,
-                      )
-                    }
-                  />
-                );
-              })}
+              {hand.map((card) => (
+                <Card
+                  key={card.cardId}
+                  ref={(el) => {
+                    if (el) cardRefs.current.set(card.cardId, el);
+                    else cardRefs.current.delete(card.cardId);
+                  }}
+                  card={card}
+                  isSelected={selection.some((c) => c.cardId === card.cardId)}
+                  hidden={hiddenCardIds.has(card.cardId)}
+                  highlightColor={
+                    phase === "turnTrade" &&
+                    selection.some((c) => c.cardId === card.cardId)
+                      ? "#a855f7"
+                      : cardHighlights.get(card.cardId)
+                  }
+                  draggable={phase !== "plantTrade"}
+                  onDragStart={(e) => handleCardDrag(e, card, "hand")}
+                  onClick={(e: React.MouseEvent) =>
+                    handleCardClick(card, "hand", e.ctrlKey || e.metaKey)
+                  }
+                  onContextMenu={() =>
+                    handleCardRightClick(
+                      card,
+                      isTurnPlayer ? undefined : playerTurn,
+                    )
+                  }
+                />
+              ))}
               {ghostCards.map((ghost) => (
                 <Card
                   key={ghost.cardId}
@@ -1435,7 +1401,7 @@ export default function Board() {
                   }}
                   draggable={false}
                   noRaise
-                  highlightColor="#ef4444"
+                  highlightColor={ORIGIN_COLORS.blocked}
                   style={{ opacity: 0.4 }}
                 />
               ))}

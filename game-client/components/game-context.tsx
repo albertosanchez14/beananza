@@ -36,19 +36,9 @@ type GameContextValue = {
   handleSlotDragLeave: (e: React.DragEvent) => void;
   dragOverPlayerId: string | null;
   dragOverBlockReason: string | null;
-  handlePlayerDragOver: (
-    e: React.DragEvent,
-    playerId: string,
-    isEligibleTarget: boolean,
-    isTurnPlayer: boolean,
-  ) => void;
+  handlePlayerDragOver: (e: React.DragEvent, targetPlayerId: string) => void;
   handlePlayerDragLeave: () => void;
-  handlePlayerDrop: (
-    e: React.DragEvent,
-    targetPlayer: ExternalPlayer,
-    isEligibleTarget: boolean,
-    isTurnPlayer: boolean,
-  ) => void;
+  handlePlayerDrop: (e: React.DragEvent, targetPlayer: ExternalPlayer) => void;
 
   handleDrawDeckClick: () => void;
   onRequestDrop: (cardsRequested: CardType[]) => void;
@@ -244,12 +234,10 @@ export function GameProvider({
     setDragOverSlot(null);
   };
 
-  const handlePlayerDragOver = (
-    e: React.DragEvent,
-    playerId: string,
-    isEligibleTarget: boolean,
-    isTurnPlayer: boolean,
-  ) => {
+  const handlePlayerDragOver = (e: React.DragEvent, targetPlayerId: string) => {
+    const isTurnPlayer = myPlayerId === gameState.playerTurn;
+    const isEligibleTarget =
+      isTurnPlayer || targetPlayerId === gameState.playerTurn;
     e.preventDefault();
     let blockReason: string | null = null;
     if (!isEligibleTarget) {
@@ -260,7 +248,7 @@ export function GameProvider({
     ) {
       blockReason = "Can't give center cards";
     }
-    setDragOverPlayerId(playerId);
+    setDragOverPlayerId(targetPlayerId);
     setDragOverBlockReason(blockReason);
   };
 
@@ -272,9 +260,11 @@ export function GameProvider({
   const handlePlayerDrop = (
     e: React.DragEvent,
     targetPlayer: ExternalPlayer,
-    isEligibleTarget: boolean,
-    isTurnPlayer: boolean,
   ) => {
+    const isTurnPlayer = myPlayerId === gameState.playerTurn;
+    const isEligibleTarget =
+      isTurnPlayer || targetPlayer.playerId === gameState.playerTurn;
+
     e.preventDefault();
     setDragOverPlayerId(null);
     setDragOverBlockReason(null);
