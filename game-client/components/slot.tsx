@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { m, AnimatePresence } from "motion/react";
-import { CardType, SlotType } from "@/schemas/types";
+import { SlotType } from "@/schemas/types";
 
 type SlotProp = {
   slot?: SlotType | null;
@@ -11,28 +11,25 @@ type SlotProp = {
   highlightEmpty?: boolean;
   handleDragOver?: (e: React.DragEvent, slotId: string) => void;
   handleDragLeave?: (e: React.DragEvent) => void;
-  handleFieldDrop?: (slotId: string, card: CardType) => void;
+  handleSlotDrop?: (e: React.DragEvent, slotId: string) => void;
   handleSlotClick?: (slotId: string) => void;
   suppressAnimation?: boolean;
 };
 
 export default function Slot({
   slot,
-  index,
   children,
   interactive = true,
   dragOverSlot = null,
   highlightEmpty = false,
   handleDragOver,
   handleDragLeave,
-  handleFieldDrop,
+  handleSlotDrop,
   handleSlotClick,
   suppressAnimation = false,
 }: SlotProp) {
   const isInteractive = interactive;
-
   const cardQuantity = slot?.cardIds.length ?? 0;
-
   const filled = !!(slot?.cardName && cardQuantity > 0);
   const isDragOver = dragOverSlot === slot?.slotId;
 
@@ -41,17 +38,7 @@ export default function Slot({
       ? {
           onDragOver: (e: React.DragEvent) => handleDragOver?.(e, slot.slotId),
           onDragLeave: handleDragLeave,
-          onDrop: (e: React.DragEvent) => {
-            e.preventDefault();
-            const raw = e.dataTransfer.getData("application/card");
-            if (!raw) return;
-            try {
-              const card = JSON.parse(raw);
-              handleFieldDrop?.(slot.slotId, card);
-            } catch {
-              // ignore malformed payload
-            }
-          },
+          onDrop: (e: React.DragEvent) => handleSlotDrop?.(e, slot.slotId),
         }
       : {};
 

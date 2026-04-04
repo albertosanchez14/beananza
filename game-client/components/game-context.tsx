@@ -31,7 +31,7 @@ type GameContextValue = {
   ) => void;
   dragOverSlot: string | null;
   handleSlotClick: (slotId: string) => void;
-  handleSlotDrop: (slotId: string, card: CardType) => void;
+  handleSlotDrop: (e: React.DragEvent, slotId: string) => void;
   handleSlotDragOver: (e: React.DragEvent, slotId: string) => void;
   handleSlotDragLeave: (e: React.DragEvent) => void;
   dragOverPlayerId: string | null;
@@ -39,10 +39,8 @@ type GameContextValue = {
   handlePlayerDragOver: (e: React.DragEvent, targetPlayerId: string) => void;
   handlePlayerDragLeave: () => void;
   handlePlayerDrop: (e: React.DragEvent, targetPlayer: ExternalPlayer) => void;
-
   handleDrawDeckClick: () => void;
   onRequestDrop: (cardsRequested: CardType[]) => void;
-
   offers: Offer[];
   onRespondOffer: (
     offerId: string,
@@ -214,12 +212,20 @@ export function GameProvider({
     }
   };
 
-  const handleSlotDrop = (slotId: string, card: CardType) => {
-    setDragOverSlot(null);
-    const slot = gameState.field.slots.find((slot) => slot.slotId == slotId);
-    if (!slot || !slot.cardName || slot.cardName === card.cardName) {
-      onPlantBean(card.cardId, slotId);
-      setSelection([]);
+  const handleSlotDrop = (e: React.DragEvent, slotId: string) => {
+    e.preventDefault();
+    const raw = e.dataTransfer.getData("application/card");
+    if (!raw) return;
+    try {
+      const card = JSON.parse(raw);
+      setDragOverSlot(null);
+      const slot = gameState.field.slots.find((slot) => slot.slotId == slotId);
+      if (!slot || !slot.cardName || slot.cardName === card.cardName) {
+        onPlantBean(card.cardId, slotId);
+        setSelection([]);
+      }
+    } catch {
+      // ignore malformed payload
     }
   };
 

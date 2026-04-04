@@ -1292,10 +1292,7 @@ export default function Board() {
                     highlightEmpty={highlightEmpty}
                     handleDragOver={handleSlotDragOver}
                     handleDragLeave={handleSlotDragLeave}
-                    handleFieldDrop={(slotId, card) => {
-                      dragPlantedCardIds.current.add(card.cardId);
-                      handleSlotDrop(slotId, card);
-                    }}
+                    handleSlotDrop={handleSlotDrop}
                     handleSlotClick={handleSlotClick}
                   >
                     {cardForSlot && (
