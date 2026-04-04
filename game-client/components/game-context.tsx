@@ -10,9 +10,10 @@ import { GameState } from "@/hooks/state";
 
 type GameContextValue = {
   gameState: GameState;
-  cardsPerTurn?: number;
+  cardsPerTurn: number;
   cardLookup: Map<string, CardType>;
   myPlayerId: string;
+  // Cards state and handlers
   selection: CardType[];
   clearSelection: () => void;
   handleCardClick: (
@@ -29,18 +30,22 @@ type GameContextValue = {
     card: BaseCard | CardType,
     source: "center" | "hand",
   ) => void;
+  // Slot state and handlers
   dragOverSlot: string | null;
   handleSlotClick: (slotId: string) => void;
   handleSlotDrop: (e: React.DragEvent, slotId: string) => void;
   handleSlotDragOver: (e: React.DragEvent, slotId: string) => void;
   handleSlotDragLeave: (e: React.DragEvent) => void;
+  // Opponent players sate and handlers
   dragOverPlayerId: string | null;
   dragOverBlockReason: string | null;
   handlePlayerDragOver: (e: React.DragEvent, targetPlayerId: string) => void;
   handlePlayerDragLeave: () => void;
   handlePlayerDrop: (e: React.DragEvent, targetPlayer: ExternalPlayer) => void;
+  ////
   handleDrawDeckClick: () => void;
   onRequestDrop: (cardsRequested: CardType[]) => void;
+  // Offers state and handlers
   offers: Offer[];
   onRespondOffer: (
     offerId: string,
@@ -65,7 +70,7 @@ export function useGameContext(): GameContextValue {
 type GameProviderProps = {
   children: ReactNode;
   gameState: GameState;
-  cardsPerTurn?: number;
+  cardsPerTurn: number;
   cardLookup: Map<string, CardType>;
   myPlayerId: string;
   onPlantBean: (cardId: string, slotId: string) => void;
