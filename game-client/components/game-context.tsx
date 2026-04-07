@@ -46,7 +46,6 @@ type GameContextValue = {
   clearPlayerDropResult: () => void;
   ////
   handleDrawDeckClick: () => void;
-  onRequestDrop: (cardsRequested: CardType[]) => void;
   // Offers state and handlers
   offers: Offer[];
   onCreateOffer: (
@@ -84,7 +83,6 @@ type GameProviderProps = {
   onHarvestField: (slotId: string) => void;
   onTurnOverBean: () => void;
   onDrawCards: () => void;
-  onRequestDrop: (cardsRequested: CardType[]) => void;
   onCardRightClick: (
     card: CardType,
     targetPlayerId: string | undefined,
@@ -116,7 +114,6 @@ export function GameProvider({
   onHarvestField,
   onTurnOverBean,
   onDrawCards,
-  onRequestDrop,
   onCardRightClick,
   onCreateOffer,
   onRespondOffer,
@@ -354,7 +351,6 @@ export function GameProvider({
     playerDropResult,
     clearPlayerDropResult,
     handleDrawDeckClick,
-    onRequestDrop,
     offers: gameState.offers,
     onCreateOffer,
     onRespondOffer,

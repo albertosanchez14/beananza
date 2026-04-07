@@ -43,9 +43,6 @@ export default function GameRoom({
   respondOffer,
 }: GameRoomProps) {
   const [offerPanelOpen, setOfferPanelOpen] = useState(false);
-  const [requestModal, setRequestModal] = useState<{
-    cardsRequested: CardType[];
-  } | null>(null);
   const [rightClickModal, setRightClickModal] = useState<{
     cardRequested: CardType;
     targetPlayerId: string | undefined;
@@ -76,7 +73,6 @@ export default function GameRoom({
       onHarvestField={(slotId) => harvestField(slotId)}
       onTurnOverBean={() => turnOverBean()}
       onDrawCards={() => drawCards()}
-      onRequestDrop={(cardsRequested) => setRequestModal({ cardsRequested })}
       onCardRightClick={(card, targetPlayerId) =>
         setRightClickModal({ cardRequested: card, targetPlayerId })
       }
@@ -122,39 +118,6 @@ export default function GameRoom({
           onCounterOffer={counterOffer}
           onRespondOffer={respondOffer}
         />
-
-        {requestModal && (
-          <RequestCardsModal
-            cardsRequested={requestModal.cardsRequested}
-            myHand={gameState.hand}
-            centerCards={
-              playerId === gameState.playerTurn
-                ? gameState.centerCards
-                : undefined
-            }
-            isTurnPlayer={playerId === gameState.playerTurn}
-            players={gameState.players.filter((p) => p.playerId !== playerId)}
-            defaultTargetId={
-              playerId !== gameState.playerTurn
-                ? gameState.playerTurn
-                : undefined
-            }
-            onSubmit={(cardsOffered, _, targetPlayerId) => {
-              const isTurnPlayer = playerId === gameState.playerTurn;
-              const allCenter = requestModal.cardsRequested.every((c) =>
-                gameState.centerCards.some((cc) => cc.cardId === c.cardId),
-              );
-              const useSpecificIds = !isTurnPlayer && allCenter;
-              const reqCards = requestModal.cardsRequested.map((c) => ({
-                card_type: c.cardName,
-                card_id: useSpecificIds ? c.cardId : "",
-              }));
-              createOffer(cardsOffered, reqCards, targetPlayerId);
-              setRequestModal(null);
-            }}
-            onClose={() => setRequestModal(null)}
-          />
-        )}
 
         {rightClickModal && (
           <RequestCardsModal
