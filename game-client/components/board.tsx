@@ -1629,7 +1629,6 @@ export default function Board() {
               onOfferHover={setHoveredOfferId}
               tagWrapperRefs={tagWrapperRefs}
               allOffers={offers}
-              players={players}
               myPlayerId={myPlayerId}
               cardLookup={cardLookup}
               hand={hand}

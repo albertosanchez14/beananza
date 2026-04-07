@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Offer, ExternalPlayer, CardType } from "@/schemas/types";
+import { Offer, CardType } from "@/schemas/types";
 import { getLeaves } from "@/utils/offer-tree";
 import OfferTreeOverlay from "@/components/offer-tree-overlay";
 import { OfferNode } from "@/components/offer-node";
@@ -9,7 +9,6 @@ import { OfferNode } from "@/components/offer-node";
 type Props = {
   rootOffer: Offer;
   subtree: Offer[];
-  players: ExternalPlayer[];
   myPlayerId: string;
   cardLookup: Map<string, CardType>;
   hand: CardType[];
@@ -25,7 +24,6 @@ type Props = {
 export default function InlineOfferTag({
   rootOffer,
   subtree,
-  players,
   myPlayerId,
   cardLookup,
   hand,
@@ -110,7 +108,6 @@ export default function InlineOfferTag({
           rootOfferId={rootOffer.id}
           containerEl={containerEl}
           myPlayerId={myPlayerId}
-          players={players}
           cardLookup={cardLookup}
           hand={hand}
           centerCards={centerCards}

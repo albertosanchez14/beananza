@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { CardType, ExternalPlayer, Offer } from "@/schemas/types";
+import { CardType, Offer } from "@/schemas/types";
 import { buildChildrenMap } from "@/utils/offer-tree";
 import { OfferNode } from "@/components/offer-node";
 
@@ -67,7 +67,6 @@ type Props = {
   rootOfferId: string;
   containerEl?: HTMLElement | null;
   myPlayerId: string;
-  players: ExternalPlayer[];
   cardLookup: Map<string, CardType>;
   hand: CardType[];
   centerCards: CardType[];
@@ -85,7 +84,6 @@ export default function OfferTreeOverlay({
   rootOfferId,
   containerEl,
   myPlayerId,
-  players,
   cardLookup,
   hand,
   centerCards,
@@ -167,7 +165,6 @@ export default function OfferTreeOverlay({
             key={offer.id}
             offer={offer}
             myPlayerId={myPlayerId}
-            players={players}
             cardLookup={cardLookup}
             hand={hand}
             centerCards={centerCards}

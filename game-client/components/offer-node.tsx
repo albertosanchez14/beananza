@@ -1,7 +1,7 @@
 "use client";
 
 import { CSSProperties, forwardRef } from "react";
-import { CardType, ExternalPlayer, Offer } from "@/schemas/types";
+import { CardType, Offer } from "@/schemas/types";
 import { CardFrontFace } from "@/components/card-front-face";
 import { canAcceptOffer } from "@/components/offer-card";
 
@@ -15,7 +15,6 @@ type OfferNodeProps = {
   accent: { border: string; bg: string };
   width: number;
   cardHeight: number;
-  players?: ExternalPlayer[];
   style?: CSSProperties;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;

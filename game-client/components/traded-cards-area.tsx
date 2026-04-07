@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CardType, ExternalPlayer, Offer } from "@/schemas/types";
+import { CardType, Offer } from "@/schemas/types";
 import TradedCards from "@/components/traded-cards";
 import Card from "@/components/card";
 import InlineOfferTag from "@/components/inline-offer-tag";
@@ -20,7 +20,6 @@ type Props = {
   onOfferHover: (id: string | null) => void;
   tagWrapperRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
   allOffers: Offer[];
-  players: ExternalPlayer[];
   myPlayerId: string;
   cardLookup: Map<string, CardType>;
   hand: CardType[];
@@ -50,7 +49,6 @@ export default function TradedCardsArea({
   onOfferHover,
   tagWrapperRefs,
   allOffers,
-  players,
   myPlayerId,
   cardLookup,
   hand,
@@ -222,7 +220,6 @@ export default function TradedCardsArea({
                 <InlineOfferTag
                   rootOffer={rootOffer}
                   subtree={subtree}
-                  players={players}
                   myPlayerId={myPlayerId}
                   cardLookup={cardLookup}
                   hand={hand}
