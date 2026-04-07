@@ -18,6 +18,7 @@ type CardProp = {
   noTransition?: boolean;
   hidden?: boolean;
   highlightColor?: string;
+  secondaryHighlightColor?: string;
   noRaise?: boolean;
 };
 
@@ -32,6 +33,7 @@ export default function Card({
   noTransition = false,
   hidden = false,
   highlightColor,
+  secondaryHighlightColor,
   noRaise = false,
   onClick,
   onContextMenu,
@@ -151,6 +153,16 @@ export default function Card({
             <div
               className="absolute inset-0 rounded-xl pointer-events-none"
               style={{ border: `3px solid ${highlightColor}`, zIndex: 10 }}
+            />
+          )}
+          {secondaryHighlightColor && (
+            <div
+              className="absolute rounded-[9px] pointer-events-none"
+              style={{
+                inset: 4,
+                border: `2px solid ${secondaryHighlightColor}`,
+                zIndex: 11,
+              }}
             />
           )}
         </m.div>

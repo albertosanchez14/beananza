@@ -39,6 +39,7 @@ import {
   OfferPathEntry,
   resolveOfferedEl,
 } from "@/utils/offer-arrow-utils";
+import InlineModal from "./inline-modal";
 
 type FlyingCardEntry = {
   id: string;
@@ -69,6 +70,25 @@ const ORIGIN_COLORS = {
   player: "#f472b6",
   blocked: "#ef4444",
 } as const;
+
+function enrichWithCenterIds(
+  reqCards: OfferCard[],
+  centerCards: CardType[],
+  isTurnPlayer: boolean,
+): OfferCard[] {
+  if (isTurnPlayer) return reqCards;
+  const usedIds = new Set<string>();
+  return reqCards.map((c) => {
+    const match = centerCards.find(
+      (cc) => cc.cardName === c.card_type && !usedIds.has(cc.cardId),
+    );
+    if (match) {
+      usedIds.add(match.cardId);
+      return { ...c, card_id: match.cardId };
+    }
+    return c;
+  });
+}
 
 function canProvideOfferedCards(
   offer: Offer,
@@ -145,9 +165,11 @@ export default function Board() {
     handlePlayerDragOver,
     handlePlayerDragLeave,
     handlePlayerDrop,
+    playerDropResult,
+    clearPlayerDropResult,
     handleDrawDeckClick,
-    onRequestDrop,
     offers,
+    onCreateOffer,
     onRespondOffer,
     onCounterOffer,
   } = useGameContext();
@@ -157,6 +179,26 @@ export default function Board() {
     (typeof offers)[0] | null
   >(null);
   const [counteringOffer, setCounteringOffer] = useState<Offer | null>(null);
+  const [inlineModal, setInlineModal] = useState<{
+    key: number;
+    cardsRequested: CardType[];
+    defaultOfferedCards?: CardType[];
+    defaultTargetId?: string;
+  } | null>(null);
+  let inlineModalKeyRef = useRef(0);
+  const openInlineModal = (state: {
+    cardsRequested: CardType[];
+    defaultOfferedCards?: CardType[];
+    defaultTargetId?: string;
+  }) => setInlineModal({ ...state, key: ++inlineModalKeyRef.current });
+  const [draftState, setDraftState] = useState<{
+    requested: CardType[];
+    offered: CardType[];
+    targetId: string | undefined;
+  } | null>(null);
+
+  const tradedCardsAreaRef = useRef<HTMLDivElement>(null);
+  const draftCardsGroupRef = useRef<HTMLDivElement>(null);
 
   const {
     centerCards,
@@ -286,6 +328,58 @@ export default function Board() {
     playerTurn,
     hoveredOfferId,
   ]);
+
+  // ── Draft offer highlights (inline modal) ───────────────────────────────────
+  // Maps cardId → color for hand/center cards involved in the in-progress draft.
+  const draftColor = draftState
+    ? draftState.targetId
+      ? ORIGIN_COLORS.hand
+      : ORIGIN_COLORS.player
+    : undefined;
+
+  const { draftCardHighlights, draftPlayerHighlights } = useMemo(() => {
+    const cardH = new Map<string, string>();
+    const playerH = new Map<string, { color: string; count: number }>();
+    if (!draftState || !draftColor)
+      return { draftCardHighlights: cardH, draftPlayerHighlights: playerH };
+
+    const color = draftColor;
+
+    // Receiving: per-card highlight.
+    // Non-turn player + center card → specific card highlight.
+    // Everything else (turn player always, non-turn requesting from hand) →
+    // count-based opponent hand highlight.
+    const centerIds = new Set(centerCards.map((c) => c.cardId));
+    for (const card of draftState.requested) {
+      if (!isTurnPlayer && centerIds.has(card.cardId)) {
+        cardH.set(card.cardId, color);
+      } else {
+        if (draftState.targetId) {
+          const existing = playerH.get(draftState.targetId);
+          playerH.set(draftState.targetId, {
+            color,
+            count: (existing?.count ?? 0) + 1,
+          });
+        } else {
+          for (const p of players) {
+            if (p.playerId === myPlayerId) continue;
+            const existing = playerH.get(p.playerId);
+            playerH.set(p.playerId, {
+              color,
+              count: (existing?.count ?? 0) + 1,
+            });
+          }
+        }
+      }
+    }
+
+    // Giving: highlight my offered hand cards.
+    for (const c of draftState.offered) {
+      cardH.set(c.cardId, color);
+    }
+
+    return { draftCardHighlights: cardH, draftPlayerHighlights: playerH };
+  }, [draftState, draftColor, isTurnPlayer, centerCards, players, myPlayerId]);
 
   // Ghost cards: missing cards for the hovered offer that this player must provide
   // (incoming: cards_requested, own outgoing/counter: cards_offered).
@@ -750,6 +844,154 @@ export default function Board() {
     [],
   );
 
+  // ── Inline modal (drag-to-request) ───────────────────────────────────────────
+  const handleRequestDrop = useCallback(
+    (cards: CardType[]) => {
+      openInlineModal({ cardsRequested: cards });
+      setDraftState({ requested: cards, offered: [], targetId: undefined });
+    },
+    [],
+  );
+
+  const handleOpenModal = useCallback(() => {
+    openInlineModal({ cardsRequested: [] });
+    setDraftState({ requested: [], offered: [], targetId: undefined });
+  }, []);
+
+  useEffect(() => {
+    if (!playerDropResult) return;
+    const { player, cards } = playerDropResult;
+    openInlineModal({
+      cardsRequested: [],
+      defaultOfferedCards: cards,
+      defaultTargetId: player.playerId,
+    });
+    setDraftState({ requested: [], offered: cards, targetId: player.playerId });
+    clearPlayerDropResult();
+  }, [playerDropResult, clearPlayerDropResult]);
+
+  // Draft arrow paths for the in-progress inline modal offer.
+  const [draftPaths, setDraftPaths] = useState<Map<string, OfferPathEntry>>(
+    new Map(),
+  );
+  const [activeDraftBroadcastPlayerId, setActiveDraftBroadcastPlayerId] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    if (!draftState || !tradedCardsAreaRef.current) {
+      setDraftPaths(new Map());
+      return;
+    }
+
+    const computeDraftPaths = () => {
+      if (!tradedCardsAreaRef.current) return;
+      const next = new Map<string, OfferPathEntry>();
+      const crefs = cardRefs.current;
+      const tagEl =
+        draftCardsGroupRef.current ?? tradedCardsAreaRef.current;
+      const oHandRefs = opponentHandContainerRefs.current;
+      const oFieldRefs = opponentFieldRefs.current;
+
+      const isBroadcast = !draftState.targetId;
+      const color = isBroadcast ? ORIGIN_COLORS.player : ORIGIN_COLORS.hand;
+
+      // Receiving arrows: per-card.
+      // Non-turn player + center card → specific card element.
+      // Everything else → opponent hand container.
+      const centerIdSet = new Set(centerCards.map((c) => c.cardId));
+      const seenRecv = new Set<HTMLElement>();
+      let ri = 0;
+
+      for (const card of draftState.requested) {
+        if (!isTurnPlayer && centerIdSet.has(card.cardId)) {
+          const el = crefs.get(card.cardId) ?? centerCardsRef.current;
+          if (el && !seenRecv.has(el)) {
+            seenRecv.add(el);
+            addPath(next, `draft_r_${ri++}`, el, tagEl, color);
+          }
+        } else if (isBroadcast) {
+          players
+            .filter((p) => p.playerId !== myPlayerId)
+            .forEach((p) => {
+              const el =
+                oHandRefs.get(p.playerId) ??
+                oFieldRefs.get(p.playerId) ??
+                null;
+              if (el && !seenRecv.has(el)) {
+                seenRecv.add(el);
+                addPath(next, `draft_r_${ri++}`, el, tagEl, color, p.playerId);
+              }
+            });
+        } else {
+          const el =
+            oHandRefs.get(draftState.targetId!) ??
+            oFieldRefs.get(draftState.targetId!) ??
+            null;
+          if (el && !seenRecv.has(el)) {
+            seenRecv.add(el);
+            addPath(next, `draft_r_${ri++}`, el, tagEl, color);
+          }
+        }
+      }
+
+      // Giving arrows: offered card elements → target opponent field(s)
+      const seenOffer = new Set<HTMLElement>();
+      let oi = 0;
+      draftState.offered.forEach((card) => {
+        const offEl = crefs.get(card.cardId) ?? null;
+        if (!offEl || seenOffer.has(offEl)) return;
+        seenOffer.add(offEl);
+        if (isBroadcast) {
+          players
+            .filter((p) => p.playerId !== myPlayerId)
+            .forEach((p) => {
+              const targetEl = oFieldRefs.get(p.playerId) ?? null;
+              if (targetEl)
+                addPath(
+                  next,
+                  `draft_o_${oi++}`,
+                  offEl,
+                  targetEl,
+                  ORIGIN_COLORS.player,
+                  p.playerId,
+                );
+            });
+        } else {
+          const targetEl =
+            oFieldRefs.get(draftState.targetId!) ?? null;
+          if (targetEl)
+            addPath(next, `draft_o_${oi++}`, offEl, targetEl, color);
+        }
+      });
+
+      setDraftPaths(next);
+    };
+
+    computeDraftPaths();
+    window.addEventListener("resize", computeDraftPaths);
+    return () => window.removeEventListener("resize", computeDraftPaths);
+  }, [draftState, players, myPlayerId, isTurnPlayer, centerCards]);
+
+  // Rotate broadcast player highlight for draft arrows (mirrors offer broadcast rotation).
+  useEffect(() => {
+    if (!draftState || draftState.targetId) {
+      setActiveDraftBroadcastPlayerId(null);
+      return;
+    }
+    const otherPlayerIds = players
+      .filter((p) => p.playerId !== myPlayerId)
+      .map((p) => p.playerId);
+    if (otherPlayerIds.length === 0) return;
+    setActiveDraftBroadcastPlayerId(otherPlayerIds[0]);
+    if (otherPlayerIds.length === 1) return;
+    let idx = 0;
+    const interval = setInterval(() => {
+      idx = (idx + 1) % otherPlayerIds.length;
+      setActiveDraftBroadcastPlayerId(otherPlayerIds[idx]);
+    }, 1200);
+    return () => clearInterval(interval);
+  }, [draftState, players, myPlayerId]);
+
   // Snapshot hand and center card positions after every render so the next
   // render's field-change effect can use them as animation start positions.
   useLayoutEffect(() => {
@@ -1108,10 +1350,62 @@ export default function Board() {
         },
       )}
 
+      {Array.from(draftPaths.entries()).map(([key, { pathStr, color, playerId }]) => {
+        const opacity = playerId
+          ? playerId === activeDraftBroadcastPlayerId
+            ? 1
+            : 0.3
+          : 1;
+        return (
+          <Arrow key={key} pathStr={pathStr} color={color} opacity={opacity} />
+        );
+      })}
+
+      {inlineModal && (
+        <InlineModal
+          key={inlineModal.key}
+          cardsRequested={inlineModal.cardsRequested}
+          myHand={gameState.hand}
+          centerCards={gameState.centerCards}
+          isTurnPlayer={myPlayerId === gameState.playerTurn}
+          players={gameState.players.filter((p) => p.playerId !== myPlayerId)}
+          defaultTargetId={
+            inlineModal.defaultTargetId ??
+            (myPlayerId !== gameState.playerTurn
+              ? gameState.playerTurn
+              : undefined)
+          }
+          defaultOfferedCards={inlineModal.defaultOfferedCards}
+          anchorRef={tradedCardsAreaRef}
+          onDraftChange={(requested, offered, targetId) => {
+            setDraftState({ requested, offered, targetId });
+          }}
+          onSubmit={(cardsOffered, reqCards, targetPlayerId) => {
+            onCreateOffer(
+              cardsOffered,
+              enrichWithCenterIds(
+                reqCards,
+                gameState.centerCards,
+                myPlayerId === gameState.playerTurn,
+              ),
+              targetPlayerId,
+            );
+            setInlineModal(null);
+            setDraftState(null);
+          }}
+          onClose={() => {
+            setInlineModal(null);
+            setDraftState(null);
+          }}
+        />
+      )}
+
       <Table>
         <Opponents>
           {players.map((player) => {
-            const playerHighlight = playerHighlights.get(player.playerId);
+            const playerHighlight =
+              draftPlayerHighlights.get(player.playerId) ??
+              playerHighlights.get(player.playerId);
             return (
               <Player
                 key={player.playerId}
@@ -1244,7 +1538,13 @@ export default function Board() {
                     phase === "turnTrade" &&
                     selection.some((c) => c.cardId === card.cardId)
                       ? "#a855f7"
-                      : cardHighlights.get(card.cardId)
+                      : (draftCardHighlights.get(card.cardId) ??
+                        cardHighlights.get(card.cardId))
+                  }
+                  secondaryHighlightColor={
+                    draftCardHighlights.has(card.cardId)
+                      ? cardHighlights.get(card.cardId)
+                      : undefined
                   }
                   isSelected={selection.some((c) => c.cardId === card.cardId)}
                   draggable={true}
@@ -1319,28 +1619,34 @@ export default function Board() {
           </Field>
         }
         tradedCards={
-          <TradedCardsArea
-            phase={phase}
-            pickedCards={pickedCards}
-            onCardClick={handleCardClick}
-            incomingOffers={incomingOffer}
-            outgoingOffers={outgoingOffer}
-            onOfferHover={setHoveredOfferId}
-            tagWrapperRefs={tagWrapperRefs}
-            allOffers={offers}
-            players={players}
-            myPlayerId={myPlayerId}
-            cardLookup={cardLookup}
-            hand={hand}
-            centerCards={centerCards}
-            isTurnPlayer={isTurnPlayer}
-            onRespondOffer={onRespondOffer}
-            onAcceptOffer={handleAcceptOffer}
-            onCounterOffer={setCounteringOffer}
-            selection={selection}
-            clearSelection={clearSelection}
-            onRequestDrop={onRequestDrop}
-          />
+          <div ref={tradedCardsAreaRef}>
+            <TradedCardsArea
+              phase={phase}
+              pickedCards={pickedCards}
+              onCardClick={handleCardClick}
+              incomingOffers={incomingOffer}
+              outgoingOffers={outgoingOffer}
+              onOfferHover={setHoveredOfferId}
+              tagWrapperRefs={tagWrapperRefs}
+              allOffers={offers}
+              players={players}
+              myPlayerId={myPlayerId}
+              cardLookup={cardLookup}
+              hand={hand}
+              centerCards={centerCards}
+              isTurnPlayer={isTurnPlayer}
+              onRespondOffer={onRespondOffer}
+              onAcceptOffer={handleAcceptOffer}
+              onCounterOffer={setCounteringOffer}
+              selection={selection}
+              clearSelection={clearSelection}
+              onRequestDrop={handleRequestDrop}
+              onOpenModal={handleOpenModal}
+              draftCards={draftState?.requested}
+              draftCardsGroupRef={draftCardsGroupRef}
+              draftColor={draftColor}
+            />
+          </div>
         }
         hand={
           <div ref={handRef} style={{ position: "relative" }}>
@@ -1373,7 +1679,13 @@ export default function Board() {
                     phase === "turnTrade" &&
                     selection.some((c) => c.cardId === card.cardId)
                       ? "#a855f7"
-                      : cardHighlights.get(card.cardId)
+                      : (draftCardHighlights.get(card.cardId) ??
+                        cardHighlights.get(card.cardId))
+                  }
+                  secondaryHighlightColor={
+                    draftCardHighlights.has(card.cardId)
+                      ? cardHighlights.get(card.cardId)
+                      : undefined
                   }
                   draggable={phase !== "plantTrade"}
                   onDragStart={(e) => handleCardDrag(e, card, "hand")}

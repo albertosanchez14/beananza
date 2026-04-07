@@ -42,11 +42,18 @@ type GameContextValue = {
   handlePlayerDragOver: (e: React.DragEvent, targetPlayerId: string) => void;
   handlePlayerDragLeave: () => void;
   handlePlayerDrop: (e: React.DragEvent, targetPlayer: ExternalPlayer) => void;
+  playerDropResult: { player: ExternalPlayer; cards: CardType[] } | null;
+  clearPlayerDropResult: () => void;
   ////
   handleDrawDeckClick: () => void;
   onRequestDrop: (cardsRequested: CardType[]) => void;
   // Offers state and handlers
   offers: Offer[];
+  onCreateOffer: (
+    offered: OfferCard[],
+    requested: OfferCard[],
+    targetId?: string,
+  ) => void;
   onRespondOffer: (
     offerId: string,
     action: "accept" | "reject" | "cancel",
@@ -77,11 +84,15 @@ type GameProviderProps = {
   onHarvestField: (slotId: string) => void;
   onTurnOverBean: () => void;
   onDrawCards: () => void;
-  onGiveDrop: (targetPlayer: ExternalPlayer, cardsToGive: CardType[]) => void;
   onRequestDrop: (cardsRequested: CardType[]) => void;
   onCardRightClick: (
     card: CardType,
     targetPlayerId: string | undefined,
+  ) => void;
+  onCreateOffer: (
+    offered: OfferCard[],
+    requested: OfferCard[],
+    targetId?: string,
   ) => void;
   onRespondOffer: (
     offerId: string,
@@ -105,9 +116,9 @@ export function GameProvider({
   onHarvestField,
   onTurnOverBean,
   onDrawCards,
-  onGiveDrop,
   onRequestDrop,
   onCardRightClick,
+  onCreateOffer,
   onRespondOffer,
   onCounterOffer,
 }: GameProviderProps) {
@@ -116,6 +127,11 @@ export function GameProvider({
   const [dragOverBlockReason, setDragOverBlockReason] = useState<string | null>(
     null,
   );
+  const [playerDropResult, setPlayerDropResult] = useState<{
+    player: ExternalPlayer;
+    cards: CardType[];
+  } | null>(null);
+  const clearPlayerDropResult = () => setPlayerDropResult(null);
   const [selectionState, setSelectionState] = useState<{
     phase: string;
     cards: CardType[];
@@ -300,7 +316,8 @@ export function GameProvider({
       }
 
       clearSelection();
-      if (cardsToDrop.length > 0) onGiveDrop(targetPlayer, cardsToDrop);
+      if (cardsToDrop.length > 0)
+        setPlayerDropResult({ player: targetPlayer, cards: cardsToDrop });
     } catch {
       // ignore malformed payload
     }
@@ -334,9 +351,12 @@ export function GameProvider({
     handlePlayerDragOver,
     handlePlayerDragLeave,
     handlePlayerDrop,
+    playerDropResult,
+    clearPlayerDropResult,
     handleDrawDeckClick,
     onRequestDrop,
     offers: gameState.offers,
+    onCreateOffer,
     onRespondOffer,
     onCounterOffer,
   };

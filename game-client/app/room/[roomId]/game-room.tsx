@@ -1,12 +1,30 @@
 import { useState, useEffect } from "react";
 
 import { GameRoomContext } from "@/hooks/useGameRoom";
-import { CardType, ExternalPlayer } from "@/schemas/types";
+import { CardType, OfferCard } from "@/schemas/types";
+
+function enrichWithCenterIds(
+  reqCards: OfferCard[],
+  centerCards: CardType[],
+  isTurnPlayer: boolean,
+): OfferCard[] {
+  if (isTurnPlayer) return reqCards;
+  const usedIds = new Set<string>();
+  return reqCards.map((c) => {
+    const match = centerCards.find(
+      (cc) => cc.cardName === c.card_type && !usedIds.has(cc.cardId),
+    );
+    if (match) {
+      usedIds.add(match.cardId);
+      return { ...c, card_id: match.cardId };
+    }
+    return c;
+  });
+}
 
 import { GameProvider } from "@/components/game-context";
 import Board from "@/components/board";
 import OfferPanel from "@/components/offer-panel";
-import GiveCardsModal from "@/components/give-cards-modal";
 import RequestCardsModal from "@/components/request-cards-modal";
 
 type GameRoomProps = { roomId: string; playerId: string } & GameRoomContext;
@@ -25,10 +43,6 @@ export default function GameRoom({
   respondOffer,
 }: GameRoomProps) {
   const [offerPanelOpen, setOfferPanelOpen] = useState(false);
-  const [giveModal, setGiveModal] = useState<{
-    player: ExternalPlayer;
-    cardsToGive: CardType[];
-  } | null>(null);
   const [requestModal, setRequestModal] = useState<{
     cardsRequested: CardType[];
   } | null>(null);
@@ -62,13 +76,11 @@ export default function GameRoom({
       onHarvestField={(slotId) => harvestField(slotId)}
       onTurnOverBean={() => turnOverBean()}
       onDrawCards={() => drawCards()}
-      onGiveDrop={(player, cardsToGive) =>
-        setGiveModal({ player, cardsToGive })
-      }
       onRequestDrop={(cardsRequested) => setRequestModal({ cardsRequested })}
       onCardRightClick={(card, targetPlayerId) =>
         setRightClickModal({ cardRequested: card, targetPlayerId })
       }
+      onCreateOffer={createOffer}
       onRespondOffer={respondOffer}
       onCounterOffer={counterOffer}
     >
@@ -127,7 +139,7 @@ export default function GameRoom({
                 ? gameState.playerTurn
                 : undefined
             }
-            onSubmit={(cardsOffered, targetPlayerId) => {
+            onSubmit={(cardsOffered, _, targetPlayerId) => {
               const isTurnPlayer = playerId === gameState.playerTurn;
               const allCenter = requestModal.cardsRequested.every((c) =>
                 gameState.centerCards.some((cc) => cc.cardId === c.cardId),
@@ -156,46 +168,22 @@ export default function GameRoom({
             isTurnPlayer={playerId === gameState.playerTurn}
             players={gameState.players.filter((p) => p.playerId !== playerId)}
             defaultTargetId={rightClickModal.targetPlayerId}
-            onSubmit={(cardsOffered, targetPlayerId) => {
-              const isTurnPlayer = playerId === gameState.playerTurn;
-              const isCenter = gameState.centerCards.some(
-                (cc) => cc.cardId === rightClickModal.cardRequested.cardId,
+            onSubmit={(cardsOffered, reqCards, targetPlayerId) => {
+              createOffer(
+                cardsOffered,
+                enrichWithCenterIds(
+                  reqCards,
+                  gameState.centerCards,
+                  playerId === gameState.playerTurn,
+                ),
+                targetPlayerId,
               );
-              const reqCards = [
-                {
-                  card_type: rightClickModal.cardRequested.cardName,
-                  card_id:
-                    !isTurnPlayer && isCenter
-                      ? rightClickModal.cardRequested.cardId
-                      : "",
-                },
-              ];
-              createOffer(cardsOffered, reqCards, targetPlayerId);
               setRightClickModal(null);
             }}
             onClose={() => setRightClickModal(null)}
           />
         )}
 
-        {giveModal && (
-          <GiveCardsModal
-            player={giveModal.player}
-            cardsToGive={giveModal.cardsToGive}
-            onSubmit={(cardsRequested) => {
-              const cardsOffered = giveModal.cardsToGive.map((c) => ({
-                card_type: c.cardName,
-                card_id: c.cardId,
-              }));
-              createOffer(
-                cardsOffered,
-                cardsRequested,
-                giveModal.player.playerId,
-              );
-              setGiveModal(null);
-            }}
-            onClose={() => setGiveModal(null)}
-          />
-        )}
       </div>
     </GameProvider>
   );

@@ -12,7 +12,11 @@ type RequestCardsModalProps = {
   isTurnPlayer: boolean;
   players: ExternalPlayer[];
   defaultTargetId?: string;
-  onSubmit: (cardsOffered: OfferCard[], targetPlayerId: string | undefined) => void;
+  onSubmit: (
+    cardsOffered: OfferCard[],
+    cardsRequested: OfferCard[],
+    targetPlayerId: string | undefined,
+  ) => void;
   onClose: () => void;
 };
 
@@ -22,7 +26,10 @@ type CardGroup = {
   available: CardType[];
 };
 
-function buildGroups(cards: CardType[], cardLookup: Map<string, CardType>): CardGroup[] {
+function buildGroups(
+  cards: CardType[],
+  cardLookup: Map<string, CardType>,
+): CardGroup[] {
   const map = new Map<string, CardGroup>();
   for (const card of cards) {
     if (!map.has(card.cardName)) {
@@ -48,26 +55,70 @@ export default function RequestCardsModal({
   onClose,
 }: RequestCardsModalProps) {
   const { cardLookup } = useGameContext();
-  const [selectedTargetId, setSelectedTargetId] = useState<string | undefined>(defaultTargetId);
+  const [selectedTargetId, setSelectedTargetId] = useState<string | undefined>(
+    defaultTargetId,
+  );
   const [handQty, setHandQty] = useState<Record<string, number>>({});
   const [centerQty, setCenterQty] = useState<Record<string, number>>({});
+  const [requestedQty, setRequestedQty] = useState<Record<string, number>>(
+    () => {
+      const init: Record<string, number> = {};
+      for (const c of cardsRequested) {
+        init[c.cardName] = (init[c.cardName] ?? 0) + 1;
+      }
+      return init;
+    },
+  );
 
   const handGroups = useMemo(
     () => buildGroups(myHand, cardLookup),
     [myHand, cardLookup],
   );
   const centerGroups = useMemo(
-    () => (centerCards && centerCards.length > 0 ? buildGroups(centerCards, cardLookup) : []),
+    () =>
+      centerCards && centerCards.length > 0
+        ? buildGroups(centerCards, cardLookup)
+        : [],
     [centerCards, cardLookup],
   );
 
   const hasCenterSection = centerGroups.length > 0;
 
-  const adjust = (cardName: string, delta: number, source: "hand" | "center") => {
+  const allCatalogCards = useMemo(
+    () =>
+      Array.from(cardLookup.values()).sort((a, b) =>
+        a.cardName.localeCompare(b.cardName),
+      ),
+    [cardLookup],
+  );
+
+  const totalRequested = Object.values(requestedQty).reduce((s, n) => s + n, 0);
+
+  const adjustRequested = (cardName: string, delta: number) => {
+    setRequestedQty((prev) => {
+      const current = prev[cardName] ?? 0;
+      const next = Math.max(0, current + delta);
+      // prevent dropping total to 0
+      if (next === 0 && totalRequested <= 1) return prev;
+      if (next === 0) {
+        const rest = { ...prev };
+        delete rest[cardName];
+        return rest;
+      }
+      return { ...prev, [cardName]: next };
+    });
+  };
+
+  const adjust = (
+    cardName: string,
+    delta: number,
+    source: "hand" | "center",
+  ) => {
     const setQty = source === "hand" ? setHandQty : setCenterQty;
     const groups = source === "hand" ? handGroups : centerGroups;
     setQty((prev) => {
-      const max = groups.find((g) => g.cardName === cardName)?.available.length ?? 0;
+      const max =
+        groups.find((g) => g.cardName === cardName)?.available.length ?? 0;
       const next = Math.max(0, Math.min(max, (prev[cardName] ?? 0) + delta));
       if (next === 0) {
         const rest = { ...prev };
@@ -83,29 +134,49 @@ export default function RequestCardsModal({
     for (const group of handGroups) {
       const qty = handQty[group.cardName] ?? 0;
       for (let i = 0; i < qty; i++) {
-        cardsOffered.push({ card_type: group.cardName, card_id: group.available[i].cardId });
+        cardsOffered.push({
+          card_type: group.cardName,
+          card_id: group.available[i].cardId,
+        });
       }
     }
     for (const group of centerGroups) {
       const qty = centerQty[group.cardName] ?? 0;
       for (let i = 0; i < qty; i++) {
-        cardsOffered.push({ card_type: group.cardName, card_id: group.available[i].cardId });
+        cardsOffered.push({
+          card_type: group.cardName,
+          card_id: group.available[i].cardId,
+        });
       }
     }
-    onSubmit(cardsOffered, selectedTargetId);
+    const reqCards: OfferCard[] = [];
+    for (const [name, qty] of Object.entries(requestedQty)) {
+      for (let i = 0; i < qty; i++) {
+        reqCards.push({ card_type: name, card_id: "" });
+      }
+    }
+    onSubmit(cardsOffered, reqCards, selectedTargetId);
   };
 
   const totalOffered =
     Object.values(handQty).reduce((s, n) => s + n, 0) +
     Object.values(centerQty).reduce((s, n) => s + n, 0);
 
-  const renderGroup = (group: CardGroup, qty: number, source: "hand" | "center") => (
-    <div key={`${source}_${group.cardName}`} className="flex flex-col items-center gap-1.5">
+  const renderGroup = (
+    group: CardGroup,
+    qty: number,
+    source: "hand" | "center",
+  ) => (
+    <div
+      key={`${source}_${group.cardName}`}
+      className="flex flex-col items-center gap-1.5"
+    >
       <CardComponent
         card={group.display}
         highlightColor={
           qty > 0 ? (source === "center" ? "#fbbf24" : "#60a5fa") : undefined
         }
+        className="!w-16 !h-24"
         noRaise
         noTransition
       />
@@ -113,17 +184,28 @@ export default function RequestCardsModal({
         <button
           onClick={() => adjust(group.cardName, -1, source)}
           disabled={qty === 0}
-          className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold leading-none disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          className="w-5 h-5 rounded bg-gray-200 
+					dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 
+					text-gray-700 dark:text-gray-200 text-xs font-bold 
+					leading-none disabled:opacity-30 disabled:cursor-not-allowed 
+					transition-colors"
         >
           −
         </button>
-        <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 tabular-nums w-8 text-center">
+        <span
+          className="text-xs font-semibold text-gray-700 
+					dark:text-gray-200 tabular-nums w-8 text-center"
+        >
           {qty}/{group.available.length}
         </span>
         <button
           onClick={() => adjust(group.cardName, 1, source)}
           disabled={qty >= group.available.length}
-          className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold leading-none disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-700 
+					hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 
+					dark:text-gray-200 text-xs font-bold 
+					leading-none disabled:opacity-30 disabled:cursor-not-allowed 
+					transition-colors"
         >
           +
         </button>
@@ -135,8 +217,12 @@ export default function RequestCardsModal({
     <div
       role="presentation"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
     >
       <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
@@ -153,20 +239,47 @@ export default function RequestCardsModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-4">
-          {/* Requesting chips */}
-          <div>
-            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
+          {/* Requesting section */}
+          <div className="flex flex-col gap-2">
+            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400">
               Requesting
             </p>
-            <div className="flex flex-wrap gap-1.5">
-              {cardsRequested.map((c) => (
-                <span
-                  key={c.cardId}
-                  className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300"
-                >
-                  {c.cardName}
-                </span>
-              ))}
+            <div className="grid grid-cols-4 gap-x-2 gap-y-4">
+              {allCatalogCards.map((card) => {
+                const qty = requestedQty[card.cardName] ?? 0;
+                return (
+                  <div
+                    key={card.cardName}
+                    className="flex flex-col items-center gap-1.5"
+                  >
+                    <CardComponent
+                      card={card}
+                      highlightColor={qty > 0 ? "#34d399" : undefined}
+                      className="!w-16 !h-24"
+                      noRaise
+                      noTransition
+                    />
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => adjustRequested(card.cardName, -1)}
+                        disabled={qty === 0 || (qty === 1 && totalRequested <= 1)}
+                        className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold leading-none disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        −
+                      </button>
+                      <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 tabular-nums w-8 text-center">
+                        {qty > 0 ? `${qty}` : "—"}
+                      </span>
+                      <button
+                        onClick={() => adjustRequested(card.cardName, 1)}
+                        className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold leading-none transition-colors"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -185,10 +298,15 @@ export default function RequestCardsModal({
                     onChange={() => setSelectedTargetId(undefined)}
                     className="accent-blue-500"
                   />
-                  <span className="text-xs text-gray-700 dark:text-gray-300">Everyone</span>
+                  <span className="text-xs text-gray-700 dark:text-gray-300">
+                    Everyone
+                  </span>
                 </label>
                 {players.map((p) => (
-                  <label key={p.playerId} className="flex items-center gap-2 cursor-pointer">
+                  <label
+                    key={p.playerId}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
                     <input
                       type="radio"
                       name="target"
@@ -196,13 +314,16 @@ export default function RequestCardsModal({
                       onChange={() => setSelectedTargetId(p.playerId)}
                       className="accent-blue-500"
                     />
-                    <span className="text-xs text-gray-700 dark:text-gray-300">{p.playerName}</span>
+                    <span className="text-xs text-gray-700 dark:text-gray-300">
+                      {p.playerName}
+                    </span>
                   </label>
                 ))}
               </div>
             ) : (
               <span className="text-xs text-gray-700 dark:text-gray-300">
-                {players.find((p) => p.playerId === defaultTargetId)?.playerName ?? "—"}
+                {players.find((p) => p.playerId === defaultTargetId)
+                  ?.playerName ?? "—"}
               </span>
             )}
           </div>
@@ -215,7 +336,9 @@ export default function RequestCardsModal({
             </p>
 
             {handGroups.length === 0 && !hasCenterSection ? (
-              <p className="text-xs text-gray-400 italic">No cards available to offer.</p>
+              <p className="text-xs text-gray-400 italic">
+                No cards available to offer.
+              </p>
             ) : (
               <>
                 {/* Hand cards */}
@@ -228,7 +351,11 @@ export default function RequestCardsModal({
                     )}
                     <div className="grid grid-cols-4 gap-x-2 gap-y-4">
                       {handGroups.map((group) =>
-                        renderGroup(group, handQty[group.cardName] ?? 0, "hand"),
+                        renderGroup(
+                          group,
+                          handQty[group.cardName] ?? 0,
+                          "hand",
+                        ),
                       )}
                     </div>
                   </div>
@@ -242,7 +369,11 @@ export default function RequestCardsModal({
                     </p>
                     <div className="grid grid-cols-4 gap-x-2 gap-y-4">
                       {centerGroups.map((group) =>
-                        renderGroup(group, centerQty[group.cardName] ?? 0, "center"),
+                        renderGroup(
+                          group,
+                          centerQty[group.cardName] ?? 0,
+                          "center",
+                        ),
                       )}
                     </div>
                   </div>
@@ -251,7 +382,9 @@ export default function RequestCardsModal({
             )}
 
             {(handGroups.length > 0 || hasCenterSection) && (
-              <p className={`text-xs italic transition-opacity duration-150 ${totalOffered === 0 ? "text-gray-400 opacity-100" : "opacity-0 pointer-events-none"}`}>
+              <p
+                className={`text-xs italic transition-opacity duration-150 ${totalOffered === 0 ? "text-gray-400 opacity-100" : "opacity-0 pointer-events-none"}`}
+              >
                 Nothing selected — asking for free.
               </p>
             )}
@@ -270,7 +403,8 @@ export default function RequestCardsModal({
             onClick={handleSubmit}
             className="flex-1 py-2 px-3 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold transition-colors"
           >
-            Request ({cardsRequested.length} card{cardsRequested.length !== 1 ? "s" : ""})
+            Request ({totalRequested} card
+            {totalRequested !== 1 ? "s" : ""})
           </button>
         </div>
       </div>
