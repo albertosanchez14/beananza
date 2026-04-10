@@ -1,31 +1,9 @@
 import { useState, useEffect } from "react";
 
 import { GameRoomContext } from "@/hooks/useGameRoom";
-import { CardType, OfferCard } from "@/schemas/types";
-
-function enrichWithCenterIds(
-  reqCards: OfferCard[],
-  centerCards: CardType[],
-  isTurnPlayer: boolean,
-): OfferCard[] {
-  if (isTurnPlayer) return reqCards;
-  const usedIds = new Set<string>();
-  return reqCards.map((c) => {
-    const match = centerCards.find(
-      (cc) => cc.cardName === c.card_type && !usedIds.has(cc.cardId),
-    );
-    if (match) {
-      usedIds.add(match.cardId);
-      return { ...c, card_id: match.cardId };
-    }
-    return c;
-  });
-}
-
 import { GameProvider } from "@/components/game-context";
 import Board from "@/components/board";
 import OfferPanel from "@/components/offer-panel";
-import RequestCardsModal from "@/components/request-cards-modal";
 
 type GameRoomProps = { roomId: string; playerId: string } & GameRoomContext;
 
@@ -43,10 +21,6 @@ export default function GameRoom({
   respondOffer,
 }: GameRoomProps) {
   const [offerPanelOpen, setOfferPanelOpen] = useState(false);
-  const [rightClickModal, setRightClickModal] = useState<{
-    cardRequested: CardType;
-    targetPlayerId: string | undefined;
-  } | null>(null);
 
   // Suppress the browser context menu during trade so right-click opens our modal.
   useEffect(() => {
@@ -73,9 +47,6 @@ export default function GameRoom({
       onHarvestField={(slotId) => harvestField(slotId)}
       onTurnOverBean={() => turnOverBean()}
       onDrawCards={() => drawCards()}
-      onCardRightClick={(card, targetPlayerId) =>
-        setRightClickModal({ cardRequested: card, targetPlayerId })
-      }
       onCreateOffer={createOffer}
       onRespondOffer={respondOffer}
       onCounterOffer={counterOffer}
@@ -118,34 +89,6 @@ export default function GameRoom({
           onCounterOffer={counterOffer}
           onRespondOffer={respondOffer}
         />
-
-        {rightClickModal && (
-          <RequestCardsModal
-            cardsRequested={[rightClickModal.cardRequested]}
-            myHand={gameState.hand}
-            centerCards={
-              playerId === gameState.playerTurn
-                ? gameState.centerCards
-                : undefined
-            }
-            isTurnPlayer={playerId === gameState.playerTurn}
-            players={gameState.players.filter((p) => p.playerId !== playerId)}
-            defaultTargetId={rightClickModal.targetPlayerId}
-            onSubmit={(cardsOffered, reqCards, targetPlayerId) => {
-              createOffer(
-                cardsOffered,
-                enrichWithCenterIds(
-                  reqCards,
-                  gameState.centerCards,
-                  playerId === gameState.playerTurn,
-                ),
-                targetPlayerId,
-              );
-              setRightClickModal(null);
-            }}
-            onClose={() => setRightClickModal(null)}
-          />
-        )}
 
       </div>
     </GameProvider>

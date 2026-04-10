@@ -153,7 +153,6 @@ export default function Board() {
     selection,
     clearSelection,
     handleCardClick,
-    handleCardRightClick,
     handleCardDrag,
     dragOverSlot,
     handleSlotClick,
@@ -197,6 +196,15 @@ export default function Board() {
     targetId: string | undefined;
   } | null>(null);
 
+  // ── Offered-cards selection state (owned by Board, fed into InlineModal) ─────
+  const [offeredCards, setOfferedCards] = useState<CardType[]>([]);
+
+  // ── Requested-cards editing state (lifted from InlineModal) ─────────────────
+  const [reqQty, setReqQty] = useState<Record<string, number>>({});
+  const [reqTarget, setReqTarget] = useState<string | undefined>(undefined);
+  const [showReqPicker, setShowReqPicker] = useState(false);
+  const [reqSearch, setReqSearch] = useState("");
+
   const tradedCardsAreaRef = useRef<HTMLDivElement>(null);
   const draftCardsGroupRef = useRef<HTMLDivElement>(null);
 
@@ -215,6 +223,104 @@ export default function Board() {
   } = gameState;
 
   const isTurnPlayer = myPlayerId === playerTurn;
+
+  // ── Requested-cards edit derived state ───────────────────────────────────────
+  const allCatalogCards = useMemo(
+    () =>
+      Array.from(cardLookup.values()).sort((a, b) =>
+        a.cardName.localeCompare(b.cardName),
+      ),
+    [cardLookup],
+  );
+
+  const filteredReqCatalog = useMemo(() => {
+    const q = reqSearch.trim().toLowerCase();
+    return q
+      ? allCatalogCards.filter((c) => c.cardName.toLowerCase().includes(q))
+      : allCatalogCards;
+  }, [allCatalogCards, reqSearch]);
+
+  const resolvedRequested = useMemo(() => {
+    const result: CardType[] = [];
+    for (const [name, qty] of Object.entries(reqQty)) {
+      const pool = [
+        ...centerCards.filter((c) => c.cardName === name),
+        ...hand.filter((c) => c.cardName === name),
+      ];
+      for (let i = 0; i < qty; i++) {
+        const card = pool[i] ?? cardLookup.get(name);
+        if (card) result.push(card);
+      }
+    }
+    return result;
+  }, [reqQty, hand, centerCards, cardLookup]);
+
+  const adjustReqQty = useCallback((cardName: string, delta: number) => {
+    setReqQty((prev) => {
+      const total = Object.values(prev).reduce((s, n) => s + n, 0);
+      const current = prev[cardName] ?? 0;
+      const next = Math.max(0, current + delta);
+      if (next === 0 && total <= 1) return prev;
+      if (next === 0) {
+        const rest = { ...prev };
+        delete rest[cardName];
+        return rest;
+      }
+      return { ...prev, [cardName]: next };
+    });
+  }, []);
+
+  const removeReqQty = useCallback((cardName: string) => {
+    setReqQty((prev) => {
+      if (Object.keys(prev).length <= 1) return prev;
+      const rest = { ...prev };
+      delete rest[cardName];
+      return rest;
+    });
+  }, []);
+
+  const addReqCard = useCallback((cardName: string) => {
+    setReqQty((prev) => ({ ...prev, [cardName]: (prev[cardName] ?? 0) + 1 }));
+    setShowReqPicker(false);
+    setReqSearch("");
+  }, []);
+
+  // Initialize reqQty / reqTarget / offeredCards when a new inline modal opens.
+  useEffect(() => {
+    if (!inlineModal) {
+      setReqQty({});
+      setReqTarget(undefined);
+      setShowReqPicker(false);
+      setReqSearch("");
+      setOfferedCards([]);
+      return;
+    }
+    const initQty: Record<string, number> = {};
+    for (const c of inlineModal.cardsRequested) {
+      initQty[c.cardName] = (initQty[c.cardName] ?? 0) + 1;
+    }
+    setReqQty(initQty);
+    setReqTarget(
+      inlineModal.defaultTargetId ??
+        (myPlayerId !== playerTurn ? playerTurn : undefined),
+    );
+    setOfferedCards(inlineModal.defaultOfferedCards ?? []);
+  }, [inlineModal?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep draftState.requested, targetId, and offered in sync.
+  useEffect(() => {
+    if (!inlineModal) return;
+    setDraftState((prev) =>
+      prev
+        ? { ...prev, requested: resolvedRequested, targetId: reqTarget }
+        : null,
+    );
+  }, [resolvedRequested, reqTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!inlineModal) return;
+    setDraftState((prev) => (prev ? { ...prev, offered: offeredCards } : null));
+  }, [offeredCards]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Origin-highlight helpers ─────────────────────────────────────────────────
   // cardHighlights: cardId → color for cards I can see (my hand + center)
@@ -845,13 +951,10 @@ export default function Board() {
   );
 
   // ── Inline modal (drag-to-request) ───────────────────────────────────────────
-  const handleRequestDrop = useCallback(
-    (cards: CardType[]) => {
-      openInlineModal({ cardsRequested: cards });
-      setDraftState({ requested: cards, offered: [], targetId: undefined });
-    },
-    [],
-  );
+  const handleRequestDrop = useCallback((cards: CardType[]) => {
+    openInlineModal({ cardsRequested: cards });
+    setDraftState({ requested: cards, offered: [], targetId: undefined });
+  }, []);
 
   const handleOpenModal = useCallback(() => {
     openInlineModal({ cardsRequested: [] });
@@ -887,8 +990,7 @@ export default function Board() {
       if (!tradedCardsAreaRef.current) return;
       const next = new Map<string, OfferPathEntry>();
       const crefs = cardRefs.current;
-      const tagEl =
-        draftCardsGroupRef.current ?? tradedCardsAreaRef.current;
+      const tagEl = draftCardsGroupRef.current ?? tradedCardsAreaRef.current;
       const oHandRefs = opponentHandContainerRefs.current;
       const oFieldRefs = opponentFieldRefs.current;
 
@@ -914,9 +1016,7 @@ export default function Board() {
             .filter((p) => p.playerId !== myPlayerId)
             .forEach((p) => {
               const el =
-                oHandRefs.get(p.playerId) ??
-                oFieldRefs.get(p.playerId) ??
-                null;
+                oHandRefs.get(p.playerId) ?? oFieldRefs.get(p.playerId) ?? null;
               if (el && !seenRecv.has(el)) {
                 seenRecv.add(el);
                 addPath(next, `draft_r_${ri++}`, el, tagEl, color, p.playerId);
@@ -957,8 +1057,7 @@ export default function Board() {
                 );
             });
         } else {
-          const targetEl =
-            oFieldRefs.get(draftState.targetId!) ?? null;
+          const targetEl = oFieldRefs.get(draftState.targetId!) ?? null;
           if (targetEl)
             addPath(next, `draft_o_${oi++}`, offEl, targetEl, color);
         }
@@ -1350,36 +1449,40 @@ export default function Board() {
         },
       )}
 
-      {Array.from(draftPaths.entries()).map(([key, { pathStr, color, playerId }]) => {
-        const opacity = playerId
-          ? playerId === activeDraftBroadcastPlayerId
-            ? 1
-            : 0.3
-          : 1;
-        return (
-          <Arrow key={key} pathStr={pathStr} color={color} opacity={opacity} />
-        );
-      })}
+      {Array.from(draftPaths.entries()).map(
+        ([key, { pathStr, color, playerId }]) => {
+          const opacity = playerId
+            ? playerId === activeDraftBroadcastPlayerId
+              ? 1
+              : 0.3
+            : 1;
+          return (
+            <Arrow
+              key={key}
+              pathStr={pathStr}
+              color={color}
+              opacity={opacity}
+            />
+          );
+        },
+      )}
 
       {inlineModal && (
         <InlineModal
           key={inlineModal.key}
-          cardsRequested={inlineModal.cardsRequested}
-          myHand={gameState.hand}
-          centerCards={gameState.centerCards}
           isTurnPlayer={myPlayerId === gameState.playerTurn}
           players={gameState.players.filter((p) => p.playerId !== myPlayerId)}
-          defaultTargetId={
-            inlineModal.defaultTargetId ??
-            (myPlayerId !== gameState.playerTurn
-              ? gameState.playerTurn
-              : undefined)
-          }
-          defaultOfferedCards={inlineModal.defaultOfferedCards}
           anchorRef={tradedCardsAreaRef}
-          onDraftChange={(requested, offered, targetId) => {
-            setDraftState({ requested, offered, targetId });
-          }}
+          offeredCards={offeredCards}
+          requestedQty={reqQty}
+          selectedTargetId={reqTarget}
+          onTargetChange={setReqTarget}
+          showReqPicker={showReqPicker}
+          onToggleReqPicker={setShowReqPicker}
+          filteredCatalog={filteredReqCatalog}
+          reqSearch={reqSearch}
+          onReqSearchChange={setReqSearch}
+          onAddReqCard={addReqCard}
           onSubmit={(cardsOffered, reqCards, targetPlayerId) => {
             onCreateOffer(
               cardsOffered,
@@ -1457,14 +1560,15 @@ export default function Board() {
                                   card={cardForSlot}
                                   flipped={false}
                                   noTransition={true}
-                                  onContextMenu={() =>
-                                    handleCardRightClick(
-                                      cardForSlot,
-                                      isTurnPlayer
-                                        ? player.playerId
-                                        : playerTurn,
-                                    )
-                                  }
+                                  onContextMenu={() => {
+                                    if (phase === "turnTrade")
+                                      openInlineModal({
+                                        cardsRequested: [cardForSlot],
+                                        defaultTargetId: isTurnPlayer
+                                          ? player.playerId
+                                          : playerTurn,
+                                      });
+                                  }}
                                   hidden={animatingOpponentSlotIds.has(
                                     slot.slotId,
                                   )}
@@ -1524,40 +1628,60 @@ export default function Board() {
           />
           <div ref={centerCardsRef}>
             <CenterCards slots={cardsPerTurn ?? 3}>
-              {centerCards.map((card) => (
-                <Card
-                  key={card.cardId}
-                  card={card}
-                  ref={(el) => {
-                    if (el) cardRefs.current.set(card.cardId, el);
-                    else cardRefs.current.delete(card.cardId);
-                  }}
-                  onDragStart={(e) => handleCardDrag(e, card, "center")}
-                  hidden={hiddenCenterCardIds.has(card.cardId)}
-                  highlightColor={
-                    phase === "turnTrade" &&
-                    selection.some((c) => c.cardId === card.cardId)
-                      ? "#a855f7"
-                      : (draftCardHighlights.get(card.cardId) ??
-                        cardHighlights.get(card.cardId))
-                  }
-                  secondaryHighlightColor={
-                    draftCardHighlights.has(card.cardId)
-                      ? cardHighlights.get(card.cardId)
-                      : undefined
-                  }
-                  isSelected={selection.some((c) => c.cardId === card.cardId)}
-                  draggable={true}
-                  onClick={(e: React.MouseEvent) =>
-                    handleCardClick(card, "center", e.ctrlKey || e.metaKey)
-                  }
-                  onContextMenu={
-                    !isTurnPlayer
-                      ? () => handleCardRightClick(card, playerTurn)
-                      : undefined
-                  }
-                />
-              ))}
+              {centerCards.map((card) => {
+                const isOffered = offeredCards.some(
+                  (c) => c.cardId === card.cardId,
+                );
+                return (
+                  <Card
+                    key={card.cardId}
+                    card={card}
+                    ref={(el) => {
+                      if (el) cardRefs.current.set(card.cardId, el);
+                      else cardRefs.current.delete(card.cardId);
+                    }}
+                    onDragStart={(e) => handleCardDrag(e, card, "center")}
+                    hidden={hiddenCenterCardIds.has(card.cardId)}
+                    highlightColor={
+                      phase === "turnTrade" &&
+                      selection.some((c) => c.cardId === card.cardId)
+                        ? "#a855f7"
+                        : (draftCardHighlights.get(card.cardId) ??
+                          cardHighlights.get(card.cardId))
+                    }
+                    secondaryHighlightColor={
+                      draftCardHighlights.has(card.cardId)
+                        ? cardHighlights.get(card.cardId)
+                        : undefined
+                    }
+                    selectHint={!!inlineModal && isTurnPlayer && !isOffered}
+                    isSelected={selection.some((c) => c.cardId === card.cardId)}
+                    draggable={!inlineModal}
+                    onClick={(e: React.MouseEvent) => {
+                      if (inlineModal && isTurnPlayer) {
+                        setOfferedCards((prev) =>
+                          isOffered
+                            ? prev.filter((c) => c.cardId !== card.cardId)
+                            : [...prev, card],
+                        );
+                        return;
+                      }
+                      handleCardClick(card, "center", e.ctrlKey || e.metaKey);
+                    }}
+                    onContextMenu={
+                      !isTurnPlayer && !inlineModal
+                        ? () => {
+                            if (phase === "turnTrade")
+                              openInlineModal({
+                                cardsRequested: [card],
+                                defaultTargetId: playerTurn,
+                              });
+                          }
+                        : undefined
+                    }
+                  />
+                );
+              })}
             </CenterCards>
           </div>
           <CardPile
@@ -1604,12 +1728,15 @@ export default function Board() {
                           else mySlotCardRefs.current.delete(s.slotId);
                         }}
                         hidden={animatingOpponentSlotIds.has(s.slotId)}
-                        onContextMenu={() =>
-                          handleCardRightClick(
-                            cardForSlot,
-                            isTurnPlayer ? undefined : playerTurn,
-                          )
-                        }
+                        onContextMenu={() => {
+                          if (phase === "turnTrade")
+                            openInlineModal({
+                              cardsRequested: [cardForSlot],
+                              defaultTargetId: isTurnPlayer
+                                ? undefined
+                                : playerTurn,
+                            });
+                        }}
                       />
                     )}
                   </Slot>
@@ -1644,6 +1771,20 @@ export default function Board() {
               draftCards={draftState?.requested}
               draftCardsGroupRef={draftCardsGroupRef}
               draftColor={draftColor}
+              isEditingDraft={!!inlineModal}
+              reqQty={reqQty}
+              onAdjustReq={adjustReqQty}
+              onRemoveReq={removeReqQty}
+              showReqPicker={showReqPicker}
+              onToggleReqPicker={setShowReqPicker}
+              filteredCatalog={filteredReqCatalog}
+              reqSearch={reqSearch}
+              onReqSearchChange={setReqSearch}
+              onAddReqCard={addReqCard}
+              onCancelDraft={() => {
+                setInlineModal(null);
+                setDraftState(null);
+              }}
             />
           </div>
         }
@@ -1664,41 +1805,62 @@ export default function Board() {
               />
             ))}
             <FanLayout phase={phase}>
-              {hand.map((card) => (
-                <Card
-                  key={card.cardId}
-                  ref={(el) => {
-                    if (el) cardRefs.current.set(card.cardId, el);
-                    else cardRefs.current.delete(card.cardId);
-                  }}
-                  card={card}
-                  isSelected={selection.some((c) => c.cardId === card.cardId)}
-                  hidden={hiddenCardIds.has(card.cardId)}
-                  highlightColor={
-                    phase === "turnTrade" &&
-                    selection.some((c) => c.cardId === card.cardId)
-                      ? "#a855f7"
-                      : (draftCardHighlights.get(card.cardId) ??
-                        cardHighlights.get(card.cardId))
-                  }
-                  secondaryHighlightColor={
-                    draftCardHighlights.has(card.cardId)
-                      ? cardHighlights.get(card.cardId)
-                      : undefined
-                  }
-                  draggable={phase !== "plantTrade"}
-                  onDragStart={(e) => handleCardDrag(e, card, "hand")}
-                  onClick={(e: React.MouseEvent) =>
-                    handleCardClick(card, "hand", e.ctrlKey || e.metaKey)
-                  }
-                  onContextMenu={() =>
-                    handleCardRightClick(
-                      card,
-                      isTurnPlayer ? undefined : playerTurn,
-                    )
-                  }
-                />
-              ))}
+              {hand.map((card) => {
+                const isOffered = offeredCards.some(
+                  (c) => c.cardId === card.cardId,
+                );
+                return (
+                  <Card
+                    key={card.cardId}
+                    ref={(el) => {
+                      if (el) cardRefs.current.set(card.cardId, el);
+                      else cardRefs.current.delete(card.cardId);
+                    }}
+                    card={card}
+                    isSelected={selection.some((c) => c.cardId === card.cardId)}
+                    hidden={hiddenCardIds.has(card.cardId)}
+                    highlightColor={
+                      phase === "turnTrade" &&
+                      selection.some((c) => c.cardId === card.cardId)
+                        ? "#a855f7"
+                        : (draftCardHighlights.get(card.cardId) ??
+                          cardHighlights.get(card.cardId))
+                    }
+                    secondaryHighlightColor={
+                      draftCardHighlights.has(card.cardId)
+                        ? cardHighlights.get(card.cardId)
+                        : undefined
+                    }
+                    selectHint={!!inlineModal && !isOffered}
+                    draggable={phase !== "plantTrade" && !inlineModal}
+                    onDragStart={(e) => handleCardDrag(e, card, "hand")}
+                    onClick={(e: React.MouseEvent) => {
+                      if (inlineModal) {
+                        setOfferedCards((prev) =>
+                          isOffered
+                            ? prev.filter((c) => c.cardId !== card.cardId)
+                            : [...prev, card],
+                        );
+                        return;
+                      }
+                      handleCardClick(card, "hand", e.ctrlKey || e.metaKey);
+                    }}
+                    onContextMenu={
+                      !inlineModal
+                        ? () => {
+                            if (phase === "turnTrade")
+                              openInlineModal({
+                                cardsRequested: [card],
+                                defaultTargetId: isTurnPlayer
+                                  ? undefined
+                                  : playerTurn,
+                              });
+                          }
+                        : undefined
+                    }
+                  />
+                );
+              })}
               {ghostCards.map((ghost) => (
                 <Card
                   key={ghost.cardId}

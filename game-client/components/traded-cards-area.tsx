@@ -38,6 +38,18 @@ type Props = {
   draftCards?: CardType[];
   draftCardsGroupRef?: React.RefObject<HTMLDivElement | null>;
   draftColor?: string;
+  // Inline editing mode
+  isEditingDraft?: boolean;
+  reqQty?: Record<string, number>;
+  onAdjustReq?: (cardName: string, delta: number) => void;
+  onRemoveReq?: (cardName: string) => void;
+  showReqPicker?: boolean;
+  onToggleReqPicker?: (open: boolean) => void;
+  filteredCatalog?: CardType[];
+  reqSearch?: string;
+  onReqSearchChange?: (q: string) => void;
+  onAddReqCard?: (cardName: string) => void;
+  onCancelDraft?: () => void;
 };
 
 export default function TradedCardsArea({
@@ -64,6 +76,17 @@ export default function TradedCardsArea({
   draftCards,
   draftCardsGroupRef,
   draftColor,
+  isEditingDraft,
+  reqQty,
+  onAdjustReq,
+  onRemoveReq,
+  showReqPicker,
+  onToggleReqPicker,
+  filteredCatalog,
+  reqSearch,
+  onReqSearchChange,
+  onAddReqCard,
+  onCancelDraft,
 }: Props) {
   // Group draft cards by cardName for stacked rendering.
   const draftGroups: { cardName: string; cards: CardType[] }[] = [];
@@ -84,6 +107,10 @@ export default function TradedCardsArea({
   const rootOffers = [...incomingOffers, ...outgoingOffers];
   const hasContent =
     pickedCards.length > 0 || draftGroups.length > 0 || rootOffers.length > 0;
+
+  const totalReq = reqQty
+    ? Object.values(reqQty).reduce((s, n) => s + n, 0)
+    : 0;
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -117,14 +144,14 @@ export default function TradedCardsArea({
       onDrop={isTurnTrade ? handleDrop : undefined}
       className={[
         "relative flex flex-row items-center gap-2 px-2 rounded-xl transition-all",
-        isTurnTrade ? "min-w-48 min-h-36 border-2" : "",
+        isTurnTrade ? "min-w-48 border-2" : "",
         isTurnTrade
           ? dragOver
             ? "border-dashed border-amber-300 scale-105 shadow-lg shadow-amber-400/40"
             : "border-dashed border-white/70"
           : "",
       ].join(" ")}
-      style={{ height: 160 }}
+      style={isEditingDraft ? { minHeight: 160 } : { height: 160 }}
     >
       <TradedCards
         pickedCards={pickedCards}
@@ -134,11 +161,7 @@ export default function TradedCardsArea({
       />
 
       {draftGroups.length > 0 && (
-        <div
-          ref={draftCardsGroupRef}
-          className="flex items-center gap-2"
-          style={{ opacity: 0.6 }}
-        >
+        <div ref={draftCardsGroupRef} className="flex items-center gap-3">
           {draftGroups.map(({ cardName, cards }) => {
             const count = cards.length;
             const topCard = cards[0];
@@ -149,53 +172,119 @@ export default function TradedCardsArea({
                 className="relative select-none"
                 style={{ width: CARD_W, height: CARD_H, overflow: "visible" }}
               >
-                {/* Face card — always at the top of the container */}
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    width: CARD_W,
-                    zIndex: layers + 1,
-                  }}
-                >
-                  <Card
-                    card={topCard}
-                    highlightColor={draftColor}
-                    noRaise
-                    noTransition
-                  />
+                <div style={{ opacity: 0.6 }}>
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      width: CARD_W,
+                      zIndex: layers + 1,
+                    }}
+                  >
+                    <Card
+                      card={topCard}
+                      highlightColor={draftColor}
+                      noRaise
+                      noTransition
+                    />
+                  </div>
+
+                  {Array.from({ length: layers }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="absolute rounded-xl"
+                      style={{
+                        width: CARD_W,
+                        height: CARD_H,
+                        top: -(i + 1) * LAYER_H,
+                        left: 0,
+                        zIndex: layers - i,
+                        border: `2px dashed ${draftColor ?? "#38bdf8"}`,
+                      }}
+                    />
+                  ))}
+
+                  {/* Count badge when not editing */}
+                  {!isEditingDraft && count > 1 && (
+                    <div
+                      className="absolute flex items-center justify-center w-6 h-6
+                                 bg-amber-600 text-white text-xs font-bold rounded-full
+                                 border-2 border-white shadow-md pointer-events-none"
+                      style={{ top: 4, right: 4, zIndex: layers + 2 }}
+                    >
+                      {count}
+                    </div>
+                  )}
                 </div>
 
-                {/* Depth layers — overflow above the face card (bottom-to-top stack) */}
-                {Array.from({ length: layers }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="absolute rounded-xl"
-                    style={{
-                      width: CARD_W,
-                      height: CARD_H,
-                      top: -(i + 1) * LAYER_H,
-                      left: 0,
-                      zIndex: layers - i,
-                      border: `2px dashed ${draftColor ?? "#38bdf8"}`,
-                    }}
-                  />
-                ))}
-
-                {count > 1 && (
-                  <div
-                    className="absolute flex items-center justify-center w-6 h-6
-                               bg-amber-600 text-white text-xs font-bold rounded-full
-                               border-2 border-white shadow-md pointer-events-none"
-                    style={{ top: 4, right: 4, zIndex: layers + 2 }}
-                  >
-                    {count}
-                  </div>
+                {/* Controls at full opacity when editing */}
+                {isEditingDraft && (
+                  <>
+                    <button
+                      onClick={() =>
+                        Object.keys(reqQty ?? {}).length <= 1
+                          ? onCancelDraft?.()
+                          : onRemoveReq?.(cardName)
+                      }
+                      className="absolute w-5 h-5 rounded-full bg-black/70 text-white
+                        text-[10px] leading-none flex items-center justify-center
+                        hover:bg-red-600 transition-colors"
+                      style={{ top: -6, right: -6, zIndex: layers + 10 }}
+                    >
+                      ×
+                    </button>
+                    <div
+                      className="absolute bottom-0 left-0 right-0 flex items-center
+                        justify-center gap-0.5 bg-black/70 rounded-b-xl py-1"
+                      style={{ zIndex: layers + 10 }}
+                    >
+                      <button
+                        onClick={() => onAdjustReq?.(cardName, -1)}
+                        disabled={count <= 1 && totalReq <= 1}
+                        className="w-5 h-5 rounded bg-black/60 text-white text-xs font-bold
+                          hover:bg-black/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        −
+                      </button>
+                      <span className="w-5 text-center text-xs font-semibold text-white tabular-nums">
+                        {count}
+                      </span>
+                      <button
+                        onClick={() => onAdjustReq?.(cardName, 1)}
+                        className="w-5 h-5 rounded bg-black/60 text-white text-xs font-bold
+                          hover:bg-black/80 transition-colors"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             );
           })}
+
+          {/* + Add requested card button when editing (picker renders in InlineModal) */}
+          {isEditingDraft && (
+            <button
+              onClick={() => onToggleReqPicker?.(!showReqPicker)}
+              className="w-8 h-8 rounded-full bg-black/60 text-white text-lg font-bold
+                hover:bg-black/80 transition-colors flex items-center justify-center self-center"
+            >
+              +
+            </button>
+          )}
         </div>
+      )}
+
+      {/* + Add button when editing and no draft cards yet (picker renders in InlineModal) */}
+      {isEditingDraft && draftGroups.length === 0 && (
+        <button
+          onClick={() => onToggleReqPicker?.(!showReqPicker)}
+          className="w-8 h-8 rounded-full bg-black/60 text-white text-lg font-bold
+            hover:bg-black/80 transition-colors flex items-center justify-center self-center"
+        >
+          +
+        </button>
       )}
 
       {phase === "turnTrade" && (
@@ -237,11 +326,13 @@ export default function TradedCardsArea({
         </>
       )}
 
-      {/* Empty-state placeholder: + button + hint text, hidden during drag-over */}
-      {isTurnTrade && !hasContent && (
+      {/* Empty-state placeholder: hidden during drag-over and when editing */}
+      {isTurnTrade && !hasContent && !isEditingDraft && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 select-none">
           {dragOver ? (
-            <span className="text-2xl text-amber-200 pointer-events-none">↓</span>
+            <span className="text-2xl text-amber-200 pointer-events-none">
+              ↓
+            </span>
           ) : (
             <>
               <button
@@ -259,8 +350,8 @@ export default function TradedCardsArea({
         </div>
       )}
 
-      {/* Has-content state: compact + button to the right of all items */}
-      {isTurnTrade && hasContent && !dragOver && (
+      {/* Has-content + button — hidden when editing */}
+      {isTurnTrade && hasContent && !dragOver && !isEditingDraft && (
         <button
           onClick={onOpenModal}
           className="w-8 h-8 rounded-full bg-black/60 text-white text-lg font-bold

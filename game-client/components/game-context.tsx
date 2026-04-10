@@ -21,10 +21,6 @@ type GameContextValue = {
     source?: "hand" | "picked" | "center",
     ctrlKey?: boolean,
   ) => void;
-  handleCardRightClick: (
-    card: CardType,
-    targetPlayerId: string | undefined,
-  ) => void;
   handleCardDrag: (
     e: React.DragEvent,
     card: BaseCard | CardType,
@@ -83,10 +79,6 @@ type GameProviderProps = {
   onHarvestField: (slotId: string) => void;
   onTurnOverBean: () => void;
   onDrawCards: () => void;
-  onCardRightClick: (
-    card: CardType,
-    targetPlayerId: string | undefined,
-  ) => void;
   onCreateOffer: (
     offered: OfferCard[],
     requested: OfferCard[],
@@ -114,7 +106,6 @@ export function GameProvider({
   onHarvestField,
   onTurnOverBean,
   onDrawCards,
-  onCardRightClick,
   onCreateOffer,
   onRespondOffer,
   onCounterOffer,
@@ -178,14 +169,6 @@ export function GameProvider({
       return;
     }
     singleClickSelect(card);
-  };
-
-  const handleCardRightClick = (
-    card: CardType,
-    targetPlayerId: string | undefined,
-  ) => {
-    if (gameState.phase !== "turnTrade") return;
-    onCardRightClick(card, targetPlayerId);
   };
 
   const handleCardDrag = (
@@ -336,7 +319,6 @@ export function GameProvider({
     selection,
     clearSelection,
     handleCardClick,
-    handleCardRightClick,
     handleCardDrag,
     dragOverSlot,
     handleSlotClick,

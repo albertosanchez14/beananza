@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { m } from "motion/react";
 import Image from "next/image";
 import { BaseCard, CardType } from "@/schemas/types";
@@ -20,6 +20,7 @@ type CardProp = {
   highlightColor?: string;
   secondaryHighlightColor?: string;
   noRaise?: boolean;
+  selectHint?: boolean;
 };
 
 export default function Card({
@@ -38,12 +39,18 @@ export default function Card({
   onClick,
   onContextMenu,
   onDragStart,
+  selectHint = false,
 }: CardProp) {
   const isHighlighted = !!highlightColor;
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
+  useEffect(() => {
+    if (!draggable && isDragging) setIsDragging(false);
+  }, [draggable, isDragging]);
+
   const effectiveHover = isHovered && !isSelected && !isHighlighted;
+  const showSelectHint = selectHint && !isSelected && !isHighlighted;
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
     onDragStart?.(e);
@@ -80,7 +87,11 @@ export default function Card({
       `}
     >
       <m.div
-        style={{ perspective: "600px", width: "100%", height: "100%" }}
+        style={{
+          perspective: "600px",
+          width: "100%",
+          height: "100%",
+        }}
         initial={false}
         animate={{ opacity: isDragging ? 0.4 : 1 }}
         transition={
@@ -111,9 +122,11 @@ export default function Card({
             boxShadow:
               isSelected || (isHighlighted && !noRaise)
                 ? "0 20px 25px rgba(0,0,0,0.4)"
-                : effectiveHover && onClick && !isDragging
-                  ? "0 10px 20px rgba(0,0,0,0.3)"
-                  : "none",
+                : showSelectHint && !isDragging
+                  ? "none"
+                  : effectiveHover && onClick && !isDragging
+                    ? "0 10px 20px rgba(0,0,0,0.3)"
+                    : "none",
           }}
           transition={
             noTransition
@@ -162,6 +175,17 @@ export default function Card({
                 inset: 4,
                 border: `2px solid ${secondaryHighlightColor}`,
                 zIndex: 11,
+              }}
+            />
+          )}
+          {showSelectHint && (
+            <div
+              className="absolute inset-0 rounded-xl pointer-events-none"
+              style={{
+                border: "1px solid rgba(251,191,36,0.95)",
+                boxShadow:
+                  "0 0 12px rgba(251,191,36,0.65), 0 0 22px rgba(251,191,36,0.35)",
+                zIndex: 12,
               }}
             />
           )}
