@@ -225,8 +225,8 @@ export default function Board() {
   // ── Requested-cards edit derived state ───────────────────────────────────────
   const allCatalogCards = useMemo(
     () =>
-      Array.from(cardLookup.values()).sort((a, b) =>
-        a.cardName.localeCompare(b.cardName),
+      Array.from(cardLookup.values()).sort(
+        (a, b) => b.cardQuantity - a.cardQuantity,
       ),
     [cardLookup],
   );
@@ -1011,10 +1011,14 @@ export default function Board() {
   );
 
   // ── Inline modal (drag-to-request) ───────────────────────────────────────────
-  const handleRequestDrop = useCallback((cards: CardType[]) => {
-    openInlineModal({ cardsRequested: cards });
-    setDraftState({ requested: cards, offered: [], targetId: undefined });
-  }, []);
+  const handleRequestDrop = useCallback(
+    (cards: CardType[]) => {
+      const target = myPlayerId !== playerTurn ? playerTurn : undefined;
+      openInlineModal({ cardsRequested: cards });
+      setDraftState({ requested: cards, offered: [], targetId: target });
+    },
+    [myPlayerId, playerTurn],
+  );
 
   const handleOpenModal = useCallback(() => {
     openInlineModal({ cardsRequested: [] });

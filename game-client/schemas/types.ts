@@ -5,8 +5,9 @@ export type BaseCard = {
 export type CardType = BaseCard & {
   cardId: string;
   cardName: string;
-  frontImage?: string;
-  money_exchange?: Record<string, number>;
+  cardQuantity: number;
+  frontImage: string;
+  money_exchange: Record<string, number>;
 };
 
 export type CardTypeConfig = {

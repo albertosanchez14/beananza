@@ -21,6 +21,7 @@ type CardProp = {
   secondaryHighlightColor?: string;
   noRaise?: boolean;
   selectHint?: boolean;
+  scale?: number;
 };
 
 export default function Card({
@@ -40,14 +41,11 @@ export default function Card({
   onContextMenu,
   onDragStart,
   selectHint = false,
+  scale,
 }: CardProp) {
   const isHighlighted = !!highlightColor;
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-
-  useEffect(() => {
-    if (!draggable && isDragging) setIsDragging(false);
-  }, [draggable, isDragging]);
 
   const effectiveHover = isHovered && !isSelected && !isHighlighted;
   const showSelectHint = selectHint && !isSelected && !isHighlighted;
@@ -68,7 +66,7 @@ export default function Card({
       onContextMenu={onContextMenu}
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
-      onDragEnd={draggable ? handleDragEnd : undefined}
+      onDragEnd={handleDragEnd}
       role={onClick || onContextMenu ? "button" : undefined}
       tabIndex={onClick || onContextMenu ? 0 : undefined}
       onKeyDown={
@@ -79,7 +77,15 @@ export default function Card({
             }
           : undefined
       }
-      style={{ opacity: hidden ? 0 : undefined, ...style }}
+      style={{
+        opacity: hidden ? 0 : undefined,
+        ...(scale !== undefined && {
+          width: scale * 96,
+          height: scale * 144,
+          fontSize: `${scale * 16}px`,
+        }),
+        ...style,
+      }}
       className={`relative w-24 h-36
         ${draggable ? "cursor-grab active:cursor-grabbing" : ""}
         ${onClick && !draggable ? "cursor-pointer" : ""}

@@ -238,22 +238,11 @@ export default function TradedCardsArea({
               </div>
             );
           })}
-
-          {/* + Add requested card button when editing (picker renders in InlineModal) */}
-          {isEditingDraft && (
-            <button
-              onClick={() => onToggleReqPicker?.(!showReqPicker)}
-              className="w-8 h-8 rounded-full bg-black/60 text-white text-lg font-bold
-                hover:bg-black/80 transition-colors flex items-center justify-center self-center"
-            >
-              +
-            </button>
-          )}
         </div>
       )}
 
-      {/* + Add button when editing and no draft cards yet (picker renders in InlineModal) */}
-      {isEditingDraft && draftGroups.length === 0 && (
+      {/* + Add button when editing (picker renders in InlineModal) */}
+      {isEditingDraft && (
         <button
           onClick={() => onToggleReqPicker?.(!showReqPicker)}
           className="w-8 h-8 rounded-full bg-black/60 text-white text-lg font-bold

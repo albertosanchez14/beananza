@@ -35,10 +35,21 @@ export function CardFrontFace({ card, isSelected = false }: Props) {
       {/* Image area */}
       <div className="relative flex-1 min-h-0 rounded-t-xl overflow-hidden">
         {fullCard?.frontImage ? (
-          <Image src={fullCard.frontImage} alt={fullCard.cardName} fill sizes="96px" style={{ objectFit: "cover" }} draggable={false} unoptimized />
+          <Image
+            src={fullCard.frontImage}
+            alt={fullCard.cardName}
+            fill
+            sizes="96px"
+            style={{ objectFit: "cover" }}
+            draggable={false}
+            unoptimized
+          />
         ) : (
           <div className="w-full h-full bg-blue-200 flex items-end justify-center pb-1">
-            <span className="text-black text-center text-[9px] font-semibold leading-tight px-1">
+            <span
+              className="text-black text-center font-semibold leading-tight px-1"
+              style={{ fontSize: "0.6em" }}
+            >
               {fullCard?.cardName ?? ""}
             </span>
           </div>
@@ -54,7 +65,10 @@ export function CardFrontFace({ card, isSelected = false }: Props) {
               paddingTop: "1rem",
             }}
           >
-            <span className="text-white text-[9px] font-bold text-center leading-tight drop-shadow">
+            <span
+              className="text-white font-bold text-center leading-tight drop-shadow"
+              style={{ fontSize: "0.6em" }}
+            >
               {fullCard.cardName}
             </span>
           </div>
@@ -64,8 +78,8 @@ export function CardFrontFace({ card, isSelected = false }: Props) {
       {/* Coin-exchange strip */}
       {rates ? (
         <div
-          className="flex flex-row items-stretch justify-around bg-white rounded-b-xl px-0.5 pt-0.5 pb-0.5"
-          style={{ minHeight: "2rem" }}
+          className="flex flex-row items-stretch justify-evenly bg-white rounded-b-xl px-0.5 pt-0.5 pb-0.5"
+          style={{ minHeight: "2em" }}
         >
           {rates.map(({ cards, coins }) => (
             <div
@@ -74,13 +88,13 @@ export function CardFrontFace({ card, isSelected = false }: Props) {
             >
               <div
                 className="flex items-center justify-center rounded-full bg-yellow-400 border border-yellow-600 text-yellow-900 font-bold leading-none"
-                style={{ width: 15, height: 15, fontSize: 8 }}
+                style={{ width: "1em", height: "1em" }}
               >
-                {coins}
+                <span style={{ fontSize: "0.7em" }}>{coins}</span>
               </div>
               <span
                 className="text-gray-700 font-semibold leading-none"
-                style={{ fontSize: 8 }}
+                style={{ fontSize: "0.7em" }}
               >
                 {cards}
               </span>
@@ -88,7 +102,7 @@ export function CardFrontFace({ card, isSelected = false }: Props) {
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-b-xl" style={{ height: 4 }} />
+        <div className="bg-white rounded-b-xl" style={{ height: "0.25em" }} />
       )}
     </div>
   );

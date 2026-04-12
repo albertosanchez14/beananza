@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { CardType, ExternalPlayer, OfferCard } from "@/schemas/types";
 import CardComponent from "@/components/card";
 
@@ -68,12 +68,23 @@ export default function InlineModal({
   };
 
   // ── Positioning ──────────────────────────────────────────────────────────────
-  const rect = getAnchorRect();
-  const cx = rect ? rect.left + rect.width / 2 : 0;
-  const aboveBottom =
-    rect && typeof window !== "undefined"
-      ? window.innerHeight - rect.top + 8
-      : 0;
+  // Captured once on mount and on resize — not on every render — so that
+  // intermediate re-renders (e.g. draftState async sync) don't shift the modal.
+  const [pos, setPos] = useState({ cx: 0, aboveBottom: 0 });
+  useLayoutEffect(() => {
+    const update = () => {
+      const rect = getAnchorRect();
+      if (!rect) return;
+      setPos({
+        cx: rect.left + rect.width / 2,
+        aboveBottom: window.innerHeight - rect.top + 8,
+      });
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const { cx, aboveBottom } = pos;
 
   return (
     <>
@@ -98,7 +109,7 @@ export default function InlineModal({
             }}
           >
             {/* Header — shows the top slice of the image */}
-            <div className="px-3 pt-4 py-2 ">
+            <div className="px-3 pt-6 pb-2 ">
               <p
                 className="text-center font-serif italic text-xs tracking-wide"
                 style={{ color: "#5c3a1e" }}
@@ -108,7 +119,7 @@ export default function InlineModal({
             </div>
 
             {/* Scroll container — transparent, just clips */}
-            <div className="px-6 pt-2 pb-3">
+            <div className="px-8 pt-2 pb-6">
               {/* Grid div — background lives here so it grows with content */}
               <div className="grid grid-cols-3 gap-1.5">
                 {filteredCatalog.map((card) => (
@@ -118,12 +129,11 @@ export default function InlineModal({
                       onAddReqCard(card.cardName);
                       onToggleReqPicker(false);
                     }}
-                    className="flex flex-col items-center gap-0.5 p-1 rounded-lg
-                      hover:bg-[#8b5e3c]/20 transition-colors"
+                    className="flex flex-col items-center"
                   >
                     <CardComponent
                       card={card}
-                      className="w-12! h-17.5!"
+                      scale={0.6}
                       noRaise
                       noTransition
                     />

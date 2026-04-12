@@ -22,6 +22,7 @@ function toCardType(ct: CardTypeConfig): CardType {
   return {
     cardId: ct.name,
     cardName: ct.name,
+    cardQuantity: ct.count,
     frontImage: ct.front_image,
     backImage: ct.back_image,
     money_exchange: ct.exchange_rates,
