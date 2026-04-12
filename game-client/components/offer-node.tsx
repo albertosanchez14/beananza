@@ -113,7 +113,12 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
         style={{ ...style, width: nodeWidth }}
         onMouseEnter={props.onMouseEnter}
         onMouseLeave={props.onMouseLeave}
-        onClick={(e) => { if (e.ctrlKey && onCtrlClick) { e.stopPropagation(); onCtrlClick(); } }}
+        onClick={(e) => {
+          if (e.ctrlKey && onCtrlClick) {
+            e.stopPropagation();
+            onCtrlClick();
+          }
+        }}
       >
         {isIncoming && isPending && !canAccept && (
           <div
@@ -133,9 +138,30 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
         >
           {isFree
             ? crossSvg
-            : cardTypes.map((ct) => (
+            : cardTypes.map((ct, i) => (
                 <div key={ct.cardName} className="relative flex-1 min-w-0">
                   <CardFrontFace card={ct} />
+                  {!isDraft && counts[ct.cardName] > 1 && (
+                    <div
+                      className="absolute flex items-center justify-center w-6 h-6
+                        bg-amber-600 text-white text-xs font-bold rounded-full
+                        border-2 border-white shadow-md pointer-events-none z-30"
+                      style={{ top: 1, right: 1 }}
+                    >
+                      {counts[ct.cardName]}
+                    </div>
+                  )}
+                  {/* Counter badge on first card only */}
+                  {!isDraft && i === 0 && offer.parent_offer_id !== "" && (
+                    <div
+                      className="absolute flex items-center justify-center w-5 h-5
+                        bg-black/70 text-white text-[10px] font-bold rounded-full
+                        border border-white/20 pointer-events-none z-30"
+                      style={{ top: 1, left: 1 }}
+                    >
+                      ↩
+                    </div>
+                  )}
                 </div>
               ))}
 
@@ -186,22 +212,6 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
             </div>
           )}
         </div>
-
-        {/* Quantity badges — outside overflow-hidden so they can overflow the corner */}
-        {!isDraft &&
-          cardTypes.map((ct, i) =>
-            counts[ct.cardName] > 1 ? (
-              <div
-                key={ct.cardName}
-                className="absolute flex items-center justify-center w-6 h-6
-                bg-amber-600 text-white text-xs font-bold rounded-full
-                border-2 border-white shadow-md pointer-events-none z-30"
-                style={{ top: -12, left: (i + 1) * width - 12 }}
-              >
-                {counts[ct.cardName]}
-              </div>
-            ) : null,
-          )}
 
         {/* Draft controls overlay — full opacity, positioned over the card */}
         {isDraft && !isFree && (

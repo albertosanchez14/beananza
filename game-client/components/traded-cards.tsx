@@ -68,6 +68,16 @@ export default function TradedCards({ pickedCards, selection }: Props) {
                   e.dataTransfer.effectAllowed = "move";
                 }}
               />
+              {count > 1 && (
+                <div
+                  className="absolute flex items-center justify-center w-6 h-6
+                             bg-amber-600 text-white text-xs font-bold rounded-full
+                             border-2 border-white shadow-md pointer-events-none"
+                  style={{ top: 0, right: 1, zIndex: 1 }}
+                >
+                  {count}
+                </div>
+              )}
             </div>
 
             {/* Depth layers — overflow above the face card (bottom-to-top stack).
@@ -85,17 +95,6 @@ export default function TradedCards({ pickedCards, selection }: Props) {
                 }}
               />
             ))}
-
-            {count > 1 && (
-              <div
-                className="absolute flex items-center justify-center w-6 h-6
-                           bg-amber-600 text-white text-xs font-bold rounded-full
-                           border-2 border-white shadow-md pointer-events-none"
-                style={{ top: -12, right: -12, zIndex: layers + 2 }}
-              >
-                {count}
-              </div>
-            )}
           </div>
         );
       })}
