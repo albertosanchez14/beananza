@@ -9,6 +9,7 @@ type SlotProp = {
   interactive?: boolean;
   dragOverSlot?: string | null;
   highlightEmpty?: boolean;
+  blocked?: boolean;
   handleDragOver?: (e: React.DragEvent, slotId: string) => void;
   handleDragLeave?: (e: React.DragEvent) => void;
   handleSlotDrop?: (e: React.DragEvent, slotId: string) => void;
@@ -24,6 +25,7 @@ export default function Slot({
   interactive = true,
   dragOverSlot = null,
   highlightEmpty = false,
+  blocked = false,
   handleDragOver,
   handleDragLeave,
   handleSlotDrop,
@@ -122,10 +124,14 @@ export default function Slot({
         className={[
           "relative flex flex-col items-center justify-center w-24 h-36 rounded-sm border-2 m-auto",
           isDragOver
-            ? "border-amber-300 border-solid scale-105 shadow-lg shadow-amber-400/40 cursor-copy"
+            ? blocked
+              ? "border-red-500 border-solid cursor-not-allowed"
+              : "border-amber-300 border-solid scale-105 shadow-lg shadow-amber-400/40 cursor-copy"
             : "border-dashed " +
               (highlightEmpty
-                ? "border-amber-400 hover:border-amber-300 cursor-pointer"
+                ? blocked
+                  ? "border-red-500 hover:border-red-400 cursor-pointer"
+                  : "border-amber-400 hover:border-amber-300 cursor-pointer"
                 : "border-amber-900/50"),
         ].join(" ")}
         onClick={handleClick}
@@ -144,9 +150,13 @@ export default function Slot({
           <div
             className={`text-2xl transition-colors ${
               isDragOver
-                ? "text-amber-200"
+                ? blocked
+                  ? "text-red-400"
+                  : "text-amber-200"
                 : highlightEmpty
-                  ? "text-amber-400"
+                  ? blocked
+                    ? "text-red-500"
+                    : "text-amber-400"
                   : "text-amber-900/40"
             }`}
           >

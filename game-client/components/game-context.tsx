@@ -28,6 +28,8 @@ type GameContextValue = {
   ) => void;
   // Slot state and handlers
   dragOverSlot: string | null;
+  dragSourceIsHand: boolean;
+  canPlantFromHand: boolean;
   handleSlotClick: (slotId: string) => void;
   handleSlotDrop: (e: React.DragEvent, slotId: string) => void;
   handleSlotDragOver: (e: React.DragEvent, slotId: string) => void;
@@ -111,7 +113,10 @@ export function GameProvider({
   onCounterOffer,
 }: GameProviderProps) {
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
+  const [dragSourceIsHand, setDragSourceIsHand] = useState(false);
   const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
+  const canPlantFromHand =
+    gameState.phase === "plantHand" && gameState.playerTurn === myPlayerId;
   const [dragOverBlockReason, setDragOverBlockReason] = useState<string | null>(
     null,
   );
@@ -179,6 +184,10 @@ export function GameProvider({
     e.dataTransfer.setData("application/card", JSON.stringify(card));
     e.dataTransfer.effectAllowed = "move";
 
+    if (source === "hand") {
+      e.dataTransfer.setData("application/drag-from-hand", "");
+    }
+
     const centerCardIds = new Set(gameState.centerCards.map((c) => c.cardId));
     const cardId = (card as CardType).cardId;
     const isInSelection = selection.some((c) => c.cardId === cardId);
@@ -202,6 +211,8 @@ export function GameProvider({
     const slot = gameState.field.slots.find((slot) => slot.slotId == slotId);
     const card = selection[0];
     if (card) {
+      const isHandCard = gameState.hand.some((c) => c.cardId === card.cardId);
+      if (isHandCard && !canPlantFromHand) return;
       if (!slot || !slot.cardName || slot.cardName === card.cardName) {
         onPlantBean(card.cardId, slotId);
         setSelection([]);
@@ -220,6 +231,9 @@ export function GameProvider({
     try {
       const card = JSON.parse(raw);
       setDragOverSlot(null);
+      setDragSourceIsHand(false);
+      const isHandCard = gameState.hand.some((c) => c.cardId === card.cardId);
+      if (isHandCard && !canPlantFromHand) return;
       const slot = gameState.field.slots.find((slot) => slot.slotId == slotId);
       if (!slot || !slot.cardName || slot.cardName === card.cardName) {
         onPlantBean(card.cardId, slotId);
@@ -234,11 +248,15 @@ export function GameProvider({
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setDragOverSlot(slotId);
+    setDragSourceIsHand(
+      e.dataTransfer.types.includes("application/drag-from-hand"),
+    );
   };
 
   const handleSlotDragLeave = (e: React.DragEvent) => {
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setDragOverSlot(null);
+    setDragSourceIsHand(false);
   };
 
   const handlePlayerDragOver = (e: React.DragEvent, targetPlayerId: string) => {
@@ -321,6 +339,8 @@ export function GameProvider({
     handleCardClick,
     handleCardDrag,
     dragOverSlot,
+    dragSourceIsHand,
+    canPlantFromHand,
     handleSlotClick,
     handleSlotDrop,
     handleSlotDragOver,

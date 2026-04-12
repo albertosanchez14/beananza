@@ -154,6 +154,8 @@ export default function Board() {
     handleCardClick,
     handleCardDrag,
     dragOverSlot,
+    dragSourceIsHand,
+    canPlantFromHand,
     handleSlotClick,
     handleSlotDrop,
     handleSlotDragOver,
@@ -1812,6 +1814,11 @@ export default function Board() {
                 ? (cardLookup.get(s.cardName) ?? null)
                 : null;
               const highlightEmpty = selection.length === 1;
+              const isHandCardSelected =
+                selection.length === 1 &&
+                gameState.hand.some((c) => c.cardId === selection[0].cardId);
+              const blocked =
+                !canPlantFromHand && (isHandCardSelected || dragSourceIsHand);
               return (
                 <div
                   key={s.slotId}
@@ -1825,6 +1832,7 @@ export default function Board() {
                     index={index}
                     dragOverSlot={dragOverSlot}
                     highlightEmpty={highlightEmpty}
+                    blocked={blocked}
                     handleDragOver={handleSlotDragOver}
                     handleDragLeave={handleSlotDragLeave}
                     handleSlotDrop={handleMySlotDrop}
