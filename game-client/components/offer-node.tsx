@@ -26,6 +26,7 @@ type OfferNodeProps = {
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
   onAccept: (offer: Offer) => void;
   onCounter: (offer: Offer) => void;
+  onCtrlClick?: () => void;
 };
 
 export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
@@ -47,6 +48,7 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
       onDraftAdjustReq,
       onDraftRemoveReq,
       onDraftCancel,
+      onCtrlClick,
       accent,
       style,
     } = props;
@@ -111,6 +113,7 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
         style={{ ...style, width: nodeWidth }}
         onMouseEnter={props.onMouseEnter}
         onMouseLeave={props.onMouseLeave}
+        onClick={(e) => { if (e.ctrlKey && onCtrlClick) { e.stopPropagation(); onCtrlClick(); } }}
       >
         {isIncoming && isPending && !canAccept && (
           <div

@@ -105,23 +105,10 @@ export default function InlineOfferTag({
             width={96}
             cardHeight={144}
             accent={offerAccent(leaf)}
+            onCtrlClick={hasMultipleNodes && !hasDraft ? () => { setTreeOpen((v) => !v); onHover?.(null); } : undefined}
           />
         ))}
 
-        {hasMultipleNodes && !hasDraft && (
-          <button
-            onClick={() => {
-              setTreeOpen((v) => !v);
-              onHover?.(null);
-            }}
-            title="Show offer history"
-            className={`absolute top-1 left-1 z-20 w-5 h-5
-              flex items-center justify-center rounded-full border
-              text-[9px] text-black font-bold transition-colors`}
-          >
-            ⌥
-          </button>
-        )}
       </div>
 
       {showOverlay && (

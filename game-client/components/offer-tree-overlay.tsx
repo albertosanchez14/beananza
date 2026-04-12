@@ -260,6 +260,7 @@ export default function OfferTreeOverlay({
               offer.id === "__draft__" ? onDraftRemoveReq : undefined
             }
             onDraftCancel={offer.id === "__draft__" ? onDraftCancel : undefined}
+            onCtrlClick={offer.id !== "__draft__" ? onClose : undefined}
             ref={(el) => {
               if (el) tagWrapperRefs.current.set(offer.id, el);
               else tagWrapperRefs.current.delete(offer.id);
