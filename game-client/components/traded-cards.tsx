@@ -91,7 +91,7 @@ export default function TradedCards({ pickedCards, selection }: Props) {
                 className="absolute flex items-center justify-center w-6 h-6
                            bg-amber-600 text-white text-xs font-bold rounded-full
                            border-2 border-white shadow-md pointer-events-none"
-                style={{ top: 4, right: 4, zIndex: layers + 2 }}
+                style={{ top: -12, right: -12, zIndex: layers + 2 }}
               >
                 {count}
               </div>

@@ -133,15 +133,6 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
             : cardTypes.map((ct) => (
                 <div key={ct.cardName} className="relative flex-1 min-w-0">
                   <CardFrontFace card={ct} />
-                  {counts[ct.cardName] > 1 && !isDraft && (
-                    <span
-                      className="absolute top-0.5 right-0.5 z-20 min-w-3.5 h-3.5
-										flex items-center justify-center
-										text-black font-bold px-0.5"
-                    >
-                      {counts[ct.cardName]}
-                    </span>
-                  )}
                 </div>
               ))}
 
@@ -192,6 +183,22 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
             </div>
           )}
         </div>
+
+        {/* Quantity badges — outside overflow-hidden so they can overflow the corner */}
+        {!isDraft &&
+          cardTypes.map((ct, i) =>
+            counts[ct.cardName] > 1 ? (
+              <div
+                key={ct.cardName}
+                className="absolute flex items-center justify-center w-6 h-6
+                bg-amber-600 text-white text-xs font-bold rounded-full
+                border-2 border-white shadow-md pointer-events-none z-30"
+                style={{ top: -12, left: (i + 1) * width - 12 }}
+              >
+                {counts[ct.cardName]}
+              </div>
+            ) : null,
+          )}
 
         {/* Draft controls overlay — full opacity, positioned over the card */}
         {isDraft && !isFree && (
