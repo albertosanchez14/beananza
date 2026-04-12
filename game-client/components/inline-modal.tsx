@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import type React from "react";
 import { CardType, ExternalPlayer, OfferCard } from "@/schemas/types";
 import CardComponent from "@/components/card";
 
 type Props = {
   isTurnPlayer: boolean;
   players: ExternalPlayer[];
-  anchorRef: React.RefObject<HTMLDivElement | null>;
+  getAnchorRect: () => DOMRect | undefined;
   // Offered state owned by Board
   offeredCards: CardType[];
   // Requested state owned by Board
@@ -18,9 +17,8 @@ type Props = {
   showReqPicker: boolean;
   onToggleReqPicker: (open: boolean) => void;
   filteredCatalog: CardType[];
-  reqSearch: string;
-  onReqSearchChange: (q: string) => void;
   onAddReqCard: (cardName: string) => void;
+  hideTargetPicker?: boolean;
   onSubmit: (
     cardsOffered: OfferCard[],
     cardsRequested: OfferCard[],
@@ -32,7 +30,7 @@ type Props = {
 export default function InlineModal({
   isTurnPlayer,
   players,
-  anchorRef,
+  getAnchorRect,
   offeredCards,
   requestedQty,
   selectedTargetId,
@@ -40,9 +38,8 @@ export default function InlineModal({
   showReqPicker,
   onToggleReqPicker,
   filteredCatalog,
-  reqSearch,
-  onReqSearchChange,
   onAddReqCard,
+  hideTargetPicker = false,
   onSubmit,
   onClose,
 }: Props) {
@@ -71,13 +68,12 @@ export default function InlineModal({
   };
 
   // ── Positioning ──────────────────────────────────────────────────────────────
-  const rect = anchorRef.current?.getBoundingClientRect();
+  const rect = getAnchorRect();
   const cx = rect ? rect.left + rect.width / 2 : 0;
   const aboveBottom =
     rect && typeof window !== "undefined"
       ? window.innerHeight - rect.top + 8
       : 0;
-  const belowTop = rect ? rect.bottom + 8 : 0;
 
   return (
     <>
@@ -93,41 +89,47 @@ export default function InlineModal({
           }}
         >
           <div
-            className="w-56 rounded-xl bg-[#1a120a]/95 border border-white/10 shadow-2xl
-              backdrop-blur-sm overflow-hidden"
+            className="w-65 rounded-xl overflow-hidden"
+            style={{
+              backgroundImage: "url('/card-picker-bg.webp')",
+              backgroundSize: "100% 100%",
+              backgroundPosition: "top center",
+              backgroundRepeat: "no-repeat",
+            }}
           >
-            <div className="p-2 border-b border-white/10">
-              <input
-                autoFocus
-                value={reqSearch}
-                onChange={(e) => onReqSearchChange(e.target.value)}
-                placeholder="Search cards…"
-                className="w-full bg-white/10 text-white text-xs rounded-lg px-2 py-1.5
-                  placeholder:text-white/40 outline-none"
-              />
+            {/* Header — shows the top slice of the image */}
+            <div className="px-3 pt-4 py-2 ">
+              <p
+                className="text-center font-serif italic text-xs tracking-wide"
+                style={{ color: "#5c3a1e" }}
+              >
+                — Request a Card —
+              </p>
             </div>
-            <div className="max-h-48 overflow-y-auto p-2 grid grid-cols-3 gap-1.5">
-              {filteredCatalog.map((card) => (
-                <button
-                  key={card.cardName}
-                  onClick={() => {
-                    onAddReqCard(card.cardName);
-                    onToggleReqPicker(false);
-                  }}
-                  className="flex flex-col items-center gap-0.5 p-1 rounded-lg
-                    hover:bg-white/10 transition-colors"
-                >
-                  <CardComponent
-                    card={card}
-                    className="!w-12 !h-[70px]"
-                    noRaise
-                    noTransition
-                  />
-                  <span className="text-[9px] text-white/70 text-center leading-tight line-clamp-2">
-                    {card.cardName}
-                  </span>
-                </button>
-              ))}
+
+            {/* Scroll container — transparent, just clips */}
+            <div className="px-6 pt-2 pb-3">
+              {/* Grid div — background lives here so it grows with content */}
+              <div className="grid grid-cols-3 gap-1.5">
+                {filteredCatalog.map((card) => (
+                  <button
+                    key={card.cardName}
+                    onClick={() => {
+                      onAddReqCard(card.cardName);
+                      onToggleReqPicker(false);
+                    }}
+                    className="flex flex-col items-center gap-0.5 p-1 rounded-lg
+                      hover:bg-[#8b5e3c]/20 transition-colors"
+                  >
+                    <CardComponent
+                      card={card}
+                      className="w-12! h-17.5!"
+                      noRaise
+                      noTransition
+                    />
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -162,7 +164,7 @@ export default function InlineModal({
             </button>
           </div>
 
-          {isTurnPlayer && (
+          {isTurnPlayer && !hideTargetPicker && (
             <div className="flex items-center gap-2">
               <label className="flex items-center gap-1 cursor-pointer">
                 <input
@@ -194,23 +196,6 @@ export default function InlineModal({
             </div>
           )}
         </div>
-      </div>
-
-      {/* ── Instructional hint (below TradedCardsArea) ── */}
-      <div
-        style={{
-          position: "fixed",
-          top: belowTop,
-          left: cx,
-          transform: "translateX(-50%)",
-          zIndex: 30,
-        }}
-      >
-        <p className="text-[11px] text-white/50 italic whitespace-nowrap">
-          {isTurnPlayer
-            ? "Click hand or table cards to give"
-            : "Click hand cards to give"}
-        </p>
       </div>
     </>
   );

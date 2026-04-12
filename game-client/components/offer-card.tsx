@@ -88,27 +88,29 @@ export function canAcceptOffer(
   centerCards: CardType[],
   isTurnPlayer: boolean,
 ): boolean {
-  const handCounts: Record<string, number> = {};
-  for (const c of myHand)
-    handCounts[c.cardName] = (handCounts[c.cardName] ?? 0) + 1;
-  const centerCounts: Record<string, number> = {};
-  if (isTurnPlayer) {
-    for (const c of centerCards)
-      centerCounts[c.cardName] = (centerCounts[c.cardName] ?? 0) + 1;
-  }
+  // Track IDs already committed to ID-specific requests so they aren't
+  // double-counted when evaluating the remaining type-only requests.
+  const consumedIds = new Set<string>();
   const needed: Record<string, number> = {};
+
   for (const c of offer.cards_requested) {
     if (c.card_id) {
       const has =
         myHand.some((h) => h.cardId === c.card_id) ||
         (isTurnPlayer && centerCards.some((h) => h.cardId === c.card_id));
       if (!has) return false;
+      consumedIds.add(c.card_id);
     } else {
       needed[c.card_type] = (needed[c.card_type] ?? 0) + 1;
     }
   }
+
   for (const [type, count] of Object.entries(needed)) {
-    const available = (handCounts[type] ?? 0) + (centerCounts[type] ?? 0);
+    const available =
+      myHand.filter((c) => c.cardName === type && !consumedIds.has(c.cardId)).length +
+      (isTurnPlayer
+        ? centerCards.filter((c) => c.cardName === type && !consumedIds.has(c.cardId)).length
+        : 0);
     if (available < count) return false;
   }
   return true;

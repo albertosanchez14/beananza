@@ -966,39 +966,63 @@ func (s *State) AcceptOffer(offerID, acceptorID string, selectedCards []OfferCar
 	if !ok {
 		return NewPlayerNotFoundError(acceptorID)
 	}
+	isTurnPlayer := acceptorID == s.TurnOrder[s.CurrentTurn]
+
+	// Build lookup sets for fast membership checks.
+	acceptorHandIDs := make(map[string]bool, len(acceptor.Hand))
+	for _, c := range acceptor.Hand {
+		acceptorHandIDs[c.ID] = true
+	}
+	centerCardIDs := make(map[string]bool, len(s.CenterCards))
+	for _, c := range s.CenterCards {
+		centerCardIDs[c.ID] = true
+	}
+
 	requestedIDs := make([]string, 0, len(offer.CardsRequested))
 	if len(selectedCards) > 0 {
 		// Client provided explicit card IDs (player chose which cards to give).
+		// Validate that every supplied ID actually belongs to the acceptor:
+		// hand cards are always allowed; center cards only for the turn player.
 		for _, c := range selectedCards {
+			inHand := acceptorHandIDs[c.CardID]
+			inCenter := isTurnPlayer && centerCardIDs[c.CardID]
+			if !inHand && !inCenter {
+				return NewCardNotInHandError(acceptorID, c.CardID)
+			}
 			requestedIDs = append(requestedIDs, c.CardID)
 		}
 	} else {
 		// Auto-resolve by card type — take the first matching card from the acceptor's hand.
-		// Track which acceptor hand indices have already been claimed so the same
-		// card is not resolved twice when multiple cards of the same type are requested.
-		claimed := make(map[int]bool)
-		claimedCenter := make(map[string]bool)
+		// claimedIDs tracks every ID already committed (both explicit and type-resolved)
+		// so the same physical card is never used for two different requests.
+		claimedIDs := make(map[string]bool)
 		for _, c := range offer.CardsRequested {
 			if c.CardID != "" {
-				// Explicit ID (e.g. from a counteroffer where IDs are known).
+				// Explicit ID: validate ownership, then mark as claimed.
+				inHand := acceptorHandIDs[c.CardID]
+				inCenter := isTurnPlayer && centerCardIDs[c.CardID]
+				if !inHand && !inCenter {
+					return NewCardNotInHandError(acceptorID, c.CardID)
+				}
+				claimedIDs[c.CardID] = true
 				requestedIDs = append(requestedIDs, c.CardID)
 				continue
 			}
-			// Resolve by card type.
+			// Resolve by card type from hand first, then center (turn player only).
 			resolved := false
-			for i, card := range acceptor.Hand {
-				if !claimed[i] && card.Name == c.CardType {
+			for _, card := range acceptor.Hand {
+				if !claimedIDs[card.ID] && card.Name == c.CardType {
 					requestedIDs = append(requestedIDs, card.ID)
-					claimed[i] = true
+					claimedIDs[card.ID] = true
 					resolved = true
 					break
 				}
 			}
-			if !resolved && acceptorID == s.TurnOrder[s.CurrentTurn] {
+			if !resolved && isTurnPlayer {
 				for _, card := range s.CenterCards {
-					if card.Name == c.CardType && !claimedCenter[card.ID] {
+					if !claimedIDs[card.ID] && card.Name == c.CardType {
 						requestedIDs = append(requestedIDs, card.ID)
-						claimedCenter[card.ID] = true
+						claimedIDs[card.ID] = true
 						resolved = true
 						break
 					}

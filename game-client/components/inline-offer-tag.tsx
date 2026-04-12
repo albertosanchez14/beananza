@@ -18,6 +18,10 @@ type Props = {
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
   onAccept: (offer: Offer) => void;
   onCounter: (offer: Offer) => void;
+  onToggleDraftPicker?: () => void;
+  onDraftAdjustReq?: (cardName: string, delta: number) => void;
+  onDraftRemoveReq?: (cardName: string) => void;
+  onDraftCancel?: () => void;
   onHover?: (id: string | null) => void;
 };
 
@@ -33,12 +37,18 @@ export default function InlineOfferTag({
   onRespond,
   onAccept,
   onCounter,
+  onToggleDraftPicker,
+  onDraftAdjustReq,
+  onDraftRemoveReq,
+  onDraftCancel,
   onHover,
 }: Props) {
   const [treeOpen, setTreeOpen] = useState(false);
   const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
 
   const leaves = getLeaves(subtree);
+  const hasDraft = subtree.some((o) => o.id === "__draft__");
+  const showOverlay = treeOpen || hasDraft;
 
   if (leaves.length === 0) return null;
 
@@ -50,15 +60,19 @@ export default function InlineOfferTag({
     return { border: "border-blue-500/80", bg: "bg-blue-900/40" };
   };
 
-  const hasMultipleNodes = subtree.length > 1;
+  const hasMultipleNodes = subtree.filter((o) => o.id !== "__draft__").length > 1;
 
   return (
     <div
       ref={setContainerEl}
       className="relative shrink-0"
-      onMouseLeave={() => !treeOpen && onHover?.(null)}
+      onMouseLeave={() => !showOverlay && onHover?.(null)}
     >
-      <div className="flex gap-0.5" style={{ height: 144 }}>
+      {/* Flat leaf row — hidden when overlay is showing, but kept for layout */}
+      <div
+        className="flex gap-0.5"
+        style={{ height: 144, visibility: showOverlay ? "hidden" : "visible" }}
+      >
         {leaves.map((leaf) => (
           <OfferNode
             key={leaf.id}
@@ -71,22 +85,20 @@ export default function InlineOfferTag({
             onRespond={onRespond}
             onAccept={onAccept}
             onCounter={onCounter}
+            isDraft={leaf.id === "__draft__"}
+            onToggleDraftPicker={leaf.id === "__draft__" ? onToggleDraftPicker : undefined}
             ref={(el) => {
               if (el) tagWrapperRefs.current.set(leaf.id, el);
               else tagWrapperRefs.current.delete(leaf.id);
             }}
-            onMouseEnter={() => !treeOpen && onHover?.(leaf.id)}
+            onMouseEnter={() => !showOverlay && onHover?.(leaf.id)}
             width={96}
             cardHeight={144}
             accent={offerAccent(leaf)}
-            style={{
-              opacity: treeOpen ? 0 : 1,
-              pointerEvents: treeOpen ? "none" : undefined,
-            }}
           />
         ))}
 
-        {hasMultipleNodes && (
+        {hasMultipleNodes && !hasDraft && (
           <button
             onClick={() => {
               setTreeOpen((v) => !v);
@@ -102,7 +114,7 @@ export default function InlineOfferTag({
         )}
       </div>
 
-      {treeOpen && (
+      {showOverlay && (
         <OfferTreeOverlay
           subtree={subtree}
           rootOfferId={rootOffer.id}
@@ -113,7 +125,7 @@ export default function InlineOfferTag({
           centerCards={centerCards}
           isTurnPlayer={isTurnPlayer}
           tagWrapperRefs={tagWrapperRefs}
-          onClose={() => setTreeOpen(false)}
+          onClose={hasDraft ? () => {} : () => setTreeOpen(false)}
           onHover={onHover}
           onRespond={onRespond}
           onAccept={onAccept}
@@ -121,6 +133,10 @@ export default function InlineOfferTag({
             setTreeOpen(false);
             onCounter(offer);
           }}
+          onToggleDraftPicker={onToggleDraftPicker}
+          onDraftAdjustReq={onDraftAdjustReq}
+          onDraftRemoveReq={onDraftRemoveReq}
+          onDraftCancel={onDraftCancel}
         />
       )}
     </div>

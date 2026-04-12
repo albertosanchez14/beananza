@@ -27,7 +27,6 @@ import { PlantFlyingCard } from "@/components/plant-flying-card";
 import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
 import AcceptCardPicker from "@/components/accept-card-picker";
 import Arrow from "@/components/arrow";
-import OfferWizard from "@/components/offer-wizard";
 import { canAcceptOffer } from "@/components/offer-card";
 
 import {
@@ -39,7 +38,7 @@ import {
   OfferPathEntry,
   resolveOfferedEl,
 } from "@/utils/offer-arrow-utils";
-import InlineModal from "./inline-modal";
+import InlineModal from "@/components/inline-modal";
 
 type FlyingCardEntry = {
   id: string;
@@ -203,7 +202,6 @@ export default function Board() {
   const [reqQty, setReqQty] = useState<Record<string, number>>({});
   const [reqTarget, setReqTarget] = useState<string | undefined>(undefined);
   const [showReqPicker, setShowReqPicker] = useState(false);
-  const [reqSearch, setReqSearch] = useState("");
 
   const tradedCardsAreaRef = useRef<HTMLDivElement>(null);
   const draftCardsGroupRef = useRef<HTMLDivElement>(null);
@@ -232,13 +230,6 @@ export default function Board() {
       ),
     [cardLookup],
   );
-
-  const filteredReqCatalog = useMemo(() => {
-    const q = reqSearch.trim().toLowerCase();
-    return q
-      ? allCatalogCards.filter((c) => c.cardName.toLowerCase().includes(q))
-      : allCatalogCards;
-  }, [allCatalogCards, reqSearch]);
 
   const resolvedRequested = useMemo(() => {
     const result: CardType[] = [];
@@ -282,7 +273,6 @@ export default function Board() {
   const addReqCard = useCallback((cardName: string) => {
     setReqQty((prev) => ({ ...prev, [cardName]: (prev[cardName] ?? 0) + 1 }));
     setShowReqPicker(false);
-    setReqSearch("");
   }, []);
 
   // Initialize reqQty / reqTarget / offeredCards when a new inline modal opens.
@@ -291,7 +281,7 @@ export default function Board() {
       setReqQty({});
       setReqTarget(undefined);
       setShowReqPicker(false);
-      setReqSearch("");
+
       setOfferedCards([]);
       return;
     }
@@ -309,7 +299,7 @@ export default function Board() {
 
   // Keep draftState.requested, targetId, and offered in sync.
   useEffect(() => {
-    if (!inlineModal) return;
+    if (!inlineModal && !counteringOffer) return;
     setDraftState((prev) =>
       prev
         ? { ...prev, requested: resolvedRequested, targetId: reqTarget }
@@ -318,9 +308,79 @@ export default function Board() {
   }, [resolvedRequested, reqTarget]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!inlineModal) return;
+    if (!inlineModal && !counteringOffer) return;
     setDraftState((prev) => (prev ? { ...prev, offered: offeredCards } : null));
   }, [offeredCards]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Initialize state when a counter offer is triggered.
+  useEffect(() => {
+    if (!counteringOffer) {
+      setReqQty({});
+      setReqTarget(undefined);
+      setShowReqPicker(false);
+
+      setOfferedCards([]);
+      setDraftState(null);
+      return;
+    }
+    // Pre-populate: mirror the parent offer.
+    // offeredCards ← parent's cards_requested (what they asked us for)
+    // Hand first, then center cards (turn player only).
+    const handCopy = [...hand];
+    const centerCopy = isTurnPlayer ? [...centerCards] : [];
+    const preOffered: CardType[] = [];
+    for (const c of counteringOffer.cards_requested) {
+      const handIdx = handCopy.findIndex((h) => h.cardName === c.card_type);
+      if (handIdx >= 0) {
+        preOffered.push(handCopy[handIdx]);
+        handCopy.splice(handIdx, 1);
+        continue;
+      }
+      const centerIdx = centerCopy.findIndex(
+        (cc) => cc.cardName === c.card_type,
+      );
+      if (centerIdx >= 0) {
+        preOffered.push(centerCopy[centerIdx]);
+        centerCopy.splice(centerIdx, 1);
+      }
+    }
+    setOfferedCards(preOffered);
+    // requestedQty ← parent's cards_offered (what they offered us)
+    const initQty: Record<string, number> = {};
+    for (const c of counteringOffer.cards_offered) {
+      initQty[c.card_type] = (initQty[c.card_type] ?? 0) + 1;
+    }
+    setReqQty(initQty);
+    setReqTarget(counteringOffer.creator_id);
+    setShowReqPicker(false);
+    setDraftState({
+      offered: preOffered,
+      requested: [],
+      targetId: counteringOffer.creator_id,
+    });
+  }, [counteringOffer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Build ghost offer node for live counter draft preview.
+  const allOffersWithGhost = useMemo<Offer[]>(() => {
+    if (!counteringOffer) return offers;
+    const ghost: Offer = {
+      id: "__draft__",
+      creator_id: myPlayerId,
+      target_id: counteringOffer.creator_id,
+      parent_offer_id: counteringOffer.id,
+      cards_offered: offeredCards.map((c) => ({
+        card_type: c.cardName,
+        card_id: c.cardId,
+      })),
+      cards_requested: Object.entries(reqQty).flatMap(([name, qty]) =>
+        Array.from({ length: qty }, () => ({ card_type: name, card_id: "" })),
+      ),
+      status: "pending",
+      rejected_by: [],
+      created_at: new Date().toISOString(),
+    };
+    return [...offers, ghost];
+  }, [offers, counteringOffer, offeredCards, reqQty, myPlayerId]);
 
   // ── Origin-highlight helpers ─────────────────────────────────────────────────
   // cardHighlights: cardId → color for cards I can see (my hand + center)
@@ -959,6 +1019,7 @@ export default function Board() {
   const handleOpenModal = useCallback(() => {
     openInlineModal({ cardsRequested: [] });
     setDraftState({ requested: [], offered: [], targetId: undefined });
+    setShowReqPicker(true);
   }, []);
 
   useEffect(() => {
@@ -990,7 +1051,10 @@ export default function Board() {
       if (!tradedCardsAreaRef.current) return;
       const next = new Map<string, OfferPathEntry>();
       const crefs = cardRefs.current;
-      const tagEl = draftCardsGroupRef.current ?? tradedCardsAreaRef.current;
+      const tagEl = counteringOffer
+        ? (tagWrapperRefs.current.get("__draft__") ??
+          tradedCardsAreaRef.current)
+        : (draftCardsGroupRef.current ?? tradedCardsAreaRef.current);
       const oHandRefs = opponentHandContainerRefs.current;
       const oFieldRefs = opponentFieldRefs.current;
 
@@ -1069,7 +1133,14 @@ export default function Board() {
     computeDraftPaths();
     window.addEventListener("resize", computeDraftPaths);
     return () => window.removeEventListener("resize", computeDraftPaths);
-  }, [draftState, players, myPlayerId, isTurnPlayer, centerCards]);
+  }, [
+    draftState,
+    counteringOffer,
+    players,
+    myPlayerId,
+    isTurnPlayer,
+    centerCards,
+  ]);
 
   // Rotate broadcast player highlight for draft arrows (mirrors offer broadcast rotation).
   useEffect(() => {
@@ -1472,16 +1543,17 @@ export default function Board() {
           key={inlineModal.key}
           isTurnPlayer={myPlayerId === gameState.playerTurn}
           players={gameState.players.filter((p) => p.playerId !== myPlayerId)}
-          anchorRef={tradedCardsAreaRef}
+          getAnchorRect={() =>
+            draftCardsGroupRef.current?.getBoundingClientRect() ??
+            tradedCardsAreaRef.current?.getBoundingClientRect()
+          }
           offeredCards={offeredCards}
           requestedQty={reqQty}
           selectedTargetId={reqTarget}
           onTargetChange={setReqTarget}
           showReqPicker={showReqPicker}
           onToggleReqPicker={setShowReqPicker}
-          filteredCatalog={filteredReqCatalog}
-          reqSearch={reqSearch}
-          onReqSearchChange={setReqSearch}
+          filteredCatalog={allCatalogCards}
           onAddReqCard={addReqCard}
           onSubmit={(cardsOffered, reqCards, targetPlayerId) => {
             onCreateOffer(
@@ -1560,15 +1632,19 @@ export default function Board() {
                                   card={cardForSlot}
                                   flipped={false}
                                   noTransition={true}
-                                  onContextMenu={() => {
-                                    if (phase === "turnTrade")
-                                      openInlineModal({
-                                        cardsRequested: [cardForSlot],
-                                        defaultTargetId: isTurnPlayer
-                                          ? player.playerId
-                                          : playerTurn,
-                                      });
-                                  }}
+                                  onContextMenu={
+                                    !counteringOffer
+                                      ? () => {
+                                          if (phase === "turnTrade")
+                                            openInlineModal({
+                                              cardsRequested: [cardForSlot],
+                                              defaultTargetId: isTurnPlayer
+                                                ? player.playerId
+                                                : playerTurn,
+                                            });
+                                        }
+                                      : undefined
+                                  }
                                   hidden={animatingOpponentSlotIds.has(
                                     slot.slotId,
                                   )}
@@ -1654,11 +1730,15 @@ export default function Board() {
                         ? cardHighlights.get(card.cardId)
                         : undefined
                     }
-                    selectHint={!!inlineModal && isTurnPlayer && !isOffered}
+                    selectHint={
+                      (!!inlineModal || !!counteringOffer) &&
+                      isTurnPlayer &&
+                      !isOffered
+                    }
                     isSelected={selection.some((c) => c.cardId === card.cardId)}
-                    draggable={!inlineModal}
+                    draggable={!inlineModal && !counteringOffer}
                     onClick={(e: React.MouseEvent) => {
-                      if (inlineModal && isTurnPlayer) {
+                      if ((inlineModal || counteringOffer) && isTurnPlayer) {
                         setOfferedCards((prev) =>
                           isOffered
                             ? prev.filter((c) => c.cardId !== card.cardId)
@@ -1669,7 +1749,7 @@ export default function Board() {
                       handleCardClick(card, "center", e.ctrlKey || e.metaKey);
                     }}
                     onContextMenu={
-                      !isTurnPlayer && !inlineModal
+                      !isTurnPlayer && !inlineModal && !counteringOffer
                         ? () => {
                             if (phase === "turnTrade")
                               openInlineModal({
@@ -1728,15 +1808,19 @@ export default function Board() {
                           else mySlotCardRefs.current.delete(s.slotId);
                         }}
                         hidden={animatingOpponentSlotIds.has(s.slotId)}
-                        onContextMenu={() => {
-                          if (phase === "turnTrade")
-                            openInlineModal({
-                              cardsRequested: [cardForSlot],
-                              defaultTargetId: isTurnPlayer
-                                ? undefined
-                                : playerTurn,
-                            });
-                        }}
+                        onContextMenu={
+                          !counteringOffer
+                            ? () => {
+                                if (phase === "turnTrade")
+                                  openInlineModal({
+                                    cardsRequested: [cardForSlot],
+                                    defaultTargetId: isTurnPlayer
+                                      ? undefined
+                                      : playerTurn,
+                                  });
+                              }
+                            : undefined
+                        }
                       />
                     )}
                   </Slot>
@@ -1750,12 +1834,11 @@ export default function Board() {
             <TradedCardsArea
               phase={phase}
               pickedCards={pickedCards}
-              onCardClick={handleCardClick}
               incomingOffers={incomingOffer}
               outgoingOffers={outgoingOffer}
               onOfferHover={setHoveredOfferId}
               tagWrapperRefs={tagWrapperRefs}
-              allOffers={offers}
+              allOffers={allOffersWithGhost}
               myPlayerId={myPlayerId}
               cardLookup={cardLookup}
               hand={hand}
@@ -1763,12 +1846,14 @@ export default function Board() {
               isTurnPlayer={isTurnPlayer}
               onRespondOffer={onRespondOffer}
               onAcceptOffer={handleAcceptOffer}
-              onCounterOffer={setCounteringOffer}
+              onCounterOffer={(offer) => {
+                setCounteringOffer(offer);
+              }}
               selection={selection}
               clearSelection={clearSelection}
               onRequestDrop={handleRequestDrop}
               onOpenModal={handleOpenModal}
-              draftCards={draftState?.requested}
+              draftCards={inlineModal ? draftState?.requested : undefined}
               draftCardsGroupRef={draftCardsGroupRef}
               draftColor={draftColor}
               isEditingDraft={!!inlineModal}
@@ -1777,14 +1862,18 @@ export default function Board() {
               onRemoveReq={removeReqQty}
               showReqPicker={showReqPicker}
               onToggleReqPicker={setShowReqPicker}
-              filteredCatalog={filteredReqCatalog}
-              reqSearch={reqSearch}
-              onReqSearchChange={setReqSearch}
-              onAddReqCard={addReqCard}
               onCancelDraft={() => {
                 setInlineModal(null);
                 setDraftState(null);
               }}
+              onToggleDraftPicker={
+                counteringOffer ? () => setShowReqPicker((v) => !v) : undefined
+              }
+              onDraftAdjustReq={counteringOffer ? adjustReqQty : undefined}
+              onDraftRemoveReq={counteringOffer ? removeReqQty : undefined}
+              onDraftCancel={
+                counteringOffer ? () => setCounteringOffer(null) : undefined
+              }
             />
           </div>
         }
@@ -1831,11 +1920,15 @@ export default function Board() {
                         ? cardHighlights.get(card.cardId)
                         : undefined
                     }
-                    selectHint={!!inlineModal && !isOffered}
-                    draggable={phase !== "plantTrade" && !inlineModal}
+                    selectHint={
+                      (!!inlineModal || !!counteringOffer) && !isOffered
+                    }
+                    draggable={
+                      phase !== "plantTrade" && !inlineModal && !counteringOffer
+                    }
                     onDragStart={(e) => handleCardDrag(e, card, "hand")}
                     onClick={(e: React.MouseEvent) => {
-                      if (inlineModal) {
+                      if (inlineModal || counteringOffer) {
                         setOfferedCards((prev) =>
                           isOffered
                             ? prev.filter((c) => c.cardId !== card.cardId)
@@ -1846,7 +1939,7 @@ export default function Board() {
                       handleCardClick(card, "hand", e.ctrlKey || e.metaKey);
                     }}
                     onContextMenu={
-                      !inlineModal
+                      !inlineModal && !counteringOffer
                         ? () => {
                             if (phase === "turnTrade")
                               openInlineModal({
@@ -1896,40 +1989,36 @@ export default function Board() {
       )}
 
       {counteringOffer && (
-        <div
-          className="fixed inset-0 z-9999flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.6)" }}
-        >
-          <div
-            className="relative rounded-2xl border border-white/20 
-						bg-[#1a120a]/95 backdrop-blur-sm shadow-2xl p-5"
-            style={{ width: 480, maxHeight: "80vh", overflowY: "auto" }}
-          >
-            <OfferWizard
-              mode="counter"
-              myHand={hand}
-              centerCards={centerCards}
-              players={players}
-              myPlayerId={myPlayerId}
-              isTurnPlayer={isTurnPlayer}
-              turnPlayerId={playerTurn}
-              parentOfferId={counteringOffer.id}
-              parentOfferCreatorId={counteringOffer.creator_id}
-              onSubmit={(
-                cardsOffered: OfferCard[],
-                cardsRequested: OfferCard[],
-              ) => {
-                onCounterOffer(
-                  counteringOffer.id,
-                  cardsOffered,
-                  cardsRequested,
-                );
-                setCounteringOffer(null);
-              }}
-              onCancel={() => setCounteringOffer(null)}
-            />
-          </div>
-        </div>
+        <InlineModal
+          key={counteringOffer.id}
+          isTurnPlayer={isTurnPlayer}
+          players={[]}
+          getAnchorRect={() =>
+            tagWrapperRefs.current.get("__draft__")?.getBoundingClientRect()
+          }
+          offeredCards={offeredCards}
+          requestedQty={reqQty}
+          selectedTargetId={reqTarget}
+          onTargetChange={setReqTarget}
+          showReqPicker={showReqPicker}
+          onToggleReqPicker={setShowReqPicker}
+          filteredCatalog={allCatalogCards}
+          onAddReqCard={addReqCard}
+          hideTargetPicker
+          onSubmit={(cardsOffered, reqCards) => {
+            onCounterOffer(
+              counteringOffer.id,
+              cardsOffered,
+              enrichWithCenterIds(
+                reqCards,
+                gameState.centerCards,
+                isTurnPlayer,
+              ),
+            );
+            setCounteringOffer(null);
+          }}
+          onClose={() => setCounteringOffer(null)}
+        />
       )}
     </div>
   );

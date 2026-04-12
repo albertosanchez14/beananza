@@ -11,16 +11,9 @@ const MAX_LAYERS = 6;
 type Props = {
   pickedCards: Array<CardType>;
   selection: CardType[];
-  onCardClick: (card: CardType, source?: "hand" | "picked" | "center") => void;
-  phase?: string;
 };
 
-export default function TradedCards({
-  pickedCards,
-  selection,
-  onCardClick,
-  phase,
-}: Props) {
+export default function TradedCards({ pickedCards, selection }: Props) {
   const pickedGroups: { cardName: string; cards: CardType[] }[] = [];
   const groupIndex = new Map<string, number>();
   for (const card of pickedCards) {
@@ -63,11 +56,17 @@ export default function TradedCards({
               <Card
                 card={topCard}
                 flipped={false}
-                draggable={phase === "plantTrade"}
+                draggable
                 isSelected={cards.some((c) =>
                   selection.some((s) => s.cardId === c.cardId),
                 )}
-                onClick={phase === "plantTrade" ? () => onCardClick(topCard, "picked") : undefined}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(
+                    "application/card",
+                    JSON.stringify(topCard),
+                  );
+                  e.dataTransfer.effectAllowed = "move";
+                }}
               />
             </div>
 

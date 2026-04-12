@@ -9,12 +9,10 @@ import { getOfferSubtree } from "@/utils/offer-tree";
 
 const CARD_H = 144;
 const CARD_W = 96;
-const LAYER_H = 4;
 
 type Props = {
   phase: string;
   pickedCards: CardType[];
-  onCardClick: (card: CardType) => void;
   incomingOffers: Offer[];
   outgoingOffers: Offer[];
   onOfferHover: (id: string | null) => void;
@@ -45,17 +43,16 @@ type Props = {
   onRemoveReq?: (cardName: string) => void;
   showReqPicker?: boolean;
   onToggleReqPicker?: (open: boolean) => void;
-  filteredCatalog?: CardType[];
-  reqSearch?: string;
-  onReqSearchChange?: (q: string) => void;
-  onAddReqCard?: (cardName: string) => void;
   onCancelDraft?: () => void;
+  onToggleDraftPicker?: () => void;
+  onDraftAdjustReq?: (cardName: string, delta: number) => void;
+  onDraftRemoveReq?: (cardName: string) => void;
+  onDraftCancel?: () => void;
 };
 
 export default function TradedCardsArea({
   phase,
   pickedCards,
-  onCardClick,
   incomingOffers,
   outgoingOffers,
   onOfferHover,
@@ -82,11 +79,11 @@ export default function TradedCardsArea({
   onRemoveReq,
   showReqPicker,
   onToggleReqPicker,
-  filteredCatalog,
-  reqSearch,
-  onReqSearchChange,
-  onAddReqCard,
   onCancelDraft,
+  onToggleDraftPicker,
+  onDraftAdjustReq,
+  onDraftRemoveReq,
+  onDraftCancel,
 }: Props) {
   // Group draft cards by cardName for stacked rendering.
   const draftGroups: { cardName: string; cards: CardType[] }[] = [];
@@ -153,19 +150,13 @@ export default function TradedCardsArea({
       ].join(" ")}
       style={isEditingDraft ? { minHeight: 160 } : { height: 160 }}
     >
-      <TradedCards
-        pickedCards={pickedCards}
-        selection={selection}
-        onCardClick={onCardClick}
-        phase={phase}
-      />
+      <TradedCards pickedCards={pickedCards} selection={selection} />
 
       {draftGroups.length > 0 && (
         <div ref={draftCardsGroupRef} className="flex items-center gap-3">
           {draftGroups.map(({ cardName, cards }) => {
             const count = cards.length;
             const topCard = cards[0];
-            const layers = Math.min(count - 1, 6);
             return (
               <div
                 key={cardName}
@@ -178,7 +169,7 @@ export default function TradedCardsArea({
                       position: "absolute",
                       top: 0,
                       width: CARD_W,
-                      zIndex: layers + 1,
+                      zIndex: 1,
                     }}
                   >
                     <Card
@@ -189,28 +180,13 @@ export default function TradedCardsArea({
                     />
                   </div>
 
-                  {Array.from({ length: layers }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="absolute rounded-xl"
-                      style={{
-                        width: CARD_W,
-                        height: CARD_H,
-                        top: -(i + 1) * LAYER_H,
-                        left: 0,
-                        zIndex: layers - i,
-                        border: `2px dashed ${draftColor ?? "#38bdf8"}`,
-                      }}
-                    />
-                  ))}
-
                   {/* Count badge when not editing */}
                   {!isEditingDraft && count > 1 && (
                     <div
                       className="absolute flex items-center justify-center w-6 h-6
                                  bg-amber-600 text-white text-xs font-bold rounded-full
                                  border-2 border-white shadow-md pointer-events-none"
-                      style={{ top: 4, right: 4, zIndex: layers + 2 }}
+                      style={{ top: 4, right: 4, zIndex: 2 }}
                     >
                       {count}
                     </div>
@@ -229,14 +205,14 @@ export default function TradedCardsArea({
                       className="absolute w-5 h-5 rounded-full bg-black/70 text-white
                         text-[10px] leading-none flex items-center justify-center
                         hover:bg-red-600 transition-colors"
-                      style={{ top: -6, right: -6, zIndex: layers + 10 }}
+                      style={{ top: -6, right: -6, zIndex: 10 }}
                     >
                       ×
                     </button>
                     <div
                       className="absolute bottom-0 left-0 right-0 flex items-center
                         justify-center gap-0.5 bg-black/70 rounded-b-xl py-1"
-                      style={{ zIndex: layers + 10 }}
+                      style={{ zIndex: 10 }}
                     >
                       <button
                         onClick={() => onAdjustReq?.(cardName, -1)}
@@ -318,6 +294,10 @@ export default function TradedCardsArea({
                   onRespond={onRespondOffer}
                   onAccept={onAcceptOffer}
                   onCounter={onCounterOffer}
+                  onToggleDraftPicker={onToggleDraftPicker}
+                  onDraftAdjustReq={onDraftAdjustReq}
+                  onDraftRemoveReq={onDraftRemoveReq}
+                  onDraftCancel={onDraftCancel}
                   onHover={onOfferHover}
                 />
               </div>
