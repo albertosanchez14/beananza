@@ -44,7 +44,6 @@ function WaitingPlayer({
   playerAvatar,
   playerReady = false,
   isMe = false,
-  field,
 }: WaitingPlayerProps) {
   // "Me" player: normal vertical layout
   return (

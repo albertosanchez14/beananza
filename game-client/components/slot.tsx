@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { m, AnimatePresence } from "motion/react";
-import { CardType, SlotType } from "@/schemas/types";
+import { SlotType } from "@/schemas/types";
 
 type SlotProp = {
   slot?: SlotType | null;
@@ -11,57 +11,39 @@ type SlotProp = {
   highlightEmpty?: boolean;
   handleDragOver?: (e: React.DragEvent, slotId: string) => void;
   handleDragLeave?: (e: React.DragEvent) => void;
-  handleFieldDrop?: (slotId: string, slotIndex: number, card: CardType) => void;
-  handleSlotClick?: (slotId: string, slotIndex: number) => void;
+  handleSlotDrop?: (e: React.DragEvent, slotId: string) => void;
+  handleSlotClick?: (slotId: string) => void;
   suppressAnimation?: boolean;
 };
 
 export default function Slot({
   slot,
-  index,
   children,
   interactive = true,
   dragOverSlot = null,
   highlightEmpty = false,
   handleDragOver,
   handleDragLeave,
-  handleFieldDrop,
+  handleSlotDrop,
   handleSlotClick,
   suppressAnimation = false,
 }: SlotProp) {
   const isInteractive = interactive;
-
   const cardQuantity = slot?.cardIds.length ?? 0;
-
   const filled = !!(slot?.cardName && cardQuantity > 0);
   const isDragOver = dragOverSlot === slot?.slotId;
-
-  const onDrop = (e: React.DragEvent) => {
-    if (!isInteractive || !slot) return;
-    e.preventDefault();
-    const raw = e.dataTransfer.getData("application/card");
-    if (!raw) return;
-    try {
-      const card = JSON.parse(raw);
-      handleFieldDrop?.(slot.slotId, index, card);
-    } catch {
-      // ignore malformed payload
-    }
-  };
 
   const sharedDragProps =
     isInteractive && slot
       ? {
           onDragOver: (e: React.DragEvent) => handleDragOver?.(e, slot.slotId),
           onDragLeave: handleDragLeave,
-          onDrop,
+          onDrop: (e: React.DragEvent) => handleSlotDrop?.(e, slot.slotId),
         }
       : {};
 
   const handleClick =
-    isInteractive && slot
-      ? () => handleSlotClick?.(slot.slotId, index)
-      : undefined;
+    isInteractive && slot ? () => handleSlotClick?.(slot.slotId) : undefined;
 
   if (filled && children) {
     return (
@@ -80,7 +62,13 @@ export default function Slot({
           onClick={handleClick}
           role={isInteractive ? "button" : undefined}
           tabIndex={isInteractive ? 0 : undefined}
-          onKeyDown={handleClick ? (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") handleClick(); } : undefined}
+          onKeyDown={
+            handleClick
+              ? (e: React.KeyboardEvent) => {
+                  if (e.key === "Enter" || e.key === " ") handleClick();
+                }
+              : undefined
+          }
           {...sharedDragProps}
         >
           <AnimatePresence>
@@ -130,7 +118,13 @@ export default function Slot({
         onClick={handleClick}
         role={isInteractive ? "button" : undefined}
         tabIndex={isInteractive ? 0 : undefined}
-        onKeyDown={handleClick ? (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") handleClick(); } : undefined}
+        onKeyDown={
+          handleClick
+            ? (e: React.KeyboardEvent) => {
+                if (e.key === "Enter" || e.key === " ") handleClick();
+              }
+            : undefined
+        }
         {...sharedDragProps}
       >
         {isInteractive && (

@@ -122,7 +122,7 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 		"turn_order":   s.gameState.TurnOrder,
 		"current_turn": s.gameState.CurrentTurn,
 		"center_cards": s.gameState.CenterCards,
-		"offers":       s.gameState.Offers,
+		"offers":       s.gameState.GetOffersForPlayer(playerId),
 		"started_at":   s.gameState.StartedAt,
 		"ended_at":     s.gameState.EndedAt,
 		"updated_at":   s.gameState.UpdatedAt,

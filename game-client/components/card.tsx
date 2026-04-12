@@ -1,4 +1,4 @@
-import { forwardRef, useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { m } from "motion/react";
 import Image from "next/image";
 import { BaseCard, CardType } from "@/schemas/types";
@@ -6,47 +6,52 @@ import { CardFrontFace } from "@/components/card-front-face";
 
 type CardProp = {
   card: BaseCard | CardType;
+  ref?: React.Ref<HTMLDivElement>;
   isSelected?: boolean;
   draggable?: boolean;
   flipped?: boolean;
   onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onContextMenu?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
   style?: React.CSSProperties;
   className?: string;
   noTransition?: boolean;
   hidden?: boolean;
   highlightColor?: string;
+  secondaryHighlightColor?: string;
   noRaise?: boolean;
+  selectHint?: boolean;
+  scale?: number;
 };
 
-const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
-  {
-    card,
-    isSelected = false,
-    draggable = false,
-    flipped = false,
-    onClick,
-    onContextMenu,
-    style,
-    className,
-    noTransition = false,
-    hidden = false,
-    highlightColor,
-    noRaise = false,
-  },
+export default function Card({
+  card,
   ref,
-) {
+  isSelected = false,
+  draggable = false,
+  flipped = false,
+  style,
+  className,
+  noTransition = false,
+  hidden = false,
+  highlightColor,
+  secondaryHighlightColor,
+  noRaise = false,
+  onClick,
+  onContextMenu,
+  onDragStart,
+  selectHint = false,
+  scale,
+}: CardProp) {
   const isHighlighted = !!highlightColor;
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
-  useEffect(() => {
-    if (isSelected || isHighlighted) setIsHovered(false);
-  }, [isSelected, isHighlighted]);
+  const effectiveHover = isHovered && !isSelected && !isHighlighted;
+  const showSelectHint = selectHint && !isSelected && !isHighlighted;
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
-    e.dataTransfer.setData("application/card", JSON.stringify(card));
-    e.dataTransfer.effectAllowed = "move";
+    onDragStart?.(e);
     setIsDragging(true);
   };
 
@@ -61,7 +66,7 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
       onContextMenu={onContextMenu}
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
-      onDragEnd={draggable ? handleDragEnd : undefined}
+      onDragEnd={handleDragEnd}
       role={onClick || onContextMenu ? "button" : undefined}
       tabIndex={onClick || onContextMenu ? 0 : undefined}
       onKeyDown={
@@ -72,7 +77,15 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
             }
           : undefined
       }
-      style={{ opacity: hidden ? 0 : undefined, ...style }}
+      style={{
+        opacity: hidden ? 0 : undefined,
+        ...(scale !== undefined && {
+          width: scale * 96,
+          height: scale * 144,
+          fontSize: `${scale * 16}px`,
+        }),
+        ...style,
+      }}
       className={`relative w-24 h-36
         ${draggable ? "cursor-grab active:cursor-grabbing" : ""}
         ${onClick && !draggable ? "cursor-pointer" : ""}
@@ -80,7 +93,11 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
       `}
     >
       <m.div
-        style={{ perspective: "600px", width: "100%", height: "100%" }}
+        style={{
+          perspective: "600px",
+          width: "100%",
+          height: "100%",
+        }}
         initial={false}
         animate={{ opacity: isDragging ? 0.4 : 1 }}
         transition={
@@ -104,16 +121,18 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
             y:
               isSelected || (isHighlighted && !noRaise)
                 ? -16
-                : isHovered && onClick && !isDragging
+                : effectiveHover && onClick && !isDragging
                   ? -12
                   : 0,
             scale: isDragging ? 1.05 : 1,
             boxShadow:
               isSelected || (isHighlighted && !noRaise)
                 ? "0 20px 25px rgba(0,0,0,0.4)"
-                : isHovered && onClick && !isDragging
-                  ? "0 10px 20px rgba(0,0,0,0.3)"
-                  : "none",
+                : showSelectHint && !isDragging
+                  ? "none"
+                  : effectiveHover && onClick && !isDragging
+                    ? "0 10px 20px rgba(0,0,0,0.3)"
+                    : "none",
           }}
           transition={
             noTransition
@@ -155,10 +174,29 @@ const Card = forwardRef<HTMLDivElement, CardProp>(function Card(
               style={{ border: `3px solid ${highlightColor}`, zIndex: 10 }}
             />
           )}
+          {secondaryHighlightColor && (
+            <div
+              className="absolute rounded-[9px] pointer-events-none"
+              style={{
+                inset: 4,
+                border: `2px solid ${secondaryHighlightColor}`,
+                zIndex: 11,
+              }}
+            />
+          )}
+          {showSelectHint && (
+            <div
+              className="absolute inset-0 rounded-xl pointer-events-none"
+              style={{
+                border: "1px solid rgba(251,191,36,0.95)",
+                boxShadow:
+                  "0 0 12px rgba(251,191,36,0.65), 0 0 22px rgba(251,191,36,0.35)",
+                zIndex: 12,
+              }}
+            />
+          )}
         </m.div>
       </m.div>
     </div>
   );
-});
-
-export default Card;
+}

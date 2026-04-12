@@ -7,8 +7,10 @@ import { CardType, OfferCard } from "@/schemas/types";
 
 export type GameRoomContext = {
   gameState: GameState;
+  maxPlayers: number;
+  minPlayers: number;
+  cardsPerTurn: number;
   cardLookup: Map<string, CardType>;
-  cardsPerTurn?: number;
   plantBean: (cardId: string, slotId: string) => boolean;
   harvestField: (slotId: string) => boolean;
   turnOverBean: () => boolean;
@@ -41,7 +43,7 @@ export function useGameRoom(
   playerId: string,
 ): UseGameRoomResult {
   const gameState = useGameState(lastMessage);
-  const { config, cardLookup } = useGameConfig();
+  const { maxPlayers, minPlayers, cardsPerTurn, cardLookup } = useGameConfig();
 
   const requestState = useCallback(
     () => send("myState", roomId, { type: "myState" }),
@@ -93,20 +95,28 @@ export function useGameRoom(
   );
 
   const respondOffer = useCallback(
-    (offerId: string, action: "accept" | "reject" | "cancel", cardsToGive?: OfferCard[]) =>
+    (
+      offerId: string,
+      action: "accept" | "reject" | "cancel",
+      cardsToGive?: OfferCard[],
+    ) =>
       send("action", roomId, {
         type: "respondOffer",
         offer_id: offerId,
         action,
-        ...(cardsToGive && cardsToGive.length > 0 ? { cards_to_give: cardsToGive } : {}),
+        ...(cardsToGive && cardsToGive.length > 0
+          ? { cards_to_give: cardsToGive }
+          : {}),
       }),
     [send, roomId],
   );
 
   return {
     gameState,
+    maxPlayers,
+    minPlayers,
+    cardsPerTurn,
     cardLookup,
-    cardsPerTurn: config?.cards_per_turn,
     requestState,
     plantBean,
     harvestField,

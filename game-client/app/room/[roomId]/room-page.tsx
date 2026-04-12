@@ -2,6 +2,7 @@
 import { useParams } from "next/navigation";
 import { usePlayerProfile } from "@/hooks/usePlayerProfile";
 import { useRoomConnection } from "@/hooks/useRoomConnection";
+
 import WaitingRoom from "./waiting-room";
 import GameRoom from "./game-room";
 import RunningRoom from "./running-room";
@@ -19,18 +20,19 @@ export default function RoomPage() {
     redirectToIdentify,
   );
 
-  if (!profile) return (
-    <div
-      className="relative min-h-screen overflow-hidden"
-      style={{
-        backgroundImage: "url('/fields/field6.jpeg')",
-        backgroundSize: "cover",
-        backgroundPosition: "bottom",
-      }}
-    >
-      <div className="absolute inset-0 bg-black/50" />
-    </div>
-  );
+  if (!profile)
+    return (
+      <div
+        className="relative min-h-screen overflow-hidden"
+        style={{
+          backgroundImage: "url('/fields/field6.jpeg')",
+          backgroundSize: "cover",
+          backgroundPosition: "bottom",
+        }}
+      >
+        <div className="absolute inset-0 bg-black/50" />
+      </div>
+    );
 
   const showGame =
     viewState === "playing" || viewState === "pause" || viewState === "dealing";
@@ -49,7 +51,12 @@ export default function RoomPage() {
         {viewState === "gameAlreadyStarted" && <RunningRoom roomId={roomId} />}
 
         {viewState === "waiting" && (
-          <WaitingRoom roomId={roomId} playerId={profile.id} myAvatar={profile.avatar} {...waiting} />
+          <WaitingRoom
+            roomId={roomId}
+            playerId={profile.id}
+            myAvatar={profile.avatar}
+            {...waiting}
+          />
         )}
 
         {showGame && (
