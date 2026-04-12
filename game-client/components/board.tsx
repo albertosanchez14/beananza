@@ -315,6 +315,8 @@ export default function Board() {
   // Initialize state when a counter offer is triggered.
   useEffect(() => {
     if (!counteringOffer) {
+      // Skip cleanup if we're transitioning to an inline modal in the same batch.
+      if (inlineModal) return;
       setReqQty({});
       setReqTarget(undefined);
       setShowReqPicker(false);
@@ -1027,6 +1029,7 @@ export default function Board() {
   );
 
   const handleOpenModal = useCallback(() => {
+    setCounteringOffer(null);
     openInlineModal({ cardsRequested: [] });
     setDraftState({ requested: [], offered: [], targetId: undefined });
     setShowReqPicker(true);
@@ -1857,6 +1860,8 @@ export default function Board() {
               onRespondOffer={onRespondOffer}
               onAcceptOffer={handleAcceptOffer}
               onCounterOffer={(offer) => {
+                setInlineModal(null);
+                setDraftState(null);
                 setCounteringOffer(offer);
               }}
               selection={selection}
