@@ -1,9 +1,8 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 
 import { GameRoomContext } from "@/hooks/useGameRoom";
 import { GameProvider } from "@/components/game-context";
 import Board from "@/components/board";
-import OfferPanel from "@/components/offer-panel";
 
 type GameRoomProps = { roomId: string; playerId: string } & GameRoomContext;
 
@@ -20,8 +19,6 @@ export default function GameRoom({
   counterOffer,
   respondOffer,
 }: GameRoomProps) {
-  const [offerPanelOpen, setOfferPanelOpen] = useState(false);
-
   // Suppress the browser context menu during trade so right-click opens our modal.
   useEffect(() => {
     if (gameState.phase !== "turnTrade") return;
@@ -29,13 +26,6 @@ export default function GameRoom({
     document.addEventListener("contextmenu", handler);
     return () => document.removeEventListener("contextmenu", handler);
   }, [gameState.phase]);
-
-  const pendingIncomingCount = gameState.offers.filter(
-    (o) =>
-      o.status === "pending" &&
-      o.creator_id !== playerId &&
-      (o.target_id === "" || o.target_id === playerId),
-  ).length;
 
   return (
     <GameProvider
@@ -52,44 +42,9 @@ export default function GameRoom({
       onCounterOffer={counterOffer}
     >
       <div className="flex flex-col h-full w-full overflow-hidden">
-        <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-30">
-          {gameState.phase === "turnTrade" && (
-            <button
-              onClick={() => setOfferPanelOpen(true)}
-              className={`relative flex items-center justify-between gap-2 px-3
-						py-2 bg-amber-700 hover:bg-amber-600 text-white text-xs font-semibold
-						rounded-xl border border-amber-800 shadow transition-colors
-						${pendingIncomingCount > 0 ? "animate-pulse [box-shadow:0_0_12px_3px_rgba(234,179,8,0.30)]" : ""}`}
-            >
-              <span>Trade Offers</span>
-              {pendingIncomingCount > 0 && (
-                <span className="px-1.5 py-0.5 bg-orange-600 text-white text-xs rounded-full leading-none">
-                  {pendingIncomingCount}
-                </span>
-              )}
-            </button>
-          )}
-        </div>
-
         <div className="flex-1 min-h-0">
           <Board />
         </div>
-
-        <OfferPanel
-          isOpen={offerPanelOpen}
-          onClose={() => setOfferPanelOpen(false)}
-          offers={gameState.offers}
-          myHand={gameState.hand}
-          centerCards={gameState.centerCards}
-          myPlayerId={playerId}
-          players={gameState.players}
-          gamePhase={gameState.phase}
-          playerTurn={gameState.playerTurn}
-          onCreateOffer={createOffer}
-          onCounterOffer={counterOffer}
-          onRespondOffer={respondOffer}
-        />
-
       </div>
     </GameProvider>
   );

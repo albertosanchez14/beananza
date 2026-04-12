@@ -74,13 +74,6 @@ export type OfferCard = {
   card_id: string;
 };
 
-export type OfferStatus =
-  | "pending"
-  | "accepted"
-  | "rejected"
-  | "cancelled"
-  | "expired";
-
 export type Offer = {
   id: string;
   creator_id: string;
@@ -88,7 +81,7 @@ export type Offer = {
   parent_offer_id: string;
   cards_offered: OfferCard[];
   cards_requested: OfferCard[];
-  status: OfferStatus;
+  status: "pending" | "accepted" | "rejected" | "cancelled" | "expired";
   rejected_by: string[];
   created_at: string;
 };

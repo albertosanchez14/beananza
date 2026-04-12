@@ -3,7 +3,7 @@
 import { CSSProperties, forwardRef } from "react";
 import { CardType, Offer } from "@/schemas/types";
 import { CardFrontFace } from "@/components/card-front-face";
-import { canAcceptOffer } from "@/components/offer-card";
+import { canAcceptOffer } from "@/utils/offer-utils";
 
 type OfferNodeProps = {
   offer: Offer;

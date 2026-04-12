@@ -27,7 +27,7 @@ import { PlantFlyingCard } from "@/components/plant-flying-card";
 import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
 import AcceptCardPicker from "@/components/accept-card-picker";
 import Arrow from "@/components/arrow";
-import { canAcceptOffer } from "@/components/offer-card";
+import { canAcceptOffer } from "@/utils/offer-utils";
 
 import {
   addPath,
@@ -183,7 +183,7 @@ export default function Board() {
     defaultOfferedCards?: CardType[];
     defaultTargetId?: string;
   } | null>(null);
-  let inlineModalKeyRef = useRef(0);
+  const inlineModalKeyRef = useRef(0);
   const openInlineModal = (state: {
     cardsRequested: CardType[];
     defaultOfferedCards?: CardType[];
