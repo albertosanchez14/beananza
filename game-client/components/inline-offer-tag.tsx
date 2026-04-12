@@ -3,7 +3,9 @@
 import React, { useState } from "react";
 import { Offer, CardType } from "@/schemas/types";
 import { getLeaves } from "@/utils/offer-tree";
-import OfferTreeOverlay from "@/components/offer-tree-overlay";
+import OfferTreeOverlay, {
+  computeTotalWidth,
+} from "@/components/offer-tree-overlay";
 import { OfferNode } from "@/components/offer-node";
 
 type Props = {
@@ -50,6 +52,10 @@ export default function InlineOfferTag({
   const hasDraft = subtree.some((o) => o.id === "__draft__");
   const showOverlay = treeOpen || hasDraft;
 
+  const treeWidth = showOverlay
+    ? computeTotalWidth(subtree, rootOffer.id, myPlayerId, cardLookup)
+    : undefined;
+
   if (leaves.length === 0) return null;
 
   const offerAccent = (offer: Offer) => {
@@ -60,12 +66,14 @@ export default function InlineOfferTag({
     return { border: "border-blue-500/80", bg: "bg-blue-900/40" };
   };
 
-  const hasMultipleNodes = subtree.filter((o) => o.id !== "__draft__").length > 1;
+  const hasMultipleNodes =
+    subtree.filter((o) => o.id !== "__draft__").length > 1;
 
   return (
     <div
       ref={setContainerEl}
       className="relative shrink-0"
+      style={treeWidth !== undefined ? { minWidth: treeWidth } : undefined}
       onMouseLeave={() => !showOverlay && onHover?.(null)}
     >
       {/* Flat leaf row — hidden when overlay is showing, but kept for layout */}
@@ -86,7 +94,9 @@ export default function InlineOfferTag({
             onAccept={onAccept}
             onCounter={onCounter}
             isDraft={leaf.id === "__draft__"}
-            onToggleDraftPicker={leaf.id === "__draft__" ? onToggleDraftPicker : undefined}
+            onToggleDraftPicker={
+              leaf.id === "__draft__" ? onToggleDraftPicker : undefined
+            }
             ref={(el) => {
               if (el) tagWrapperRefs.current.set(leaf.id, el);
               else tagWrapperRefs.current.delete(leaf.id);

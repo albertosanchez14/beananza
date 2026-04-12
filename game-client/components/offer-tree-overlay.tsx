@@ -24,10 +24,12 @@ function resolvedNodeWidth(
   const isRoot = offer.id === rootOfferId;
   const baseW = isRoot ? ROOT_W : NODE_W;
   const isIncoming = offer.creator_id !== myPlayerId;
-  const relevantCards = isIncoming ? offer.cards_offered : offer.cards_requested;
-  const uniqueTypes = Array.from(new Set(relevantCards.map((c) => c.card_type))).filter(
-    (t) => cardLookup.has(t),
-  );
+  const relevantCards = isIncoming
+    ? offer.cards_offered
+    : offer.cards_requested;
+  const uniqueTypes = Array.from(
+    new Set(relevantCards.map((c) => c.card_type)),
+  ).filter((t) => cardLookup.has(t));
   const count = Math.max(uniqueTypes.length, 1);
   return count > 1 ? baseW * count : baseW;
 }
@@ -43,7 +45,10 @@ function subtreeWidth(
   const myW = widths.get(id) ?? NODE_W;
   if (children.length === 0) return myW;
   const childrenSpan =
-    children.reduce((sum, c) => sum + subtreeWidth(c.id, childrenOf, widths), 0) +
+    children.reduce(
+      (sum, c) => sum + subtreeWidth(c.id, childrenOf, widths),
+      0,
+    ) +
     (children.length - 1) * GAP_X;
   return Math.max(myW, childrenSpan);
 }
@@ -61,12 +66,11 @@ function assignPositions(
   const children = childrenOf.get(id) ?? [];
   if (children.length === 0) return;
 
-  const totalW =
-    children.reduce(
-      (sum, c, i) =>
-        sum + subtreeWidth(c.id, childrenOf, widths) + (i > 0 ? GAP_X : 0),
-      0,
-    );
+  const totalW = children.reduce(
+    (sum, c, i) =>
+      sum + subtreeWidth(c.id, childrenOf, widths) + (i > 0 ? GAP_X : 0),
+    0,
+  );
   let curX = centerX - totalW / 2;
   for (const child of children) {
     const w = subtreeWidth(child.id, childrenOf, widths);
@@ -84,7 +88,10 @@ function computeLayout(
   const childrenOf = buildChildrenMap(subtree);
   const widths = new Map<string, number>();
   for (const offer of subtree) {
-    widths.set(offer.id, resolvedNodeWidth(offer, rootId, myPlayerId, cardLookup));
+    widths.set(
+      offer.id,
+      resolvedNodeWidth(offer, rootId, myPlayerId, cardLookup),
+    );
   }
   const totalW = subtreeWidth(rootId, childrenOf, widths);
   const positions = new Map<string, { x: number; depth: number }>();
@@ -94,6 +101,24 @@ function computeLayout(
     if (depth > maxDepth) maxDepth = depth;
   }
   return { positions, totalW, maxDepth, widths };
+}
+
+/** Returns the total pixel width the overlay will occupy for a given subtree. */
+export function computeTotalWidth(
+  subtree: Offer[],
+  rootId: string,
+  myPlayerId: string,
+  cardLookup: Map<string, CardType>,
+): number {
+  const childrenOf = buildChildrenMap(subtree);
+  const widths = new Map<string, number>();
+  for (const offer of subtree) {
+    widths.set(
+      offer.id,
+      resolvedNodeWidth(offer, rootId, myPlayerId, cardLookup),
+    );
+  }
+  return subtreeWidth(rootId, childrenOf, widths);
 }
 
 // ── Main overlay component ────────────────────────────────────────────────────
@@ -225,9 +250,15 @@ export default function OfferTreeOverlay({
             onAccept={onAccept}
             onCounter={onCounter}
             isDraft={offer.id === "__draft__"}
-            onToggleDraftPicker={offer.id === "__draft__" ? onToggleDraftPicker : undefined}
-            onDraftAdjustReq={offer.id === "__draft__" ? onDraftAdjustReq : undefined}
-            onDraftRemoveReq={offer.id === "__draft__" ? onDraftRemoveReq : undefined}
+            onToggleDraftPicker={
+              offer.id === "__draft__" ? onToggleDraftPicker : undefined
+            }
+            onDraftAdjustReq={
+              offer.id === "__draft__" ? onDraftAdjustReq : undefined
+            }
+            onDraftRemoveReq={
+              offer.id === "__draft__" ? onDraftRemoveReq : undefined
+            }
             onDraftCancel={offer.id === "__draft__" ? onDraftCancel : undefined}
             ref={(el) => {
               if (el) tagWrapperRefs.current.set(offer.id, el);
