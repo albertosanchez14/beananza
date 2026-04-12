@@ -661,6 +661,7 @@ export default function Board() {
   const [animatingOpponentSlotIds, setAnimatingOpponentSlotIds] = useState<
     Set<string>
   >(new Set());
+  const [popSlotIds, setPopSlotIds] = useState<Set<string>>(new Set());
   const [offerPaths, setOfferPaths] = useState<Map<string, OfferPathEntry>>(
     new Map(),
   );
@@ -930,6 +931,7 @@ export default function Board() {
       const newCardId = slot.cardIds.at(-1);
       if (newCardId && dragPlantedCardIds.current.has(newCardId)) {
         dragPlantedCardIds.current.delete(newCardId);
+        setPopSlotIds((prev) => new Set([...prev, slot.slotId]));
         return;
       }
 
@@ -1016,6 +1018,22 @@ export default function Board() {
       }
     },
     [],
+  );
+
+  const handleMySlotDrop = useCallback(
+    (e: React.DragEvent, slotId: string) => {
+      try {
+        const raw = e.dataTransfer.getData("application/card");
+        if (raw) {
+          const card = JSON.parse(raw);
+          if (card?.cardId) dragPlantedCardIds.current.add(card.cardId);
+        }
+      } catch {
+        // ignore malformed payload
+      }
+      handleSlotDrop(e, slotId);
+    },
+    [handleSlotDrop],
   );
 
   // ── Inline modal (drag-to-request) ───────────────────────────────────────────
@@ -1809,8 +1827,16 @@ export default function Board() {
                     highlightEmpty={highlightEmpty}
                     handleDragOver={handleSlotDragOver}
                     handleDragLeave={handleSlotDragLeave}
-                    handleSlotDrop={handleSlotDrop}
+                    handleSlotDrop={handleMySlotDrop}
                     handleSlotClick={handleSlotClick}
+                    popAnimation={popSlotIds.has(s.slotId)}
+                    onPopComplete={() =>
+                      setPopSlotIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(s.slotId);
+                        return next;
+                      })
+                    }
                   >
                     {cardForSlot && (
                       <Card

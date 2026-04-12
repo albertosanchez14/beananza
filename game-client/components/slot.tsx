@@ -14,6 +14,8 @@ type SlotProp = {
   handleSlotDrop?: (e: React.DragEvent, slotId: string) => void;
   handleSlotClick?: (slotId: string) => void;
   suppressAnimation?: boolean;
+  popAnimation?: boolean;
+  onPopComplete?: () => void;
 };
 
 export default function Slot({
@@ -27,6 +29,8 @@ export default function Slot({
   handleSlotDrop,
   handleSlotClick,
   suppressAnimation = false,
+  popAnimation = false,
+  onPopComplete,
 }: SlotProp) {
   const isInteractive = interactive;
   const cardQuantity = slot?.cardIds.length ?? 0;
@@ -75,10 +79,19 @@ export default function Slot({
             <m.div
               key={`${slot?.slotId}-${slot?.cardName}`}
               initial={
-                suppressAnimation ? false : { scale: 1.25, y: -16, rotate: -2 }
+                popAnimation
+                  ? { scale: 1.12 }
+                  : suppressAnimation
+                    ? false
+                    : { scale: 1.25, y: -16, rotate: -2 }
               }
               animate={{ scale: 1, y: 0, rotate: 0 }}
-              transition={{ type: "spring", stiffness: 480, damping: 24 }}
+              transition={
+                popAnimation
+                  ? { duration: 0.2, ease: "easeOut" }
+                  : { type: "spring", stiffness: 480, damping: 24 }
+              }
+              onAnimationComplete={popAnimation ? onPopComplete : undefined}
             >
               {children}
             </m.div>
