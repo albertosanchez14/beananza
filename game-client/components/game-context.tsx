@@ -29,7 +29,9 @@ type GameContextValue = {
   // Slot state and handlers
   dragOverSlot: string | null;
   dragSourceIsHand: boolean;
+  dragSourceIsCenter: boolean;
   canPlantFromHand: boolean;
+  canPlantCenterCard: boolean;
   handleSlotClick: (slotId: string) => void;
   handleSlotDrop: (e: React.DragEvent, slotId: string) => void;
   handleSlotDragOver: (e: React.DragEvent, slotId: string) => void;
@@ -114,9 +116,11 @@ export function GameProvider({
 }: GameProviderProps) {
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   const [dragSourceIsHand, setDragSourceIsHand] = useState(false);
+  const [dragSourceIsCenter, setDragSourceIsCenter] = useState(false);
   const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
   const canPlantFromHand =
     gameState.phase === "plantHand" && gameState.playerTurn === myPlayerId;
+  const canPlantCenterCard = gameState.playerTurn === myPlayerId;
   const [dragOverBlockReason, setDragOverBlockReason] = useState<string | null>(
     null,
   );
@@ -213,6 +217,10 @@ export function GameProvider({
     if (card) {
       const isHandCard = gameState.hand.some((c) => c.cardId === card.cardId);
       if (isHandCard && !canPlantFromHand) return;
+      const isCenterCard = gameState.centerCards.some(
+        (c) => c.cardId === card.cardId,
+      );
+      if (isCenterCard && !canPlantCenterCard) return;
       if (!slot || !slot.cardName || slot.cardName === card.cardName) {
         onPlantBean(card.cardId, slotId);
         setSelection([]);
@@ -232,8 +240,13 @@ export function GameProvider({
       const card = JSON.parse(raw);
       setDragOverSlot(null);
       setDragSourceIsHand(false);
+      setDragSourceIsCenter(false);
       const isHandCard = gameState.hand.some((c) => c.cardId === card.cardId);
       if (isHandCard && !canPlantFromHand) return;
+      const isCenterCard = gameState.centerCards.some(
+        (c) => c.cardId === card.cardId,
+      );
+      if (isCenterCard && !canPlantCenterCard) return;
       const slot = gameState.field.slots.find((slot) => slot.slotId == slotId);
       if (!slot || !slot.cardName || slot.cardName === card.cardName) {
         onPlantBean(card.cardId, slotId);
@@ -251,12 +264,16 @@ export function GameProvider({
     setDragSourceIsHand(
       e.dataTransfer.types.includes("application/drag-from-hand"),
     );
+    setDragSourceIsCenter(
+      e.dataTransfer.types.includes("application/drag-has-center"),
+    );
   };
 
   const handleSlotDragLeave = (e: React.DragEvent) => {
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setDragOverSlot(null);
     setDragSourceIsHand(false);
+    setDragSourceIsCenter(false);
   };
 
   const handlePlayerDragOver = (e: React.DragEvent, targetPlayerId: string) => {
@@ -340,7 +357,9 @@ export function GameProvider({
     handleCardDrag,
     dragOverSlot,
     dragSourceIsHand,
+    dragSourceIsCenter,
     canPlantFromHand,
+    canPlantCenterCard,
     handleSlotClick,
     handleSlotDrop,
     handleSlotDragOver,

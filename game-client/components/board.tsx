@@ -155,7 +155,9 @@ export default function Board() {
     handleCardDrag,
     dragOverSlot,
     dragSourceIsHand,
+    dragSourceIsCenter,
     canPlantFromHand,
+    canPlantCenterCard,
     handleSlotClick,
     handleSlotDrop,
     handleSlotDragOver,
@@ -1817,8 +1819,16 @@ export default function Board() {
               const isHandCardSelected =
                 selection.length === 1 &&
                 gameState.hand.some((c) => c.cardId === selection[0].cardId);
+              const isCenterCardSelected =
+                selection.length === 1 &&
+                gameState.centerCards.some(
+                  (c) => c.cardId === selection[0].cardId,
+                );
               const blocked =
-                !canPlantFromHand && (isHandCardSelected || dragSourceIsHand);
+                (!canPlantFromHand &&
+                  (isHandCardSelected || dragSourceIsHand)) ||
+                (!canPlantCenterCard &&
+                  (isCenterCardSelected || dragSourceIsCenter));
               return (
                 <div
                   key={s.slotId}
