@@ -257,10 +257,6 @@ function ActivePlayer({
               }}
             />
           )}
-          <span
-            className="absolute bottom-1 right-1 block w-3 h-3 rounded-full border-2 border-black"
-            style={{ background: playerConnected ? "#4ade80" : "#ef4444" }}
-          />
         </div>
 
         {dragBlockMessage && (

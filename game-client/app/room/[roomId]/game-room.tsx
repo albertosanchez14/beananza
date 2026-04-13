@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
 
 import { GameRoomContext } from "@/hooks/useGameRoom";
 import { GameError } from "@/hooks/useRoomConnection";
 import { GameProvider } from "@/components/game-context";
 import Board from "@/components/board";
 import ResultsScreen from "@/components/results-screen";
+import Toast from "@/components/toast";
+
+type ToastEntry = { id: string; message: string };
 
 type GameRoomProps = {
   roomId: string;
@@ -30,8 +34,17 @@ export default function GameRoom({
   clearGameError,
   isConnected,
 }: GameRoomProps) {
-  const [showReconnected, setShowReconnected] = useState(false);
+  const [transientToasts, setTransientToasts] = useState<ToastEntry[]>([]);
+  const toasts: ToastEntry[] = [
+    ...(!isConnected
+      ? [{ id: "connection-lost", message: "Connection lost. Reconnecting…" }]
+      : []),
+    ...transientToasts,
+  ];
+
   const prevConnectedRef = useRef(isConnected);
+  const handledErrorRef = useRef<GameError | null>(null);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (gameState.phase !== "turnTrade") return;
@@ -41,23 +54,52 @@ export default function GameRoom({
   }, [gameState.phase]);
 
   useEffect(() => {
-    if (!gameError) return;
-    const timer = setTimeout(clearGameError, 3000);
-    return () => clearTimeout(timer);
-  }, [gameError, clearGameError]);
-
-  useEffect(() => {
-    if (!prevConnectedRef.current && isConnected) {
+    if (isConnected && !prevConnectedRef.current) {
+      const reconnectedId = `reconnected-${Date.now()}`;
+      const showTimer = setTimeout(() => {
+        setTransientToasts((prev) => [
+          ...prev,
+          { id: reconnectedId, message: "Reconnected!" },
+        ]);
+      }, 0);
+      const hideTimer = setTimeout(() => {
+        setTransientToasts((prev) =>
+          prev[prev.length - 1]?.id === reconnectedId
+            ? []
+            : prev.filter((t) => t.id !== reconnectedId),
+        );
+      }, 2000);
       prevConnectedRef.current = true;
-      const showTimer = setTimeout(() => setShowReconnected(true), 0);
-      const hideTimer = setTimeout(() => setShowReconnected(false), 2000);
       return () => {
         clearTimeout(showTimer);
         clearTimeout(hideTimer);
       };
     }
     prevConnectedRef.current = isConnected;
-  }, [isConnected]);
+
+    if (gameError && gameError !== handledErrorRef.current) {
+      handledErrorRef.current = gameError;
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+      const errorId = `error-${Date.now()}`;
+      setTimeout(() => {
+        setTransientToasts((prev) => [
+          ...prev,
+          { id: errorId, message: gameError.message },
+        ]);
+      }, 0);
+      errorTimerRef.current = setTimeout(() => {
+        setTransientToasts((prev) =>
+          prev[prev.length - 1]?.id === errorId
+            ? []
+            : prev.filter((t) => t.id !== errorId),
+        );
+        clearGameError();
+        errorTimerRef.current = null;
+      }, 3000);
+    } else if (!gameError) {
+      handledErrorRef.current = null;
+    }
+  }, [isConnected, gameError, clearGameError]);
 
   return (
     <GameProvider
@@ -74,33 +116,20 @@ export default function GameRoom({
       onCounterOffer={counterOffer}
     >
       <div className="relative flex flex-col h-full w-full overflow-hidden">
-        {!isConnected && (
-          <div
-            className="absolute top-10 left-1/2 -translate-x-1/2 z-50 
-						rounded-md bg-red-600 px-4 py-2 
-						text-sm font-light text-white"
-          >
-            Connection lost. Reconnecting…
-          </div>
-        )}
-        {showReconnected && (
-          <div
-            className="absolute top-10 left-1/2 -translate-x-1/2 z-50 
-						rounded-md bg-green-600 px-4 py-2 
-						text-sm text-white"
-          >
-            Reconnected
-          </div>
-        )}
-        {gameError && (
-          <div
-            className="absolute top-10 left-1/2 -translate-x-1/2 z-50
-						rounded-md bg-red-600 px-4 py-2 
-						text-sm text-white"
-          >
-            {gameError.message}
-          </div>
-        )}
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-50 w-64 pointer-events-none"
+          style={{ top: -10, aspectRatio: "5 / 3" }}
+        >
+          <AnimatePresence>
+            {toasts.map((toast, i) => (
+              <Toast
+                key={toast.id}
+                message={toast.message}
+                depth={toasts.length - 1 - i}
+              />
+            ))}
+          </AnimatePresence>
+        </div>
         <div className="relative flex-1 min-h-0">
           {!isConnected && (
             <div className="absolute inset-0 z-40 pointer-events-auto" />
