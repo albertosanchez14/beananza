@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "motion/react";
 
+import { ToastEntry } from "@/schemas/types";
 import { GameRoomContext } from "@/hooks/useGameRoom";
 import { GameError } from "@/hooks/useRoomConnection";
+
 import { GameProvider } from "@/components/game-context";
 import Board from "@/components/board";
 import ResultsScreen from "@/components/results-screen";
 import Toast from "@/components/toast";
-
-type ToastEntry = { id: string; message: string };
 
 type GameRoomProps = {
   roomId: string;
@@ -37,7 +37,13 @@ export default function GameRoom({
   const [transientToasts, setTransientToasts] = useState<ToastEntry[]>([]);
   const toasts: ToastEntry[] = [
     ...(!isConnected
-      ? [{ id: "connection-lost", message: "Connection lost. Reconnecting…" }]
+      ? [
+          {
+            id: "connection-lost",
+            message: "Connection lost. Reconnecting…",
+            type: "error" as const,
+          },
+        ]
       : []),
     ...transientToasts,
   ];
@@ -59,7 +65,11 @@ export default function GameRoom({
       const showTimer = setTimeout(() => {
         setTransientToasts((prev) => [
           ...prev,
-          { id: reconnectedId, message: "Reconnected!" },
+          {
+            id: reconnectedId,
+            message: "Reconnected!",
+            type: "success" as const,
+          },
         ]);
       }, 0);
       const hideTimer = setTimeout(() => {
@@ -84,7 +94,7 @@ export default function GameRoom({
       setTimeout(() => {
         setTransientToasts((prev) => [
           ...prev,
-          { id: errorId, message: gameError.message },
+          { id: errorId, message: gameError.message, type: "error" as const },
         ]);
       }, 0);
       errorTimerRef.current = setTimeout(() => {
@@ -125,6 +135,7 @@ export default function GameRoom({
               <Toast
                 key={toast.id}
                 message={toast.message}
+                type={toast.type}
                 depth={toasts.length - 1 - i}
               />
             ))}

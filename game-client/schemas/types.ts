@@ -89,6 +89,12 @@ export type Offer = {
   created_at: string;
 };
 
+export type ToastEntry = {
+  id: string;
+  message: string;
+  type: "error" | "success";
+};
+
 // DEFAULT VALUES
 export const DEFAULT_GAME_CONFIG: GameConfig = {
   max_players: 5,

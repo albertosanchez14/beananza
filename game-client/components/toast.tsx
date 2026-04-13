@@ -5,9 +5,17 @@ import { m } from "motion/react";
 type ToastProps = {
   message: string;
   depth: number;
+  type: "error" | "success";
 };
 
-export default function Toast({ message, depth }: ToastProps) {
+const typeStyles = {
+  error: { color: "#7a2020" },
+  success: { color: "#1e5c2a" },
+};
+
+export default function Toast({ message, depth, type }: ToastProps) {
+  const { color } = typeStyles[type];
+
   return (
     <m.div
       initial={{ y: -160, opacity: 0 }}
@@ -34,10 +42,13 @@ export default function Toast({ message, depth }: ToastProps) {
         className="absolute inset-0 w-full h-full object-fill select-none pointer-events-none"
       />
       <div
-        className="absolute flex items-center justify-center"
+        className="absolute flex items-center justify-center gap-1.5"
         style={{ top: "43%", left: "11%", right: "11%", bottom: "10%" }}
       >
-        <span className="text-sm font-semibold text-[#5c3a1e] text-center leading-snug">
+        <span
+          className="text-sm font-semibold text-center leading-snug"
+          style={{ color }}
+        >
           {message}
         </span>
       </div>
