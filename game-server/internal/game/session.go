@@ -106,8 +106,10 @@ func (s *Session) GetFullSnapshot() map[string]any {
 }
 
 // GetPlayerSnapshot returns a complete snapshot of the session for a player
-// and what that player can see
-func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
+// and what that player can see. connectedIDs is the set of player IDs that
+// currently have an active WebSocket connection, used to stamp a "connected"
+// flag onto each external player without persisting that state to Redis.
+func (s *Session) GetPlayerSnapshot(playerId string, connectedIDs map[string]bool) map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -165,6 +167,7 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 			"playerHandSize":         len(player.Hand),
 			"playerPickedCardsCount": len(player.PickedCards),
 			"playerField":            player.Field,
+			"playerConnected":        connectedIDs[id],
 		}
 		externalPlayers = append(externalPlayers, externalPlayerData)
 	}
@@ -173,14 +176,29 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 	return snapshot
 }
 
-func (s *Session) GetWaitingLobbySnapshot() map[string]any {
+// GetWaitingLobbySnapshot returns a snapshot of the waiting lobby.
+// connectedIDs is the set of player IDs with an active WebSocket connection,
+// stamped onto each player entry without being persisted to Redis.
+func (s *Session) GetWaitingLobbySnapshot(connectedIDs map[string]bool) map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	canStart, _ := s.waitingLobby.CanStartGame()
 
+	players := make(map[string]any, len(s.waitingLobby.Players))
+	for id, p := range s.waitingLobby.Players {
+		players[id] = map[string]any{
+			"id":        p.ID,
+			"name":      p.Name,
+			"avatar":    p.Avatar,
+			"ready":     p.Ready,
+			"joined_at": p.JoinedAt,
+			"connected": connectedIDs[id],
+		}
+	}
+
 	snapshot := map[string]any{
-		"players":     s.waitingLobby.Players,
+		"players":     players,
 		"max_players": s.waitingLobby.MaxPlayers,
 		"min_players": s.waitingLobby.MinPlayers,
 		"can_start":   canStart,

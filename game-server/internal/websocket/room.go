@@ -160,6 +160,20 @@ func (r *Room) IsEmpty() bool {
 	return len(r.clients) == 0
 }
 
+// GetConnectedPlayerIDs returns the set of player IDs that currently have an
+// active WebSocket connection in this room.
+func (r *Room) GetConnectedPlayerIDs() map[string]bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ids := make(map[string]bool, len(r.clients))
+	for client := range r.clients {
+		if client.PlayerId != "" {
+			ids[client.PlayerId] = true
+		}
+	}
+	return ids
+}
+
 func (r *Room) HandleIncomingMessage(data []byte) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

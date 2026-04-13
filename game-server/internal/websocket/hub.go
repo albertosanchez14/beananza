@@ -111,6 +111,22 @@ func (h *Hub) Run() {
 			// SyncRoomRegistry acquires roomsMu — must be called outside clientsMu.
 			if disconnectedRoomID != "" {
 				h.SyncRoomRegistry(disconnectedRoomID)
+				// Notify remaining players that someone disconnected so their
+				// connection-status indicators update immediately.
+				go func(roomID string) {
+					h.roomsMu.RLock()
+					_, roomExists := h.rooms[roomID]
+					h.roomsMu.RUnlock()
+					if !roomExists {
+						return
+					}
+					state := h.gameManager.GetSessionState(roomID)
+					if state == game.SessionStatePlaying || state == game.SessionStatePause {
+						h.BroadcastGameStateToRoom(roomID)
+					} else {
+						h.BroadcastWaitingLobbyToRoom(roomID)
+					}
+				}(disconnectedRoomID)
 			}
 
 			h.cleanupEmptyRooms()
@@ -125,8 +141,9 @@ func (h *Hub) Run() {
 			if !ok {
 				continue
 			}
+			connectedIDs := room.GetConnectedPlayerIDs()
 			for _, client := range room.GetClients() {
-				playerSnapshot := ev.session.GetPlayerSnapshot(client.PlayerId)
+				playerSnapshot := ev.session.GetPlayerSnapshot(client.PlayerId, connectedIDs)
 				msg, err := protocol.NewMessage(
 					protocol.MessageTypePlayerState,
 					ev.roomID,
@@ -395,8 +412,9 @@ func (h *Hub) BroadcastGameStateToRoom(roomID string) {
 		}
 	}
 
+	connectedIDs := room.GetConnectedPlayerIDs()
 	for _, client := range room.GetClients() {
-		playerSnapshot := session.GetPlayerSnapshot(client.PlayerId)
+		playerSnapshot := session.GetPlayerSnapshot(client.PlayerId, connectedIDs)
 		msg, err := protocol.NewMessage(
 			protocol.MessageTypePlayerState,
 			roomID,
@@ -447,7 +465,11 @@ func (h *Hub) SyncRoomRegistry(roomID string) {
 // single client. The session must already be loaded before calling this.
 func (h *Hub) SendWaitingLobbyToClient(c *Client, roomID string) {
 	session := h.gameManager.GetOrCreateSession(roomID)
-	snapshot := session.GetWaitingLobbySnapshot()
+	var connectedIDs map[string]bool
+	if room := h.GetRoom(roomID); room != nil {
+		connectedIDs = room.GetConnectedPlayerIDs()
+	}
+	snapshot := session.GetWaitingLobbySnapshot(connectedIDs)
 	msg, err := protocol.NewMessage(protocol.WaitingLobbyState, roomID, c.PlayerId, snapshot)
 	if err != nil {
 		h.logger.Error("failed to create waitingLobbyState message for client", zap.Error(err))
@@ -483,7 +505,8 @@ func (h *Hub) BroadcastWaitingLobbyToRoom(roomID string) {
 		}
 	}
 
-	snapshot := session.GetWaitingLobbySnapshot()
+	connectedIDs := room.GetConnectedPlayerIDs()
+	snapshot := session.GetWaitingLobbySnapshot(connectedIDs)
 
 	for _, client := range room.GetClients() {
 		msg, err := protocol.NewMessage(

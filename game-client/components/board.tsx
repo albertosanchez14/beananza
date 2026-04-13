@@ -1625,6 +1625,7 @@ export default function Board() {
                 playerStatus="active"
                 playerCoins={player.playerCoins}
                 playerPickedCardsCount={player.playerPickedCardsCount}
+                playerConnected={player.playerConnected !== false}
                 isCurrentTurn={player.playerId === playerTurn}
                 gamePhase={phase}
                 isDragTarget={dragOverPlayerId === player.playerId}

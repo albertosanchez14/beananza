@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { GameRoomContext } from "@/hooks/useGameRoom";
 import { GameError } from "@/hooks/useRoomConnection";
@@ -10,6 +10,7 @@ type GameRoomProps = {
   playerId: string;
   gameError: GameError | null;
   clearGameError: () => void;
+  isConnected: boolean;
 } & GameRoomContext;
 
 export default function GameRoom({
@@ -26,7 +27,11 @@ export default function GameRoom({
   respondOffer,
   gameError,
   clearGameError,
+  isConnected,
 }: GameRoomProps) {
+  const [showReconnected, setShowReconnected] = useState(false);
+  const prevConnectedRef = useRef(isConnected);
+
   useEffect(() => {
     if (gameState.phase !== "turnTrade") return;
     const handler = (e: MouseEvent) => e.preventDefault();
@@ -39,6 +44,19 @@ export default function GameRoom({
     const timer = setTimeout(clearGameError, 3000);
     return () => clearTimeout(timer);
   }, [gameError, clearGameError]);
+
+  useEffect(() => {
+    if (!prevConnectedRef.current && isConnected) {
+      prevConnectedRef.current = true;
+      const showTimer = setTimeout(() => setShowReconnected(true), 0);
+      const hideTimer = setTimeout(() => setShowReconnected(false), 2000);
+      return () => {
+        clearTimeout(showTimer);
+        clearTimeout(hideTimer);
+      };
+    }
+    prevConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   return (
     <GameProvider
@@ -55,15 +73,28 @@ export default function GameRoom({
       onCounterOffer={counterOffer}
     >
       <div className="relative flex flex-col h-full w-full overflow-hidden">
+        {!isConnected && (
+          <div className="absolute top-10 left-1/2 -translate-x-1/2 z-50 rounded-md bg-red-600 px-4 py-2 text-sm text-white shadow-lg">
+            Connection lost. Reconnecting…
+          </div>
+        )}
+        {showReconnected && (
+          <div className="absolute top-10 left-1/2 -translate-x-1/2 z-50 rounded-md bg-green-600 px-4 py-2 text-sm text-white shadow-lg">
+            Reconnected
+          </div>
+        )}
         {gameError && (
           <div
-            className="absolute top-10 left-1/2 -translate-x-1/2 z-50 
+            className="absolute top-10 left-1/2 -translate-x-1/2 z-50
 						rounded-md bg-red-600 px-4 py-2 text-sm text-white shadow-lg"
           >
             {gameError.message}
           </div>
         )}
-        <div className="flex-1 min-h-0">
+        <div className="relative flex-1 min-h-0">
+          {!isConnected && (
+            <div className="absolute inset-0 z-40 pointer-events-auto" />
+          )}
           <Board />
         </div>
       </div>

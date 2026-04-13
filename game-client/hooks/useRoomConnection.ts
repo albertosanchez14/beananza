@@ -22,6 +22,7 @@ export type UseRoomConnectionResult = {
   waiting: WaitingRoomContext;
   gameError: GameError | null;
   clearGameError: () => void;
+  isConnected: boolean;
 };
 
 export function useRoomConnection(
@@ -118,6 +119,16 @@ export function useRoomConnection(
   }, [lastMessage, requestState, redirectToIdentify, roomId]);
 
   // ---------------------------------------------------------------------------
+  // Reset joinedRef when the WebSocket drops so the reconnect effect re-fires
+  // on the next connection and sends a fresh join/reconnect message.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!isConnected) {
+      joinedRef.current = false;
+    }
+  }, [isConnected]);
+
+  // ---------------------------------------------------------------------------
   // Join / reconnect — fires once on connect; joinedRef guards against re-sends
   // when deps change reference. Resetting joinedRef on invalid_token re-triggers.
   // ---------------------------------------------------------------------------
@@ -142,5 +153,5 @@ export function useRoomConnection(
     joinRetry,
   ]);
 
-  return { viewState, game, waiting, gameError, clearGameError };
+  return { viewState, game, waiting, gameError, clearGameError, isConnected };
 }

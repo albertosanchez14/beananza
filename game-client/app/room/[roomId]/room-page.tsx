@@ -11,7 +11,7 @@ export default function RoomPage() {
   const roomId = useParams().roomId as string;
   const { profile, redirectToIdentify } = usePlayerProfile(roomId);
 
-  const { viewState, game, waiting, gameError, clearGameError } =
+  const { viewState, game, waiting, gameError, clearGameError, isConnected } =
     useRoomConnection(
       roomId,
       profile?.id ?? "",
@@ -56,6 +56,7 @@ export default function RoomPage() {
             roomId={roomId}
             playerId={profile.id}
             myAvatar={profile.avatar}
+            isConnected={isConnected}
             {...waiting}
           />
         )}
@@ -67,6 +68,7 @@ export default function RoomPage() {
             {...game}
             gameError={gameError}
             clearGameError={clearGameError}
+            isConnected={isConnected}
           />
         )}
       </main>

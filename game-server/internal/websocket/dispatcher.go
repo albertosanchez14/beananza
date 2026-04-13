@@ -346,11 +346,10 @@ func (c *Client) handleReconnect(msg *protocol.Message) {
 	// Send the player their current game state immediately.
 	c.hub.EnqueueFanout(msg.RoomID, session)
 
-	// If the game hasn't started yet, also push the waiting lobby state so the
-	// reconnecting client doesn't see an empty lobby while waiting for the next
-	// broadcast event.
+	// If the game hasn't started yet, broadcast the waiting lobby to all clients
+	// so their connection-status indicators update when this player reconnects.
 	if !session.IsPlaying() {
-		c.hub.SendWaitingLobbyToClient(c, msg.RoomID)
+		go c.hub.BroadcastWaitingLobbyToRoom(msg.RoomID)
 	}
 }
 

@@ -317,7 +317,11 @@ func (c *Client) handlePlayerState(msg *protocol.Message) {
 			)
 		}
 	}
-	stateData := session.GetPlayerSnapshot(msg.PlayerID)
+	var connectedIDs map[string]bool
+	if c.room != nil {
+		connectedIDs = c.room.GetConnectedPlayerIDs()
+	}
+	stateData := session.GetPlayerSnapshot(msg.PlayerID, connectedIDs)
 
 	stateMsg, err := protocol.NewMessage(
 		protocol.MessageTypePlayerState,
@@ -349,8 +353,9 @@ func (c *Client) handlePlayerState(msg *protocol.Message) {
 // sendPlayerSnapshotToAll pushes each client in the room their own personalised
 // myState snapshot. Called after any action that mutates game state.
 func (c *Client) sendPlayerSnapshotToAll(session *game.Session) {
+	connectedIDs := c.room.GetConnectedPlayerIDs()
 	for _, client := range c.room.GetClients() {
-		playerSnapshot := session.GetPlayerSnapshot(client.PlayerId)
+		playerSnapshot := session.GetPlayerSnapshot(client.PlayerId, connectedIDs)
 
 		stateMsg, err := protocol.NewMessage(
 			protocol.MessageTypePlayerState,

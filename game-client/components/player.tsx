@@ -7,6 +7,7 @@ type WaitingPlayerProps = {
   playerAvatar?: string;
   playerStatus: "waiting";
   playerReady: boolean;
+  playerConnected?: boolean;
   isMe?: boolean;
   field?: ReactNode;
 };
@@ -18,6 +19,7 @@ type ActivePlayerProps = {
   playerStatus: "active";
   playerCoins?: number;
   playerPickedCardsCount?: number;
+  playerConnected?: boolean;
   isCurrentTurn?: boolean;
   gamePhase?: string;
   field?: ReactNode;
@@ -43,30 +45,39 @@ function WaitingPlayer({
   playerName,
   playerAvatar,
   playerReady = false,
+  playerConnected = true,
   isMe = false,
 }: WaitingPlayerProps) {
   // "Me" player: normal vertical layout
   return (
     <div className="flex flex-col items-center gap-0.5 transition-all duration-200">
-      <div
-        style={{
-          filter: playerReady
-            ? "drop-shadow(0 0 8px #4ade80) drop-shadow(0 0 3px #4ade80)"
-            : "drop-shadow(0 0 6px #9ca3af) drop-shadow(0 0 2px #9ca3af)",
-          transition: "filter 0.3s ease",
-        }}
-      >
-        {playerAvatar && (
-          <img
-            src={playerAvatar}
-            alt={playerName}
-            style={{
-              width: 110,
-              height: 110,
-              maxWidth: "none",
-              borderRadius: "50%",
-              objectFit: "contain",
-            }}
+      <div className="relative" style={{ opacity: playerConnected ? 1 : 0.4, transition: "opacity 0.3s ease" }}>
+        <div
+          style={{
+            filter: playerReady
+              ? "drop-shadow(0 0 8px #4ade80) drop-shadow(0 0 3px #4ade80)"
+              : "drop-shadow(0 0 6px #9ca3af) drop-shadow(0 0 2px #9ca3af)",
+            transition: "filter 0.3s ease",
+          }}
+        >
+          {playerAvatar && (
+            <img
+              src={playerAvatar}
+              alt={playerName}
+              style={{
+                width: 110,
+                height: 110,
+                maxWidth: "none",
+                borderRadius: "50%",
+                objectFit: "contain",
+              }}
+            />
+          )}
+        </div>
+        {!isMe && (
+          <span
+            className="absolute bottom-1 right-1 block w-3 h-3 rounded-full border-2 border-black"
+            style={{ background: playerConnected ? "#4ade80" : "#ef4444" }}
           />
         )}
       </div>
@@ -99,6 +110,7 @@ function ActivePlayer({
   playerAvatar,
   playerCoins,
   playerPickedCardsCount,
+  playerConnected = true,
   isCurrentTurn = false,
   gamePhase,
   field,
@@ -167,17 +179,19 @@ function ActivePlayer({
         </div>
 
         <div
-          className="mb-6"
-          style={
-            isDragTarget
+          className="relative mb-6"
+          style={{
+            opacity: playerConnected ? 1 : 0.4,
+            transition: "opacity 0.3s ease",
+            ...(isDragTarget
               ? {
                   filter: dragBlockMessage
                     ? "drop-shadow(0 0 8px #ef4444) drop-shadow(0 0 3px #ef4444)"
                     : "drop-shadow(0 0 8px #4ade80) drop-shadow(0 0 3px #4ade80)",
-                  transition: "filter 0.15s",
+                  transition: "filter 0.15s, opacity 0.3s ease",
                 }
-              : undefined
-          }
+              : {}),
+          }}
         >
           {playerAvatar && (
             <img
@@ -196,6 +210,10 @@ function ActivePlayer({
               }}
             />
           )}
+          <span
+            className="absolute bottom-1 right-1 block w-3 h-3 rounded-full border-2 border-black"
+            style={{ background: playerConnected ? "#4ade80" : "#ef4444" }}
+          />
         </div>
 
         {dragBlockMessage && (

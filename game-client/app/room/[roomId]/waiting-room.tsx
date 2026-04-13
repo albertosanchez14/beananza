@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { WaitingRoomContext } from "@/hooks/useWaitingRoom";
 import Player from "@/components/player";
 import Table from "@/components/table";
@@ -8,7 +9,7 @@ import Opponents from "@/components/opponents";
 import Field from "@/components/field";
 import NewSlot from "@/components/slot";
 
-type WaitingRoomProps = { roomId: string; playerId: string; myAvatar?: string } & WaitingRoomContext;
+type WaitingRoomProps = { roomId: string; playerId: string; myAvatar?: string; isConnected: boolean } & WaitingRoomContext;
 
 function GhostSeat({ label }: { label: string }) {
   return (
@@ -33,11 +34,27 @@ export default function WaitingRoom({
   roomId,
   playerId,
   myAvatar,
+  isConnected,
   waitingLobbyState,
   setReady,
   leave,
 }: WaitingRoomProps) {
   const router = useRouter();
+  const [showReconnected, setShowReconnected] = useState(false);
+  const prevConnectedRef = useRef(isConnected);
+
+  useEffect(() => {
+    if (!prevConnectedRef.current && isConnected) {
+      prevConnectedRef.current = true;
+      const showTimer = setTimeout(() => setShowReconnected(true), 0);
+      const hideTimer = setTimeout(() => setShowReconnected(false), 2000);
+      return () => {
+        clearTimeout(showTimer);
+        clearTimeout(hideTimer);
+      };
+    }
+    prevConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   const playerList = Object.values(waitingLobbyState.allPlayers);
   const playerCount = playerList.length;
@@ -63,6 +80,16 @@ export default function WaitingRoom({
       className="relative w-full h-full overflow-hidden"
       style={{ background: "#1a1008" }}
     >
+      {!isConnected && (
+        <div className="absolute top-10 left-1/2 -translate-x-1/2 z-50 rounded-md bg-red-600 px-4 py-2 text-sm text-white shadow-lg">
+          Connection lost. Reconnecting…
+        </div>
+      )}
+      {showReconnected && (
+        <div className="absolute top-10 left-1/2 -translate-x-1/2 z-50 rounded-md bg-green-600 px-4 py-2 text-sm text-white shadow-lg">
+          Reconnected
+        </div>
+      )}
       <Table>
         <Opponents>
           {opponents.map((player) => (
@@ -72,6 +99,7 @@ export default function WaitingRoom({
               playerName={player.name}
               playerAvatar={player.avatar}
               playerReady={player.ready}
+              playerConnected={player.connected !== false}
               playerStatus={"waiting"}
               field={
                 <Field>
@@ -180,7 +208,7 @@ export default function WaitingRoom({
           <div className="flex gap-3 w-full max-w-sm">
             <button
               onClick={() => handleSetReady(!waitingLobbyState.myReadyState)}
-              disabled={needMorePlayers}
+              disabled={needMorePlayers || !isConnected}
               className={`flex-1 py-3 px-5 rounded-xl font-bold text-sm transition-all shadow-lg ${
                 waitingLobbyState.myReadyState
                   ? "bg-yellow-500 hover:bg-yellow-400 text-black"

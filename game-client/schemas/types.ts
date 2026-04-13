@@ -46,6 +46,7 @@ export type ExternalPlayer = {
   playerHandSize: number;
   playerPickedCardsCount: number;
   playerField: FieldType;
+  playerConnected?: boolean;
 };
 
 export type WaitingPlayer = {
@@ -54,6 +55,7 @@ export type WaitingPlayer = {
   avatar?: string;
   ready: boolean;
   joined_at: string;
+  connected?: boolean;
 };
 
 export type Player = {
