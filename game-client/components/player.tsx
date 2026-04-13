@@ -1,5 +1,8 @@
 import { Coins, Leaf } from "lucide-react";
-import { ReactNode } from "react";
+import Image from "next/image";
+import { ReactNode, useEffect, useRef, useState } from "react";
+
+import DisconnectCountdown from "@/components/disconnect-countdown";
 
 type WaitingPlayerProps = {
   playerId: string;
@@ -20,6 +23,7 @@ type ActivePlayerProps = {
   playerCoins?: number;
   playerPickedCardsCount?: number;
   playerConnected?: boolean;
+  playerDisconnectDeadline?: string | null;
   isCurrentTurn?: boolean;
   gamePhase?: string;
   field?: ReactNode;
@@ -51,7 +55,13 @@ function WaitingPlayer({
   // "Me" player: normal vertical layout
   return (
     <div className="flex flex-col items-center gap-0.5 transition-all duration-200">
-      <div className="relative" style={{ opacity: playerConnected ? 1 : 0.4, transition: "opacity 0.3s ease" }}>
+      <div
+        className="relative"
+        style={{
+          opacity: playerConnected ? 1 : 0.4,
+          transition: "opacity 0.3s ease",
+        }}
+      >
         <div
           style={{
             filter: playerReady
@@ -61,12 +71,12 @@ function WaitingPlayer({
           }}
         >
           {playerAvatar && (
-            <img
+            <Image
               src={playerAvatar}
               alt={playerName}
+              width={110}
+              height={110}
               style={{
-                width: 110,
-                height: 110,
                 maxWidth: "none",
                 borderRadius: "50%",
                 objectFit: "contain",
@@ -83,7 +93,7 @@ function WaitingPlayer({
       </div>
 
       <p
-        className="text-[10px] font-bold text-white leading-tight max-w-[72px] text-center truncate"
+        className="text-[10px] font-bold text-white leading-tight max-w-18 text-center truncate"
         style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}
       >
         {playerName}
@@ -111,6 +121,7 @@ function ActivePlayer({
   playerCoins,
   playerPickedCardsCount,
   playerConnected = true,
+  playerDisconnectDeadline,
   isCurrentTurn = false,
   gamePhase,
   field,
@@ -123,6 +134,34 @@ function ActivePlayer({
 }: ActivePlayerProps) {
   const showPickedCards =
     gamePhase === "plantTrade" && (playerPickedCardsCount ?? 0) > 0;
+
+  const prevConnectedRef = useRef(playerConnected);
+  const [showReconnected, setShowReconnected] = useState(false);
+
+  useEffect(() => {
+    if (!prevConnectedRef.current && playerConnected) {
+      const showId = setTimeout(() => setShowReconnected(true), 0);
+      const hideId = setTimeout(() => setShowReconnected(false), 2000);
+      prevConnectedRef.current = playerConnected;
+      return () => {
+        clearTimeout(showId);
+        clearTimeout(hideId);
+      };
+    }
+    prevConnectedRef.current = playerConnected;
+  }, [playerConnected]);
+
+  const avatarFilter = (() => {
+    if (showReconnected)
+      return "drop-shadow(0 0 10px #4ade80) drop-shadow(0 0 4px #4ade80)";
+    if (isDragTarget)
+      return dragBlockMessage
+        ? "drop-shadow(0 0 8px #ef4444) drop-shadow(0 0 3px #ef4444)"
+        : "drop-shadow(0 0 8px #4ade80) drop-shadow(0 0 3px #4ade80)";
+    if (isCurrentTurn)
+      return "drop-shadow(0 0 7px #facc15) drop-shadow(0 0 3px #facc15)";
+    return undefined;
+  })();
 
   return (
     <div
@@ -140,10 +179,28 @@ function ActivePlayer({
             paddingBottom: 2,
           }}
         >
-          <p
-            className="text-sm font-bold text-white leading-tight tracking-widest max-w-18 text-center truncate"
-            style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}
-          >
+          {!playerConnected && (
+            <div className="flex flex-col items-center">
+              {playerDisconnectDeadline && (
+                <span
+                  className="text-2xl font-light text-red-200 leading-none"
+                  style={{ letterSpacing: "0.1em" }}
+                >
+                  <DisconnectCountdown deadline={playerDisconnectDeadline} />
+                </span>
+              )}
+              <span className="text-sm font-light text-red-300 leading-none whitespace-nowrap">
+                Disconnected
+              </span>
+            </div>
+          )}
+          {showReconnected && (
+            <span className="text-sm font-light text-green-300 leading-none whitespace-nowrap">
+              Reconnected
+            </span>
+          )}
+
+          <p className="text-sm font-bold text-white leading-tight tracking-widest max-w-18 text-center truncate">
             {playerName}
           </p>
 
@@ -182,30 +239,20 @@ function ActivePlayer({
           className="relative mb-6"
           style={{
             opacity: playerConnected ? 1 : 0.4,
-            transition: "opacity 0.3s ease",
-            ...(isDragTarget
-              ? {
-                  filter: dragBlockMessage
-                    ? "drop-shadow(0 0 8px #ef4444) drop-shadow(0 0 3px #ef4444)"
-                    : "drop-shadow(0 0 8px #4ade80) drop-shadow(0 0 3px #4ade80)",
-                  transition: "filter 0.15s, opacity 0.3s ease",
-                }
-              : {}),
+            transition: "opacity 0.3s ease, filter 0.3s ease",
           }}
         >
           {playerAvatar && (
-            <img
+            <Image
               src={playerAvatar}
               alt={playerName}
+              width={110}
+              height={110}
               style={{
-                width: 110,
-                height: 110,
                 maxWidth: "none",
                 borderRadius: "50%",
                 objectFit: "contain",
-                filter: isCurrentTurn
-                  ? "drop-shadow(0 0 7px #facc15) drop-shadow(0 0 3px #facc15)"
-                  : undefined,
+                filter: avatarFilter,
                 transition: "filter 0.3s ease",
               }}
             />

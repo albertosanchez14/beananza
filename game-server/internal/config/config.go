@@ -61,7 +61,11 @@ type GameConfig struct {
 	// CardsPerTurn is the number of cards flipped face-up from the draw pile
 	// during the "turn over beans" phase. Configurable via CARDS_PER_TURN (default 2).
 	CardsPerTurn int
-	Cards        CardsConfig
+	// DisconnectTimeoutSecs is the number of seconds the server waits before
+	// skipping a disconnected player's turn (or ending the game if too few
+	// players are connected).  Configurable via DISCONNECT_TIMEOUT_SECS (default 60).
+	DisconnectTimeoutSecs int
+	Cards                 CardsConfig
 }
 
 type CardsConfig struct {
@@ -109,10 +113,11 @@ func Load() *Config {
 			RateBurst:       getEnvAsInt("WS_RATE_BURST", 20),
 		},
 		Game: GameConfig{
-			MaxNumberPlayers: getEnvAsInt("MAX_NUMBER_PLAYERS", 5),
-			MinNumberPlayers: getEnvAsInt("MIN_NUMBER_PLAYERS", 3),
-			CardsPerTurn:     getEnvAsInt("CARDS_PER_TURN", 2),
-			Cards:            cards,
+			MaxNumberPlayers:      getEnvAsInt("MAX_NUMBER_PLAYERS", 5),
+			MinNumberPlayers:      getEnvAsInt("MIN_NUMBER_PLAYERS", 3),
+			CardsPerTurn:          getEnvAsInt("CARDS_PER_TURN", 2),
+			DisconnectTimeoutSecs: getEnvAsInt("DISCONNECT_TIMEOUT_SECS", 60),
+			Cards:                 cards,
 		},
 	}
 }

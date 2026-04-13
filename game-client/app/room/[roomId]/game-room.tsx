@@ -4,6 +4,7 @@ import { GameRoomContext } from "@/hooks/useGameRoom";
 import { GameError } from "@/hooks/useRoomConnection";
 import { GameProvider } from "@/components/game-context";
 import Board from "@/components/board";
+import ResultsScreen from "@/components/results-screen";
 
 type GameRoomProps = {
   roomId: string;
@@ -74,19 +75,28 @@ export default function GameRoom({
     >
       <div className="relative flex flex-col h-full w-full overflow-hidden">
         {!isConnected && (
-          <div className="absolute top-10 left-1/2 -translate-x-1/2 z-50 rounded-md bg-red-600 px-4 py-2 text-sm text-white shadow-lg">
+          <div
+            className="absolute top-10 left-1/2 -translate-x-1/2 z-50 
+						rounded-md bg-red-600 px-4 py-2 
+						text-sm font-light text-white"
+          >
             Connection lost. Reconnecting…
           </div>
         )}
         {showReconnected && (
-          <div className="absolute top-10 left-1/2 -translate-x-1/2 z-50 rounded-md bg-green-600 px-4 py-2 text-sm text-white shadow-lg">
+          <div
+            className="absolute top-10 left-1/2 -translate-x-1/2 z-50 
+						rounded-md bg-green-600 px-4 py-2 
+						text-sm text-white"
+          >
             Reconnected
           </div>
         )}
         {gameError && (
           <div
             className="absolute top-10 left-1/2 -translate-x-1/2 z-50
-						rounded-md bg-red-600 px-4 py-2 text-sm text-white shadow-lg"
+						rounded-md bg-red-600 px-4 py-2 
+						text-sm text-white"
           >
             {gameError.message}
           </div>
@@ -96,6 +106,24 @@ export default function GameRoom({
             <div className="absolute inset-0 z-40 pointer-events-auto" />
           )}
           <Board />
+          {gameState.phase === "finished" && (
+            <ResultsScreen
+              players={[
+                {
+                  playerId,
+                  playerName: "You",
+                  coins: gameState.coins,
+                  isMe: true,
+                },
+                ...gameState.players.map((p) => ({
+                  playerId: p.playerId,
+                  playerName: p.playerName,
+                  playerAvatar: p.playerAvatar,
+                  coins: p.playerCoins,
+                })),
+              ]}
+            />
+          )}
         </div>
       </div>
     </GameProvider>

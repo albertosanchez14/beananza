@@ -47,6 +47,7 @@ export type ExternalPlayer = {
   playerPickedCardsCount: number;
   playerField: FieldType;
   playerConnected?: boolean;
+  playerDisconnectDeadline?: string | null;
 };
 
 export type WaitingPlayer = {

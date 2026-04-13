@@ -27,6 +27,7 @@ import { PlantFlyingCard } from "@/components/plant-flying-card";
 import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
 import AcceptCardPicker from "@/components/accept-card-picker";
 import Arrow from "@/components/arrow";
+import DisconnectCountdown from "@/components/disconnect-countdown";
 import { canAcceptOffer } from "@/utils/offer-utils";
 
 import {
@@ -222,6 +223,7 @@ export default function Board() {
     field,
     coins,
     pickedCards,
+    minPlayersDeadline,
   } = gameState;
 
   const isTurnPlayer = myPlayerId === playerTurn;
@@ -1626,6 +1628,7 @@ export default function Board() {
                 playerCoins={player.playerCoins}
                 playerPickedCardsCount={player.playerPickedCardsCount}
                 playerConnected={player.playerConnected !== false}
+                playerDisconnectDeadline={player.playerDisconnectDeadline}
                 isCurrentTurn={player.playerId === playerTurn}
                 gamePhase={phase}
                 isDragTarget={dragOverPlayerId === player.playerId}
@@ -1731,6 +1734,26 @@ export default function Board() {
         </Opponents>
 
         <Center>
+          {minPlayersDeadline && (
+            <div
+              className="absolute left-1/2 z-50 flex flex-col 
+							items-center gap-1 pointer-events-none"
+              style={{ top: "-60%", transform: "translateX(-50%)" }}
+            >
+              <span
+                className="rounded-lg bg-red-900 px-3 py-1.5
+								text-xl font-light text-red-200 text-center whitespace-nowrap flex flex-col items-center gap-0.5"
+              >
+                <span>Not enough players connected</span>
+                <span>
+                  Game ends in{" "}
+                  <span className="text-4xl">
+                    <DisconnectCountdown deadline={minPlayersDeadline} />
+                  </span>
+                </span>
+              </span>
+            </div>
+          )}
           <CardPile
             label="Draw"
             count={deckSize}

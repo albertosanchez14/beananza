@@ -38,9 +38,16 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 				c.sendError(game.ErrCodeGameAlreadyStarted, "Cannot join: game is already in progress")
 				return
 			}
-			// Recognised player — bind them to the room and push their state.
+			// Recognised player — bind them to the room and cancel their skip timer.
 			room.Join(c)
 			c.room = room
+			c.hub.ensureSessionHooks(msg.RoomID, existingSession)
+			connectedIDs := room.GetConnectedPlayerIDs()
+			existingSession.HandlePlayerReconnect(
+				c.PlayerId,
+				connectedIDs,
+				c.hub.config.Game.MinNumberPlayers,
+			)
 			c.sendJoined(msg.RoomID, string(sessionState))
 			c.hub.EnqueueFanout(msg.RoomID, existingSession)
 			return
@@ -338,6 +345,17 @@ func (c *Client) handleReconnect(msg *protocol.Message) {
 		zap.String("room_id", msg.RoomID),
 		zap.String("player_id", playerID),
 	)
+
+	// Cancel any pending skip/end-game timers for this player.
+	if session.IsPlaying() {
+		c.hub.ensureSessionHooks(msg.RoomID, session)
+		connectedIDs := room.GetConnectedPlayerIDs()
+		session.HandlePlayerReconnect(
+			c.PlayerId,
+			connectedIDs,
+			c.hub.config.Game.MinNumberPlayers,
+		)
+	}
 
 	// Send a joined message with the current session state so the client
 	// can route to the correct view immediately on reconnect.
