@@ -8,6 +8,7 @@ type CurrentPlayerProps = {
   tradedCards: ReactNode;
   hand: ReactNode;
   coinCount: number;
+  isNarrow?: boolean;
 };
 
 export default function CurrentPlayer({
@@ -15,9 +16,26 @@ export default function CurrentPlayer({
   tradedCards,
   hand,
   coinCount,
+  isNarrow = false,
 }: CurrentPlayerProps) {
   return (
-    <div className="absolute bottom-0 left-0 right-0 flex flex-col items-center gap-3 px-6 pb-5 pt-3">
+    <div
+      className="absolute bottom-0 left-0 right-0 flex flex-col items-center gap-3 px-6 pb-5 pt-3"
+    >
+      {isNarrow && (
+        <div style={{ perspective: "700px", position: "relative", zIndex: 15 }}>
+          <div
+            style={{
+              transform: "rotateX(25deg) scaleX(1.08)",
+              transformOrigin: "bottom center",
+              display: "flex",
+              justifyContent: "center",
+            }}
+          >
+            {tradedCards}
+          </div>
+        </div>
+      )}
       <div style={{ perspective: "700px", position: "relative", zIndex: 15 }}>
         <div
           className="flex items-center gap-3"
@@ -37,14 +55,16 @@ export default function CurrentPlayer({
           </div>
           {field}
           {/* Zero-width anchor so tradedCards never shifts the field */}
-          <div className="relative" style={{ width: 0, overflow: "visible" }}>
-            <div
-              className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-2"
-              style={{ pointerEvents: "auto" }}
-            >
-              {tradedCards}
+          {!isNarrow && (
+            <div className="relative" style={{ width: 0, overflow: "visible" }}>
+              <div
+                className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-2"
+                style={{ pointerEvents: "auto" }}
+              >
+                {tradedCards}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
       <div style={{ position: "relative", zIndex: 25 }}>{hand}</div>

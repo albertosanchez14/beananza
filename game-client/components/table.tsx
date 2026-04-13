@@ -4,34 +4,49 @@ import Image from "next/image";
 const DESIGN_W = 1280;
 const DESIGN_H = 720;
 
+const NARROW_THRESHOLD = 0.7;
+
 type TableProps = {
   children: ReactNode;
+  onScaleChange?: (scale: number) => void;
+  narrow?: boolean;
+  paddingTop?: number;
 };
 
-export default function Table({ children }: TableProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+export default function Table({ children, onScaleChange, narrow, paddingTop }: TableProps) {
+  const outerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const [width, setWidth] = useState(DESIGN_W);
 
   useEffect(() => {
-    const el = containerRef.current;
+    const el = outerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      setScale(Math.min(1, entry.contentRect.width / DESIGN_W));
+      const { width: outerW, height: outerH } = entry.contentRect;
+      const maxWFromH = outerH * (DESIGN_W / DESIGN_H);
+      const constrainedW = Math.min(outerW, maxWFromH, DESIGN_W);
+      setWidth(constrainedW);
+      const next = constrainedW / DESIGN_W;
+      setScale(next);
+      onScaleChange?.(next);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [onScaleChange]);
+
+  const isNarrow = narrow ?? scale < NARROW_THRESHOLD;
+  const useTopAlign = narrow !== undefined && narrow;
 
   return (
     <div
-      className="absolute inset-0 flex items-center justify-center"
-      style={{ perspective: "900px" }}
+      ref={outerRef}
+      className={`absolute inset-0 flex ${useTopAlign ? "items-start" : "items-center"} justify-center`}
+      style={{ perspective: "900px", paddingTop: useTopAlign ? (paddingTop ?? 16) : 0 }}
     >
       <div
-        ref={containerRef}
         style={{
           position: "relative",
-          width: "100%",
+          width,
           maxWidth: DESIGN_W,
           aspectRatio: "16/9",
           zIndex: 1,

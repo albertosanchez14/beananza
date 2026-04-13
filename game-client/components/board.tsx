@@ -208,8 +208,60 @@ export default function Board() {
   const [reqTarget, setReqTarget] = useState<string | undefined>(undefined);
   const [showReqPicker, setShowReqPicker] = useState(false);
 
+  const [tableScale, setTableScale] = useState(1);
+  const [isOverflow, setIsOverflow] = useState(false);
+  const isNarrow = tableScale < 0.7 || isOverflow;
+
   const tradedCardsAreaRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
   const draftCardsGroupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const check = () => {
+      if (!tradedCardsAreaRef.current || !fieldRef.current) return;
+      const tradedW = tradedCardsAreaRef.current.getBoundingClientRect().width;
+      const fieldRight = fieldRef.current.getBoundingClientRect().right;
+      const available = window.innerWidth - fieldRight - 16;
+      setIsOverflow(tradedW > available);
+    };
+    const ro = new ResizeObserver(check);
+    if (tradedCardsAreaRef.current) ro.observe(tradedCardsAreaRef.current);
+    if (fieldRef.current) ro.observe(fieldRef.current);
+    window.addEventListener("resize", check);
+    check();
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", check);
+    };
+  }, []);
+
+  const CENTER_BOTTOM_DESIGN = 410;
+  const CENTER_GAP = 70;
+  const [tablePaddingTop, setTablePaddingTop] = useState(16);
+
+  useEffect(() => {
+    if (!isNarrow || !tradedCardsAreaRef.current) {
+      setTablePaddingTop(16);
+      return;
+    }
+    const update = () => {
+      if (!tradedCardsAreaRef.current) return;
+      const tradedTop = tradedCardsAreaRef.current.getBoundingClientRect().top;
+      const tableHeight = tableScale * 720;
+      const centeredPadding = (window.innerHeight - tableHeight) / 2;
+      const maxAllowed =
+        tradedTop - CENTER_BOTTOM_DESIGN * tableScale - CENTER_GAP;
+      setTablePaddingTop(Math.max(16, Math.min(centeredPadding, maxAllowed)));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(tradedCardsAreaRef.current);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [isNarrow, tableScale]);
 
   const {
     centerCards,
@@ -1612,7 +1664,11 @@ export default function Board() {
         />
       )}
 
-      <Table>
+      <Table
+        onScaleChange={setTableScale}
+        narrow={isNarrow}
+        paddingTop={tablePaddingTop}
+      >
         <Opponents>
           {players.map((player) => {
             const playerHighlight =
@@ -1832,83 +1888,86 @@ export default function Board() {
       </Table>
 
       <CurrentPlayer
+        isNarrow={isNarrow}
         coinCount={coins}
         field={
-          <Field>
-            {field.slots.map((s: SlotType, index: number) => {
-              const cardForSlot = s.cardName
-                ? (cardLookup.get(s.cardName) ?? null)
-                : null;
-              const highlightEmpty = selection.length === 1;
-              const isHandCardSelected =
-                selection.length === 1 &&
-                gameState.hand.some((c) => c.cardId === selection[0].cardId);
-              const isCenterCardSelected =
-                selection.length === 1 &&
-                gameState.centerCards.some(
-                  (c) => c.cardId === selection[0].cardId,
-                );
-              const blocked =
-                (!canPlantFromHand &&
-                  (isHandCardSelected || dragSourceIsHand)) ||
-                (!canPlantCenterCard &&
-                  (isCenterCardSelected || dragSourceIsCenter));
-              return (
-                <div
-                  key={s.slotId}
-                  ref={(el) => {
-                    if (el) mySlotRefs.current.set(s.slotId, el);
-                    else mySlotRefs.current.delete(s.slotId);
-                  }}
-                >
-                  <Slot
-                    slot={s}
-                    index={index}
-                    dragOverSlot={dragOverSlot}
-                    highlightEmpty={highlightEmpty}
-                    blocked={blocked}
-                    handleDragOver={handleSlotDragOver}
-                    handleDragLeave={handleSlotDragLeave}
-                    handleSlotDrop={handleMySlotDrop}
-                    handleSlotClick={handleSlotClick}
-                    popAnimation={popSlotIds.has(s.slotId)}
-                    onPopComplete={() =>
-                      setPopSlotIds((prev) => {
-                        const next = new Set(prev);
-                        next.delete(s.slotId);
-                        return next;
-                      })
-                    }
+          <div ref={fieldRef}>
+            <Field>
+              {field.slots.map((s: SlotType, index: number) => {
+                const cardForSlot = s.cardName
+                  ? (cardLookup.get(s.cardName) ?? null)
+                  : null;
+                const highlightEmpty = selection.length === 1;
+                const isHandCardSelected =
+                  selection.length === 1 &&
+                  gameState.hand.some((c) => c.cardId === selection[0].cardId);
+                const isCenterCardSelected =
+                  selection.length === 1 &&
+                  gameState.centerCards.some(
+                    (c) => c.cardId === selection[0].cardId,
+                  );
+                const blocked =
+                  (!canPlantFromHand &&
+                    (isHandCardSelected || dragSourceIsHand)) ||
+                  (!canPlantCenterCard &&
+                    (isCenterCardSelected || dragSourceIsCenter));
+                return (
+                  <div
+                    key={s.slotId}
+                    ref={(el) => {
+                      if (el) mySlotRefs.current.set(s.slotId, el);
+                      else mySlotRefs.current.delete(s.slotId);
+                    }}
                   >
-                    {cardForSlot && (
-                      <Card
-                        card={cardForSlot}
-                        flipped={false}
-                        ref={(el) => {
-                          if (el) mySlotCardRefs.current.set(s.slotId, el);
-                          else mySlotCardRefs.current.delete(s.slotId);
-                        }}
-                        hidden={animatingOpponentSlotIds.has(s.slotId)}
-                        onContextMenu={
-                          !counteringOffer
-                            ? () => {
-                                if (phase === "turnTrade")
-                                  openInlineModal({
-                                    cardsRequested: [cardForSlot],
-                                    defaultTargetId: isTurnPlayer
-                                      ? undefined
-                                      : playerTurn,
-                                  });
-                              }
-                            : undefined
-                        }
-                      />
-                    )}
-                  </Slot>
-                </div>
-              );
-            })}
-          </Field>
+                    <Slot
+                      slot={s}
+                      index={index}
+                      dragOverSlot={dragOverSlot}
+                      highlightEmpty={highlightEmpty}
+                      blocked={blocked}
+                      handleDragOver={handleSlotDragOver}
+                      handleDragLeave={handleSlotDragLeave}
+                      handleSlotDrop={handleMySlotDrop}
+                      handleSlotClick={handleSlotClick}
+                      popAnimation={popSlotIds.has(s.slotId)}
+                      onPopComplete={() =>
+                        setPopSlotIds((prev) => {
+                          const next = new Set(prev);
+                          next.delete(s.slotId);
+                          return next;
+                        })
+                      }
+                    >
+                      {cardForSlot && (
+                        <Card
+                          card={cardForSlot}
+                          flipped={false}
+                          ref={(el) => {
+                            if (el) mySlotCardRefs.current.set(s.slotId, el);
+                            else mySlotCardRefs.current.delete(s.slotId);
+                          }}
+                          hidden={animatingOpponentSlotIds.has(s.slotId)}
+                          onContextMenu={
+                            !counteringOffer
+                              ? () => {
+                                  if (phase === "turnTrade")
+                                    openInlineModal({
+                                      cardsRequested: [cardForSlot],
+                                      defaultTargetId: isTurnPlayer
+                                        ? undefined
+                                        : playerTurn,
+                                    });
+                                }
+                              : undefined
+                          }
+                        />
+                      )}
+                    </Slot>
+                  </div>
+                );
+              })}
+            </Field>
+          </div>
         }
         tradedCards={
           <div ref={tradedCardsAreaRef}>
