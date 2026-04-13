@@ -160,15 +160,15 @@ export default function InlineModal({
             <button
               onClick={handleSubmit}
               className="px-4 py-1 rounded text-xs font-semibold 
-							transition-colors bg-amber-700 hover:bg-amber-600 active:bg-amber-800 
-							border border-amber-700 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+							transition-colors bg-green-700 hover:bg-green-600 active:bg-green-800 
+							border border-green-700 text-white disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Send offer
             </button>
             <button
               onClick={onClose}
               className="px-3 py-1 rounded text-xs font-semibold 
-							transition-colors border border-amber-600/60 hover:border-amber-400"
+							transition-colors bg-green-900 hover:bg-green-800 active:bg-green-950 border border-green-600/60 hover:border-green-400 text-white"
             >
               Cancel
             </button>
@@ -182,7 +182,7 @@ export default function InlineModal({
                   name="inline-target"
                   checked={selectedTargetId === undefined}
                   onChange={() => onTargetChange(undefined)}
-                  className="accent-amber-500 w-3 h-3"
+                  className="accent-green-600 w-3 h-3"
                 />
                 <span className="text-[11px] text-white/80">Everyone</span>
               </label>
@@ -196,7 +196,7 @@ export default function InlineModal({
                     name="inline-target"
                     checked={selectedTargetId === p.playerId}
                     onChange={() => onTargetChange(p.playerId)}
-                    className="accent-amber-500 w-3 h-3"
+                    className="accent-green-600 w-3 h-3"
                   />
                   <span className="text-[11px] text-white/80">
                     {p.playerName}
