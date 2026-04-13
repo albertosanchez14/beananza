@@ -263,19 +263,18 @@ export default function HomeClient() {
         <div className="flex flex-col sm:flex-row gap-4 w-full max-w-xs sm:max-w-sm">
           <button
             onMouseEnter={() => router.prefetch("/room")}
-            // onFocus={() => router.prefetch("/room")}
             onClick={handlePlayNow}
-            className="flex-1 rounded-xl bg-amber-700 hover:bg-amber-600
-						active:bg-amber-800 border border-amber-500 text-white
-						font-semibold text-lg py-3 px-8 cursor-pointer"
+            className="flex-1 rounded-xl 
+						bg-amber-700 hover:bg-amber-600 active:bg-amber-800 
+						border border-amber-700 
+						text-white font-semibold text-lg 
+						py-3 px-8 transition-colors cursor-pointer"
           >
             Play Now
           </button>
           <button
             onClick={() => router.push("/identify")}
-            className="flex-1 rounded-xl border border-amber-600/60
-						hover:border-amber-400 text-amber-200 font-semibold
-						text-lg py-3 px-8 cursor-pointer"
+            className="flex-1 rounded-xl border border-amber-600/60 hover:border-amber-400 text-amber-200 font-semibold text-lg py-3 px-8 transition-colors cursor-pointer"
           >
             Identify
           </button>

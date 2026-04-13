@@ -159,16 +159,16 @@ export default function InlineModal({
           <div className="flex items-center gap-2">
             <button
               onClick={handleSubmit}
-              className="px-4 py-1 rounded-lg bg-blue-500 hover:bg-blue-600
-                text-white text-xs font-semibold transition-colors
-                disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-4 py-1 rounded text-xs font-semibold 
+							transition-colors bg-amber-700 hover:bg-amber-600 active:bg-amber-800 
+							border border-amber-700 text-white disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Send offer
             </button>
             <button
               onClick={onClose}
-              className="px-3 py-1 rounded-lg bg-black/60 hover:bg-black/80
-                text-white/70 text-xs transition-colors"
+              className="px-3 py-1 rounded text-xs font-semibold 
+							transition-colors border border-amber-600/60 hover:border-amber-400"
             >
               Cancel
             </button>
@@ -182,7 +182,7 @@ export default function InlineModal({
                   name="inline-target"
                   checked={selectedTargetId === undefined}
                   onChange={() => onTargetChange(undefined)}
-                  className="accent-blue-400 w-3 h-3"
+                  className="accent-amber-500 w-3 h-3"
                 />
                 <span className="text-[11px] text-white/80">Everyone</span>
               </label>
@@ -196,7 +196,7 @@ export default function InlineModal({
                     name="inline-target"
                     checked={selectedTargetId === p.playerId}
                     onChange={() => onTargetChange(p.playerId)}
-                    className="accent-blue-400 w-3 h-3"
+                    className="accent-amber-500 w-3 h-3"
                   />
                   <span className="text-[11px] text-white/80">
                     {p.playerName}

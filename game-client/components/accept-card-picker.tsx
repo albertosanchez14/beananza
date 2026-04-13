@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { m } from "motion/react";
 import { CardType, Offer, OfferCard } from "@/schemas/types";
-import { CardFrontFace } from "@/components/card-front-face";
+import CardComponent from "@/components/card";
 
 type Props = {
   offer: Offer;
@@ -15,6 +16,10 @@ type Props = {
 };
 
 type CardSource = { card: CardType; source: "hand" | "center" };
+
+// Visual dimensions of the notice-board webp (used for aspect-ratio only)
+const BOARD_W = 590;
+const BOARD_H = 380;
 
 export default function AcceptCardPicker({
   offer,
@@ -30,7 +35,9 @@ export default function AcceptCardPicker({
   for (const c of offer.cards_requested) {
     if (!seen[c.card_type]) {
       seen[c.card_type] = true;
-      const needed = offer.cards_requested.filter((r) => r.card_type === c.card_type).length;
+      const needed = offer.cards_requested.filter(
+        (r) => r.card_type === c.card_type,
+      ).length;
       requestedGroups.push({ cardType: c.card_type, needed });
     }
   }
@@ -57,7 +64,6 @@ export default function AcceptCardPicker({
       if (next.has(cardId)) {
         next.delete(cardId);
       } else {
-        // Count currently selected for this type
         const selectedOfType = availableByType[cardType].filter((s) =>
           next.has(s.card.cardId),
         ).length;
@@ -103,102 +109,118 @@ export default function AcceptCardPicker({
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40"
-        onClick={onClose}
-      />
+      <div className="fixed inset-0 z-40" onClick={onClose} />
 
-      {/* Picker panel — floats above the hand */}
-      <div
-        className="fixed left-1/2 -translate-x-1/2 z-50 bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-4 flex flex-col gap-4"
-        style={{ bottom: 190, maxWidth: "90vw" }}
+      {/* Western notice board */}
+      <m.div
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 320, damping: 26 }}
+        className="fixed left-1/2 -translate-x-1/2 z-50"
+        style={{
+          bottom: 190,
+          width: "min(450px, 90vw)",
+          aspectRatio: `${BOARD_W} / ${BOARD_H}`,
+        }}
       >
-        <p className="text-xs font-semibold text-gray-300 text-center">
-          Choose which cards to give
-        </p>
+        {/* Board background image */}
+        <img
+          src="/accept_card_picker.webp"
+          alt=""
+          draggable={false}
+          className="absolute inset-0 w-full h-full object-fill select-none pointer-events-none"
+        />
 
-        {requestedGroups.map(({ cardType, needed }) => {
-          const available = availableByType[cardType];
-          const selectedCount = available.filter((s) =>
-            selectedIds.has(s.card.cardId),
-          ).length;
-          return (
-            <div key={cardType} className="flex flex-col gap-2">
-              <p className="text-[11px] text-gray-400">
-                <span className="font-semibold text-gray-200">{cardType}</span>
-                {" "}— select {needed}{" "}
-                <span
-                  className={
-                    selectedCount === needed ? "text-green-400" : "text-gray-500"
-                  }
-                >
-                  ({selectedCount}/{needed})
-                </span>
-              </p>
+        {/* Content inside the parchment area */}
+        <div
+          className="absolute flex flex-col gap-2"
+          style={{ top: "13%", bottom: "15%", left: "11%", right: "11%" }}
+        >
+          <p
+            className="text-lg font-semibold text-center shrink-0"
+            style={{ color: "#3b1a08" }}
+          >
+            Choose which cards to give
+          </p>
 
-              <div className="flex gap-3">
-                {available.map(({ card, source }) => {
-                  const isSelected = selectedIds.has(card.cardId);
-                  return (
-                    <button
-                      key={card.cardId}
-                      onClick={() => toggleCard(card.cardId, cardType, needed)}
-                      className="relative flex flex-col items-center gap-1 focus:outline-none"
+          {/* Scrollable card groups */}
+          <div className="flex-1 overflow-y-auto flex flex-col gap-3 min-h-0">
+            {requestedGroups.map(({ cardType, needed }) => {
+              const available = availableByType[cardType];
+              const selectedCount = available.filter((s) =>
+                selectedIds.has(s.card.cardId),
+              ).length;
+              return (
+                <div key={cardType} className="flex flex-col gap-1.5">
+                  <p className="font-semibold" style={{ color: "#3b1a08" }}>
+                    <span className="font-semibold">{cardType}</span>
+                    {" — select "}
+                    {needed}{" "}
+                    <span
+                      style={{
+                        color: selectedCount === needed ? "#92400e" : "#a8856a",
+                      }}
                     >
-                      {/* Card face */}
-                      <div
-                        className="relative rounded-lg overflow-hidden transition-transform duration-100"
-                        style={{
-                          width: 64,
-                          height: 96,
-                          transform: isSelected ? "scale(1.08)" : "scale(1)",
-                          boxShadow: isSelected
-                            ? "0 0 0 2px #22c55e, 0 4px 12px rgba(0,0,0,0.5)"
-                            : "0 2px 8px rgba(0,0,0,0.4)",
-                          opacity: isSelected ? 1 : 0.7,
-                        }}
-                      >
-                        <CardFrontFace card={card} />
-                        {isSelected && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
-                            <span className="text-white text-xl font-bold drop-shadow">✓</span>
-                          </div>
-                        )}
-                      </div>
-                      {/* Source label */}
-                      <span
-                        className={`text-[9px] font-semibold uppercase tracking-wide ${
-                          source === "center"
-                            ? "text-amber-400"
-                            : "text-blue-400"
-                        }`}
-                      >
-                        {source}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+                      ({selectedCount}/{needed})
+                    </span>
+                  </p>
 
-        <div className="flex gap-2 pt-1">
-          <button
-            onClick={onClose}
-            className="flex-1 py-1.5 text-xs rounded-lg border border-gray-600 text-gray-400 hover:bg-gray-800 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleConfirm}
-            disabled={!isComplete}
-            className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-green-700 hover:bg-green-600 text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            Confirm
-          </button>
+                  <div className="flex gap-2 flex-wrap">
+                    {available.map(({ card, source }) => {
+                      const isSelected = selectedIds.has(card.cardId);
+                      return (
+                        <button
+                          key={card.cardId}
+                          onClick={() =>
+                            toggleCard(card.cardId, cardType, needed)
+                          }
+                          className="flex flex-col items-center gap-0.5 focus:outline-none"
+                        >
+                          <CardComponent
+                            card={card}
+                            scale={0.6}
+                            noRaise
+                            noTransition
+                            isSelected={false}
+                            highlightColor={isSelected ? "#d97706" : undefined}
+                          />
+                          <span
+                            className="text-[9px] font-semibold uppercase tracking-wide"
+                            style={{
+                              color:
+                                source === "center" ? "#b45309" : "#1e40af",
+                            }}
+                          >
+                            {source}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Buttons */}
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={onClose}
+              className="flex-1 py-1 text-xs font-semibold rounded border border-amber-800 hover:border-amber-700 text-amber-900 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirm}
+              disabled={!isComplete}
+              className="flex-1 py-1 text-xs font-semibold rounded bg-amber-700 hover:bg-amber-600 active:bg-amber-800 border border-amber-500 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Confirm
+            </button>
+          </div>
         </div>
-      </div>
+      </m.div>
     </>
   );
 }

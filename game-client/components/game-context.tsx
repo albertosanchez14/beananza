@@ -282,7 +282,12 @@ export function GameProvider({
       isTurnPlayer || targetPlayerId === gameState.playerTurn;
     e.preventDefault();
     let blockReason: string | null = null;
-    if (!isEligibleTarget) {
+    if (
+      e.dataTransfer.types.includes("application/drag-from-hand") &&
+      gameState.phase !== "turnTrade"
+    ) {
+      blockReason = "Trading only allowed during trade phase";
+    } else if (!isEligibleTarget) {
       blockReason = "Can't trade with a non-turn player";
     } else if (
       !isTurnPlayer &&
@@ -315,6 +320,9 @@ export function GameProvider({
     if (!raw) return;
     try {
       const dragged = JSON.parse(raw) as CardType;
+      const isHandCard = gameState.hand.some((c) => c.cardId === dragged.cardId);
+      if (isHandCard && gameState.phase !== "turnTrade") return;
+
       const isDraggedInSelection = selection.some(
         (c) => c.cardId === dragged.cardId,
       );

@@ -27,7 +27,7 @@ export default function CurrentPlayer({
           }}
         >
           <div className="flex flex-col items-center justify-center gap-1 self-stretch pr-1">
-            <Coins size={18} strokeWidth={2} className="text-yellow-400" />
+            <Coins size={20} strokeWidth={2} className="text-yellow-400" />
             <span
               className="text-base font-bold text-yellow-300 tabular-nums leading-none"
               style={{ textShadow: "0 1px 6px rgba(0,0,0,0.9)" }}

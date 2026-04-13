@@ -208,16 +208,11 @@ function ActivePlayer({
             {playerCoins !== undefined && (
               <div className="flex items-center gap-1 text-sm text-gray-200">
                 <Coins
-                  size={9}
+                  size={10}
                   strokeWidth={2}
                   className="text-yellow-300 shrink-0"
                 />
-                <span
-                  className="font-medium tabular-nums"
-                  style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}
-                >
-                  {playerCoins}
-                </span>
+                <span className="font-medium tabular-nums">{playerCoins}</span>
               </div>
             )}
 
