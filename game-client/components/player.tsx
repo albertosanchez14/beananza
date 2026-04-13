@@ -52,7 +52,6 @@ function WaitingPlayer({
   playerConnected = true,
   isMe = false,
 }: WaitingPlayerProps) {
-  // "Me" player: normal vertical layout
   return (
     <div className="flex flex-col items-center gap-0.5 transition-all duration-200">
       <div
@@ -84,12 +83,6 @@ function WaitingPlayer({
             />
           )}
         </div>
-        {!isMe && (
-          <span
-            className="absolute bottom-1 right-1 block w-3 h-3 rounded-full border-2 border-black"
-            style={{ background: playerConnected ? "#4ade80" : "#ef4444" }}
-          />
-        )}
       </div>
 
       <p

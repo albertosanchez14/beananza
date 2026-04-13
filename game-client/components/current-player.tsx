@@ -22,20 +22,6 @@ export default function CurrentPlayer({
     <div
       className="absolute bottom-0 left-0 right-0 flex flex-col items-center gap-3 px-6 pb-5 pt-3"
     >
-      {isNarrow && (
-        <div style={{ perspective: "700px", position: "relative", zIndex: 15 }}>
-          <div
-            style={{
-              transform: "rotateX(25deg) scaleX(1.08)",
-              transformOrigin: "bottom center",
-              display: "flex",
-              justifyContent: "center",
-            }}
-          >
-            {tradedCards}
-          </div>
-        </div>
-      )}
       <div style={{ perspective: "700px", position: "relative", zIndex: 15 }}>
         <div
           className="flex items-center gap-3"
@@ -53,17 +39,26 @@ export default function CurrentPlayer({
               {coinCount}
             </span>
           </div>
-          {field}
-          {/* Zero-width anchor so tradedCards never shifts the field */}
-          {!isNarrow && (
-            <div className="relative" style={{ width: 0, overflow: "visible" }}>
-              <div
-                className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-2"
-                style={{ pointerEvents: "auto" }}
-              >
+          {isNarrow ? (
+            <div className="flex flex-col items-center gap-3">
+              <div style={{ display: "flex", justifyContent: "center" }}>
                 {tradedCards}
               </div>
+              {field}
             </div>
+          ) : (
+            <>
+              {field}
+              {/* Zero-width anchor so tradedCards never shifts the field */}
+              <div className="relative self-stretch" style={{ width: 0, overflow: "visible" }}>
+                <div
+                  className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-2"
+                  style={{ pointerEvents: "auto" }}
+                >
+                  {tradedCards}
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
