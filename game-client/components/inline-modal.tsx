@@ -111,7 +111,7 @@ export default function InlineModal({
             {/* Header — shows the top slice of the image */}
             <div className="px-3 pt-6 pb-2 ">
               <p
-                className="text-center font-serif italic text-xs tracking-wide"
+                className="font-semibold text-center tracking-wide"
                 style={{ color: "#5c3a1e" }}
               >
                 — Request a Card —

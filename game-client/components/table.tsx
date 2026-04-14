@@ -4,8 +4,6 @@ import Image from "next/image";
 const DESIGN_W = 1280;
 const DESIGN_H = 720;
 
-const NARROW_THRESHOLD = 0.7;
-
 type TableProps = {
   children: ReactNode;
   onScaleChange?: (scale: number) => void;
@@ -13,7 +11,12 @@ type TableProps = {
   paddingTop?: number;
 };
 
-export default function Table({ children, onScaleChange, narrow, paddingTop }: TableProps) {
+export default function Table({
+  children,
+  onScaleChange,
+  narrow,
+  paddingTop,
+}: TableProps) {
   const outerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [width, setWidth] = useState(DESIGN_W);
@@ -34,14 +37,16 @@ export default function Table({ children, onScaleChange, narrow, paddingTop }: T
     return () => ro.disconnect();
   }, [onScaleChange]);
 
-  const isNarrow = narrow ?? scale < NARROW_THRESHOLD;
   const useTopAlign = narrow !== undefined && narrow;
 
   return (
     <div
       ref={outerRef}
       className={`absolute inset-0 flex ${useTopAlign ? "items-start" : "items-center"} justify-center`}
-      style={{ perspective: "900px", paddingTop: useTopAlign ? (paddingTop ?? 16) : 0 }}
+      style={{
+        perspective: "900px",
+        paddingTop: useTopAlign ? (paddingTop ?? 16) : 0,
+      }}
     >
       <div
         style={{

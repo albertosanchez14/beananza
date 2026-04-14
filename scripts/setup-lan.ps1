@@ -1,7 +1,3 @@
-<#
-.SYNOPSIS
-  Windows LAN network setup for Card Game.
-#>
 param(
   [string]$IP   = "",
 	[int]   $Port = 80

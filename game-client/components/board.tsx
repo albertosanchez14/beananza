@@ -159,6 +159,9 @@ export default function Board() {
     dragSourceIsCenter,
     canPlantFromHand,
     canPlantCenterCard,
+    pendingHarvestSlotId,
+    confirmHarvest,
+    cancelHarvest,
     handleSlotClick,
     handleSlotDrop,
     handleSlotDragOver,
@@ -1937,6 +1940,9 @@ export default function Board() {
                           return next;
                         })
                       }
+                      isPendingHarvest={pendingHarvestSlotId === s.slotId}
+                      onConfirmHarvest={confirmHarvest}
+                      onCancelHarvest={cancelHarvest}
                     >
                       {cardForSlot && (
                         <Card

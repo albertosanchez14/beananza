@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import {
   BaseCard,
   CardType,
@@ -32,6 +32,9 @@ type GameContextValue = {
   dragSourceIsCenter: boolean;
   canPlantFromHand: boolean;
   canPlantCenterCard: boolean;
+  pendingHarvestSlotId: string | null;
+  confirmHarvest: () => void;
+  cancelHarvest: () => void;
   handleSlotClick: (slotId: string) => void;
   handleSlotDrop: (e: React.DragEvent, slotId: string) => void;
   handleSlotDragOver: (e: React.DragEvent, slotId: string) => void;
@@ -114,6 +117,7 @@ export function GameProvider({
   onRespondOffer,
   onCounterOffer,
 }: GameProviderProps) {
+  const [pendingHarvestSlotId, setPendingHarvestSlotId] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   const [dragSourceIsHand, setDragSourceIsHand] = useState(false);
   const [dragSourceIsCenter, setDragSourceIsCenter] = useState(false);
@@ -211,6 +215,24 @@ export function GameProvider({
     }
   };
 
+  const confirmHarvest = () => {
+    if (pendingHarvestSlotId) {
+      onHarvestField(pendingHarvestSlotId);
+      setPendingHarvestSlotId(null);
+    }
+  };
+
+  const cancelHarvest = () => setPendingHarvestSlotId(null);
+
+  useEffect(() => {
+    if (!pendingHarvestSlotId) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPendingHarvestSlotId(null);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [pendingHarvestSlotId]);
+
   const handleSlotClick = (slotId: string) => {
     const slot = gameState.field.slots.find((slot) => slot.slotId == slotId);
     const card = selection[0];
@@ -227,7 +249,7 @@ export function GameProvider({
       }
     } else {
       if (slot && slot.cardName && slot.slotId.length > 0) {
-        onHarvestField(slot.slotId);
+        setPendingHarvestSlotId(slotId);
       }
     }
   };
@@ -368,6 +390,9 @@ export function GameProvider({
     dragSourceIsCenter,
     canPlantFromHand,
     canPlantCenterCard,
+    pendingHarvestSlotId,
+    confirmHarvest,
+    cancelHarvest,
     handleSlotClick,
     handleSlotDrop,
     handleSlotDragOver,
