@@ -30,6 +30,7 @@ export type GameState = {
   discardPileSize: number;
   discardTopCard: CardType | null;
   coins: number;
+  minPlayersDeadline: string | null;
 };
 
 export type WaitingLobbyState = {
@@ -57,6 +58,7 @@ const DEFAULT_GAME_STATE: GameState = {
   discardPileSize: 0,
   discardTopCard: null,
   coins: 0,
+  minPlayersDeadline: null,
 };
 
 const DEFAULT_LOBBY_STATE: WaitingLobbyState = {
@@ -104,6 +106,7 @@ export function useGameState(lastMessage: WebSocketMessage | null): GameState {
       discardPileSize: payload.discard_pile_size ?? state.discardPileSize,
       discardTopCard: payload.discard_top_card ?? state.discardTopCard,
       coins: payload.player?.coins ?? state.coins,
+      minPlayersDeadline: payload.min_players_deadline ?? null,
     };
 
     setState(next);

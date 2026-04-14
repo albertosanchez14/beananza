@@ -12,6 +12,14 @@ import (
 	"github.com/yourusername/game-server/internal/storage"
 )
 
+// timerEntry wraps a time.AfterFunc timer with a cancelled flag that allows
+// HandlePlayerReconnect to prevent a racing callback from acting after the
+// player has already rejoined.
+type timerEntry struct {
+	timer     *time.Timer
+	cancelled bool
+}
+
 type SessionState string
 
 const (
@@ -28,16 +36,211 @@ type Session struct {
 	repo         *storage.Repository
 	logger       *zap.Logger
 	mu           sync.RWMutex
+
+	// Disconnect timer state.
+	// Lock ordering: timerMu is ALWAYS acquired stand-alone — never while
+	// holding mu, and never held when acquiring mu.
+	// disconnectDeadlines and minPlayersDeadline are protected by mu (not
+	// timerMu) so they can be read safely inside GetPlayerSnapshot.
+	timerMu            sync.Mutex
+	disconnectTimers   map[string]*timerEntry
+	minPlayersEntry    *timerEntry
+	disconnectTimeout  time.Duration
+	disconnectDeadlines map[string]time.Time // protected by mu
+	minPlayersDeadline  *time.Time           // protected by mu
+	broadcastFn        func()
 }
 
 func NewSession(roomID string, cfg *config.Config, repo *storage.Repository, logger *zap.Logger) *Session {
 	return &Session{
-		config:       cfg,
-		gameState:    NewState(roomID),
-		waitingLobby: NewWaitingLobby(roomID, cfg.Game.MinNumberPlayers, cfg.Game.MaxNumberPlayers),
-		state:        SessionStateWaiting,
-		repo:         repo,
-		logger:       logger.With(zap.String("room_id", roomID)),
+		config:              cfg,
+		gameState:           NewState(roomID),
+		waitingLobby:        NewWaitingLobby(roomID, cfg.Game.MinNumberPlayers, cfg.Game.MaxNumberPlayers),
+		state:               SessionStateWaiting,
+		repo:                repo,
+		logger:              logger.With(zap.String("room_id", roomID)),
+		disconnectTimers:    make(map[string]*timerEntry),
+		disconnectDeadlines: make(map[string]time.Time),
+		disconnectTimeout:   time.Duration(cfg.Game.DisconnectTimeoutSecs) * time.Second,
+	}
+}
+
+// SetBroadcastFn injects the function the session uses to push fresh state to
+// all local clients after a timer-driven state change.  Call this once after
+// GetOrCreateSession before any disconnect handling occurs.
+func (s *Session) SetBroadcastFn(fn func()) {
+	s.timerMu.Lock()
+	s.broadcastFn = fn
+	s.timerMu.Unlock()
+}
+
+// HandlePlayerDisconnect is called when a player's WebSocket connection drops
+// during an active game.  It marks the player as disconnected, records the
+// skip-turn deadline, and arms two timers:
+//  1. A per-player timer that skips the player's turn when it fires.
+//  2. A min-players timer (started or reset) if connected count drops below
+//     the configured minimum — this timer ends the game when it fires.
+//
+// The caller is responsible for broadcasting updated state afterwards.
+func (s *Session) HandlePlayerDisconnect(playerID string, connectedIDs map[string]bool, minPlayers int) {
+	// ── Update player status and record deadline (under mu) ────────────────
+	deadline := time.Now().Add(s.disconnectTimeout)
+
+	s.mu.Lock()
+	_ = s.gameState.UpdatePlayerStatus(playerID, "disconnected")
+	s.disconnectDeadlines[playerID] = deadline
+	connectedCount := s.gameState.ConnectedPlayerCount(connectedIDs)
+	startMinTimer := connectedCount < minPlayers
+	s.mu.Unlock()
+
+	// ── Arm per-player skip timer (under timerMu) ──────────────────────────
+	s.timerMu.Lock()
+	if existing, ok := s.disconnectTimers[playerID]; ok {
+		existing.cancelled = true
+		existing.timer.Stop()
+	}
+	entry := &timerEntry{}
+	entry.timer = time.AfterFunc(s.disconnectTimeout, func() {
+		s.timerMu.Lock()
+		if entry.cancelled {
+			s.timerMu.Unlock()
+			return
+		}
+		delete(s.disconnectTimers, playerID)
+		s.timerMu.Unlock()
+
+		s.mu.Lock()
+		s.gameState.SkipDisconnectedTurn(playerID)
+		delete(s.disconnectDeadlines, playerID)
+		_ = s.persistState()
+		s.mu.Unlock()
+
+		s.timerMu.Lock()
+		fn := s.broadcastFn
+		s.timerMu.Unlock()
+		if fn != nil {
+			go fn()
+		}
+	})
+	s.disconnectTimers[playerID] = entry
+	s.timerMu.Unlock()
+
+	if !startMinTimer {
+		return
+	}
+
+	// ── Arm or reset the min-players game-end timer ─────────────────────────
+	minDeadline := time.Now().Add(s.disconnectTimeout)
+
+	s.mu.Lock()
+	s.minPlayersDeadline = &minDeadline
+	s.mu.Unlock()
+
+	s.timerMu.Lock()
+	if s.minPlayersEntry != nil {
+		s.minPlayersEntry.cancelled = true
+		s.minPlayersEntry.timer.Stop()
+	}
+	minEntry := &timerEntry{}
+	minEntry.timer = time.AfterFunc(s.disconnectTimeout, func() {
+		s.timerMu.Lock()
+		if minEntry.cancelled {
+			s.timerMu.Unlock()
+			return
+		}
+		s.minPlayersEntry = nil
+		s.timerMu.Unlock()
+
+		s.mu.Lock()
+		s.endGame()
+		s.minPlayersDeadline = nil
+		_ = s.persistState()
+		s.mu.Unlock()
+
+		s.timerMu.Lock()
+		fn := s.broadcastFn
+		s.timerMu.Unlock()
+		if fn != nil {
+			go fn()
+		}
+	})
+	s.minPlayersEntry = minEntry
+	s.timerMu.Unlock()
+}
+
+// HandlePlayerReconnect is called when a disconnected player's WebSocket
+// reconnects during an active game.  It cancels the player's skip timer,
+// cancels the min-players timer if enough players are now connected, and marks
+// the player as active.  The caller is responsible for broadcasting updated state.
+func (s *Session) HandlePlayerReconnect(playerID string, connectedIDs map[string]bool, minPlayers int) {
+	// ── Cancel per-player skip timer ────────────────────────────────────────
+	s.timerMu.Lock()
+	if entry, ok := s.disconnectTimers[playerID]; ok {
+		entry.cancelled = true
+		entry.timer.Stop()
+		delete(s.disconnectTimers, playerID)
+	}
+	s.timerMu.Unlock()
+
+	// ── Update status and compute connected count (under mu) ────────────────
+	s.mu.Lock()
+	_ = s.gameState.UpdatePlayerStatus(playerID, "active")
+	delete(s.disconnectDeadlines, playerID)
+	connectedCount := s.gameState.ConnectedPlayerCount(connectedIDs)
+	s.mu.Unlock()
+
+	if connectedCount < minPlayers {
+		return
+	}
+
+	// ── Cancel min-players timer (enough players reconnected) ────────────────
+	s.timerMu.Lock()
+	if s.minPlayersEntry != nil {
+		s.minPlayersEntry.cancelled = true
+		s.minPlayersEntry.timer.Stop()
+		s.minPlayersEntry = nil
+	}
+	s.timerMu.Unlock()
+
+	s.mu.Lock()
+	s.minPlayersDeadline = nil
+	s.mu.Unlock()
+}
+
+// HandleWaitingLobbyDisconnect immediately removes a player from the waiting
+// lobby when their connection drops.  No timeout is applied — the slot is freed
+// right away so another player can join.  The session token remains valid in
+// Redis so the player can rejoin via the normal join flow.
+func (s *Session) HandleWaitingLobbyDisconnect(playerID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.waitingLobby.Players, playerID)
+	s.waitingLobby.UpdatedAt = time.Now()
+
+	s.logger.Info("player removed from lobby on disconnect",
+		zap.String("player_id", playerID),
+	)
+
+	return s.persistState()
+}
+
+// CancelAllTimers stops all pending disconnect and min-players timers.
+// Call this when the room is being cleaned up to prevent goroutine leaks.
+func (s *Session) CancelAllTimers() {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+
+	for _, entry := range s.disconnectTimers {
+		entry.cancelled = true
+		entry.timer.Stop()
+	}
+	s.disconnectTimers = make(map[string]*timerEntry)
+
+	if s.minPlayersEntry != nil {
+		s.minPlayersEntry.cancelled = true
+		s.minPlayersEntry.timer.Stop()
+		s.minPlayersEntry = nil
 	}
 }
 
@@ -106,8 +309,10 @@ func (s *Session) GetFullSnapshot() map[string]any {
 }
 
 // GetPlayerSnapshot returns a complete snapshot of the session for a player
-// and what that player can see
-func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
+// and what that player can see. connectedIDs is the set of player IDs that
+// currently have an active WebSocket connection, used to stamp a "connected"
+// flag onto each external player without persisting that state to Redis.
+func (s *Session) GetPlayerSnapshot(playerId string, connectedIDs map[string]bool) map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -115,17 +320,25 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 	if !ok {
 	}
 
+	// Include the min-players deadline if the game is paused waiting for reconnects.
+	var minPlayersDeadlineStr *string
+	if s.minPlayersDeadline != nil {
+		formatted := s.minPlayersDeadline.UTC().Format(time.RFC3339)
+		minPlayersDeadlineStr = &formatted
+	}
+
 	snapshot := map[string]any{
-		"room_id":      s.gameState.RoomID,
-		"phase":        s.gameState.Phase,
-		"player":       playerData,
-		"turn_order":   s.gameState.TurnOrder,
-		"current_turn": s.gameState.CurrentTurn,
-		"center_cards": s.gameState.CenterCards,
-		"offers":       s.gameState.GetOffersForPlayer(playerId),
-		"started_at":   s.gameState.StartedAt,
-		"ended_at":     s.gameState.EndedAt,
-		"updated_at":   s.gameState.UpdatedAt,
+		"room_id":              s.gameState.RoomID,
+		"phase":                s.gameState.Phase,
+		"player":               playerData,
+		"turn_order":           s.gameState.TurnOrder,
+		"current_turn":         s.gameState.CurrentTurn,
+		"center_cards":         s.gameState.CenterCards,
+		"offers":               s.gameState.GetOffersForPlayer(playerId),
+		"started_at":           s.gameState.StartedAt,
+		"ended_at":             s.gameState.EndedAt,
+		"updated_at":           s.gameState.UpdatedAt,
+		"min_players_deadline": minPlayersDeadlineStr,
 	}
 
 	// Include deck size but not the actual deck contents
@@ -156,15 +369,22 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 		if !ok {
 			continue
 		}
+		var deadlineStr *string
+		if dl, hasDl := s.disconnectDeadlines[id]; hasDl {
+			formatted := dl.UTC().Format(time.RFC3339)
+			deadlineStr = &formatted
+		}
 		externalPlayerData := map[string]any{
-			"playerId":               player.ID,
-			"playerName":             player.Name,
-			"playerAvatar":           player.Avatar,
-			"playerStatus":           player.Status,
-			"playerCoins":            player.Coins,
-			"playerHandSize":         len(player.Hand),
-			"playerPickedCardsCount": len(player.PickedCards),
-			"playerField":            player.Field,
+			"playerId":                    player.ID,
+			"playerName":                  player.Name,
+			"playerAvatar":                player.Avatar,
+			"playerStatus":                player.Status,
+			"playerCoins":                 player.Coins,
+			"playerHandSize":              len(player.Hand),
+			"playerPickedCardsCount":      len(player.PickedCards),
+			"playerField":                 player.Field,
+			"playerConnected":             connectedIDs[id],
+			"playerDisconnectDeadline":    deadlineStr,
 		}
 		externalPlayers = append(externalPlayers, externalPlayerData)
 	}
@@ -173,14 +393,29 @@ func (s *Session) GetPlayerSnapshot(playerId string) map[string]any {
 	return snapshot
 }
 
-func (s *Session) GetWaitingLobbySnapshot() map[string]any {
+// GetWaitingLobbySnapshot returns a snapshot of the waiting lobby.
+// connectedIDs is the set of player IDs with an active WebSocket connection,
+// stamped onto each player entry without being persisted to Redis.
+func (s *Session) GetWaitingLobbySnapshot(connectedIDs map[string]bool) map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	canStart, _ := s.waitingLobby.CanStartGame()
 
+	players := make(map[string]any, len(s.waitingLobby.Players))
+	for id, p := range s.waitingLobby.Players {
+		players[id] = map[string]any{
+			"id":        p.ID,
+			"name":      p.Name,
+			"avatar":    p.Avatar,
+			"ready":     p.Ready,
+			"joined_at": p.JoinedAt,
+			"connected": connectedIDs[id],
+		}
+	}
+
 	snapshot := map[string]any{
-		"players":     s.waitingLobby.Players,
+		"players":     players,
 		"max_players": s.waitingLobby.MaxPlayers,
 		"min_players": s.waitingLobby.MinPlayers,
 		"can_start":   canStart,

@@ -111,7 +111,7 @@ export default function InlineModal({
             {/* Header — shows the top slice of the image */}
             <div className="px-3 pt-6 pb-2 ">
               <p
-                className="text-center font-serif italic text-xs tracking-wide"
+                className="font-semibold text-center tracking-wide"
                 style={{ color: "#5c3a1e" }}
               >
                 — Request a Card —
@@ -159,16 +159,16 @@ export default function InlineModal({
           <div className="flex items-center gap-2">
             <button
               onClick={handleSubmit}
-              className="px-4 py-1 rounded-lg bg-blue-500 hover:bg-blue-600
-                text-white text-xs font-semibold transition-colors
-                disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-4 py-1 rounded text-xs font-semibold 
+							transition-colors bg-green-700 hover:bg-green-600 active:bg-green-800 
+							border border-green-700 text-white disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Send offer
             </button>
             <button
               onClick={onClose}
-              className="px-3 py-1 rounded-lg bg-black/60 hover:bg-black/80
-                text-white/70 text-xs transition-colors"
+              className="px-3 py-1 rounded text-xs font-semibold 
+							transition-colors bg-green-900 hover:bg-green-800 active:bg-green-950 border border-green-600/60 hover:border-green-400 text-white"
             >
               Cancel
             </button>
@@ -182,7 +182,7 @@ export default function InlineModal({
                   name="inline-target"
                   checked={selectedTargetId === undefined}
                   onChange={() => onTargetChange(undefined)}
-                  className="accent-blue-400 w-3 h-3"
+                  className="accent-green-600 w-3 h-3"
                 />
                 <span className="text-[11px] text-white/80">Everyone</span>
               </label>
@@ -196,7 +196,7 @@ export default function InlineModal({
                     name="inline-target"
                     checked={selectedTargetId === p.playerId}
                     onChange={() => onTargetChange(p.playerId)}
-                    className="accent-blue-400 w-3 h-3"
+                    className="accent-green-600 w-3 h-3"
                   />
                   <span className="text-[11px] text-white/80">
                     {p.playerName}

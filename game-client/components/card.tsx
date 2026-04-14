@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { m } from "motion/react";
 import Image from "next/image";
 import { BaseCard, CardType } from "@/schemas/types";

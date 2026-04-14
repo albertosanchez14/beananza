@@ -46,6 +46,8 @@ export type ExternalPlayer = {
   playerHandSize: number;
   playerPickedCardsCount: number;
   playerField: FieldType;
+  playerConnected?: boolean;
+  playerDisconnectDeadline?: string | null;
 };
 
 export type WaitingPlayer = {
@@ -54,6 +56,7 @@ export type WaitingPlayer = {
   avatar?: string;
   ready: boolean;
   joined_at: string;
+  connected?: boolean;
 };
 
 export type Player = {
@@ -84,6 +87,12 @@ export type Offer = {
   status: "pending" | "accepted" | "rejected" | "cancelled" | "expired";
   rejected_by: string[];
   created_at: string;
+};
+
+export type ToastEntry = {
+  id: string;
+  message: string;
+  type: "error" | "success";
 };
 
 // DEFAULT VALUES

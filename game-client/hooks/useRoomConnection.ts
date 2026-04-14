@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWebSocket, WebSocketMessage } from "@/hooks/useWebSocket";
 import { useWaitingRoom, WaitingRoomContext } from "@/hooks/useWaitingRoom";
 import { useGameRoom, GameRoomContext } from "@/hooks/useGameRoom";
@@ -14,10 +14,15 @@ export type ViewState =
   | "pause"
   | "gameAlreadyStarted";
 
+export type GameError = { code: string; message: string };
+
 export type UseRoomConnectionResult = {
   viewState: ViewState;
   game: GameRoomContext;
   waiting: WaitingRoomContext;
+  gameError: GameError | null;
+  clearGameError: () => void;
+  isConnected: boolean;
 };
 
 export function useRoomConnection(
@@ -30,6 +35,8 @@ export function useRoomConnection(
 ): UseRoomConnectionResult {
   const [viewState, setViewState] = useState<ViewState>("connecting");
   const [joinRetry, setJoinRetry] = useState(0);
+  const [gameError, setGameError] = useState<GameError | null>(null);
+  const clearGameError = useCallback(() => setGameError(null), []);
 
   const dealTriggeredRef = useRef(false);
   const joinedRef = useRef(false);
@@ -96,19 +103,30 @@ export function useRoomConnection(
     }
 
     if (lastMessage.type === "error") {
-      const { code } = lastMessage.payload as { code: string };
+      const { code, message } = lastMessage.payload as { code: string; message: string };
       if (code === "GAME_ALREADY_STARTED") {
         setViewState("gameAlreadyStarted");
       } else if (code === "unauthorized") {
         redirectToIdentify();
-      }
-      if (code === "invalid_token") {
+      } else if (code === "invalid_token") {
         sessionStorage.removeItem(`session_token:${roomId}`);
         joinedRef.current = false;
         setJoinRetry((n) => n + 1);
+      } else {
+        setGameError({ code, message });
       }
     }
   }, [lastMessage, requestState, redirectToIdentify, roomId]);
+
+  // ---------------------------------------------------------------------------
+  // Reset joinedRef when the WebSocket drops so the reconnect effect re-fires
+  // on the next connection and sends a fresh join/reconnect message.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!isConnected) {
+      joinedRef.current = false;
+    }
+  }, [isConnected]);
 
   // ---------------------------------------------------------------------------
   // Join / reconnect — fires once on connect; joinedRef guards against re-sends
@@ -135,5 +153,5 @@ export function useRoomConnection(
     joinRetry,
   ]);
 
-  return { viewState, game, waiting };
+  return { viewState, game, waiting, gameError, clearGameError, isConnected };
 }

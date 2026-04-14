@@ -11,14 +11,15 @@ export default function RoomPage() {
   const roomId = useParams().roomId as string;
   const { profile, redirectToIdentify } = usePlayerProfile(roomId);
 
-  const { viewState, game, waiting } = useRoomConnection(
-    roomId,
-    profile?.id ?? "",
-    profile?.name ?? "",
-    profile?.authToken ?? "",
-    profile?.avatar ?? "",
-    redirectToIdentify,
-  );
+  const { viewState, game, waiting, gameError, clearGameError, isConnected } =
+    useRoomConnection(
+      roomId,
+      profile?.id ?? "",
+      profile?.name ?? "",
+      profile?.authToken ?? "",
+      profile?.avatar ?? "",
+      redirectToIdentify,
+    );
 
   if (!profile)
     return (
@@ -55,12 +56,20 @@ export default function RoomPage() {
             roomId={roomId}
             playerId={profile.id}
             myAvatar={profile.avatar}
+            isConnected={isConnected}
             {...waiting}
           />
         )}
 
         {showGame && (
-          <GameRoom roomId={roomId} playerId={profile.id} {...game} />
+          <GameRoom
+            roomId={roomId}
+            playerId={profile.id}
+            {...game}
+            gameError={gameError}
+            clearGameError={clearGameError}
+            isConnected={isConnected}
+          />
         )}
       </main>
     </div>

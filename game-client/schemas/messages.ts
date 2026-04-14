@@ -52,6 +52,7 @@ export type GameStateResponsePayload = {
   started_at: string;
   turn_order: Array<string>;
   updated_at: string;
+  min_players_deadline?: string | null;
 };
 
 /** Sent by the server after a successful join or reconnect. */

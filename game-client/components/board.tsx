@@ -27,6 +27,7 @@ import { PlantFlyingCard } from "@/components/plant-flying-card";
 import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
 import AcceptCardPicker from "@/components/accept-card-picker";
 import Arrow from "@/components/arrow";
+import DisconnectCountdown from "@/components/disconnect-countdown";
 import { canAcceptOffer } from "@/utils/offer-utils";
 
 import {
@@ -154,6 +155,13 @@ export default function Board() {
     handleCardClick,
     handleCardDrag,
     dragOverSlot,
+    dragSourceIsHand,
+    dragSourceIsCenter,
+    canPlantFromHand,
+    canPlantCenterCard,
+    pendingHarvestSlotId,
+    confirmHarvest,
+    cancelHarvest,
     handleSlotClick,
     handleSlotDrop,
     handleSlotDragOver,
@@ -203,8 +211,60 @@ export default function Board() {
   const [reqTarget, setReqTarget] = useState<string | undefined>(undefined);
   const [showReqPicker, setShowReqPicker] = useState(false);
 
+  const [tableScale, setTableScale] = useState(1);
+  const [isOverflow, setIsOverflow] = useState(false);
+  const isNarrow = tableScale < 0.7 || isOverflow;
+
   const tradedCardsAreaRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
   const draftCardsGroupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const check = () => {
+      if (!tradedCardsAreaRef.current || !fieldRef.current) return;
+      const tradedW = tradedCardsAreaRef.current.getBoundingClientRect().width;
+      const fieldRight = fieldRef.current.getBoundingClientRect().right;
+      const available = window.innerWidth - fieldRight - 16;
+      setIsOverflow(tradedW > available);
+    };
+    const ro = new ResizeObserver(check);
+    if (tradedCardsAreaRef.current) ro.observe(tradedCardsAreaRef.current);
+    if (fieldRef.current) ro.observe(fieldRef.current);
+    window.addEventListener("resize", check);
+    check();
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", check);
+    };
+  }, []);
+
+  const CENTER_BOTTOM_DESIGN = 410;
+  const CENTER_GAP = 70;
+  const [tablePaddingTop, setTablePaddingTop] = useState(16);
+
+  useEffect(() => {
+    if (!isNarrow || !tradedCardsAreaRef.current) {
+      setTablePaddingTop(16);
+      return;
+    }
+    const update = () => {
+      if (!tradedCardsAreaRef.current) return;
+      const tradedTop = tradedCardsAreaRef.current.getBoundingClientRect().top;
+      const tableHeight = tableScale * 720;
+      const centeredPadding = (window.innerHeight - tableHeight) / 2;
+      const maxAllowed =
+        tradedTop - CENTER_BOTTOM_DESIGN * tableScale - CENTER_GAP;
+      setTablePaddingTop(Math.max(16, Math.min(centeredPadding, maxAllowed)));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(tradedCardsAreaRef.current);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [isNarrow, tableScale]);
 
   const {
     centerCards,
@@ -218,6 +278,7 @@ export default function Board() {
     field,
     coins,
     pickedCards,
+    minPlayersDeadline,
   } = gameState;
 
   const isTurnPlayer = myPlayerId === playerTurn;
@@ -661,6 +722,7 @@ export default function Board() {
   const [animatingOpponentSlotIds, setAnimatingOpponentSlotIds] = useState<
     Set<string>
   >(new Set());
+  const [popSlotIds, setPopSlotIds] = useState<Set<string>>(new Set());
   const [offerPaths, setOfferPaths] = useState<Map<string, OfferPathEntry>>(
     new Map(),
   );
@@ -930,6 +992,7 @@ export default function Board() {
       const newCardId = slot.cardIds.at(-1);
       if (newCardId && dragPlantedCardIds.current.has(newCardId)) {
         dragPlantedCardIds.current.delete(newCardId);
+        setPopSlotIds((prev) => new Set([...prev, slot.slotId]));
         return;
       }
 
@@ -1016,6 +1079,22 @@ export default function Board() {
       }
     },
     [],
+  );
+
+  const handleMySlotDrop = useCallback(
+    (e: React.DragEvent, slotId: string) => {
+      try {
+        const raw = e.dataTransfer.getData("application/card");
+        if (raw) {
+          const card = JSON.parse(raw);
+          if (card?.cardId) dragPlantedCardIds.current.add(card.cardId);
+        }
+      } catch {
+        // ignore malformed payload
+      }
+      handleSlotDrop(e, slotId);
+    },
+    [handleSlotDrop],
   );
 
   // ── Inline modal (drag-to-request) ───────────────────────────────────────────
@@ -1588,7 +1667,11 @@ export default function Board() {
         />
       )}
 
-      <Table>
+      <Table
+        onScaleChange={setTableScale}
+        narrow={isNarrow}
+        paddingTop={tablePaddingTop}
+      >
         <Opponents>
           {players.map((player) => {
             const playerHighlight =
@@ -1603,6 +1686,8 @@ export default function Board() {
                 playerStatus="active"
                 playerCoins={player.playerCoins}
                 playerPickedCardsCount={player.playerPickedCardsCount}
+                playerConnected={player.playerConnected !== false}
+                playerDisconnectDeadline={player.playerDisconnectDeadline}
                 isCurrentTurn={player.playerId === playerTurn}
                 gamePhase={phase}
                 isDragTarget={dragOverPlayerId === player.playerId}
@@ -1708,6 +1793,26 @@ export default function Board() {
         </Opponents>
 
         <Center>
+          {minPlayersDeadline && (
+            <div
+              className="absolute left-1/2 z-50 flex flex-col 
+							items-center gap-1 pointer-events-none"
+              style={{ top: "-60%", transform: "translateX(-50%)" }}
+            >
+              <span
+                className="rounded-lg bg-red-900 px-3 py-1.5
+								text-xl font-light text-red-200 text-center whitespace-nowrap flex flex-col items-center gap-0.5"
+              >
+                <span>Not enough players connected</span>
+                <span>
+                  Game ends in{" "}
+                  <span className="text-4xl">
+                    <DisconnectCountdown deadline={minPlayersDeadline} />
+                  </span>
+                </span>
+              </span>
+            </div>
+          )}
           <CardPile
             label="Draw"
             count={deckSize}
@@ -1786,61 +1891,89 @@ export default function Board() {
       </Table>
 
       <CurrentPlayer
+        isNarrow={isNarrow}
         coinCount={coins}
         field={
-          <Field>
-            {field.slots.map((s: SlotType, index: number) => {
-              const cardForSlot = s.cardName
-                ? (cardLookup.get(s.cardName) ?? null)
-                : null;
-              const highlightEmpty = selection.length === 1;
-              return (
-                <div
-                  key={s.slotId}
-                  ref={(el) => {
-                    if (el) mySlotRefs.current.set(s.slotId, el);
-                    else mySlotRefs.current.delete(s.slotId);
-                  }}
-                >
-                  <Slot
-                    slot={s}
-                    index={index}
-                    dragOverSlot={dragOverSlot}
-                    highlightEmpty={highlightEmpty}
-                    handleDragOver={handleSlotDragOver}
-                    handleDragLeave={handleSlotDragLeave}
-                    handleSlotDrop={handleSlotDrop}
-                    handleSlotClick={handleSlotClick}
+          <div ref={fieldRef}>
+            <Field>
+              {field.slots.map((s: SlotType, index: number) => {
+                const cardForSlot = s.cardName
+                  ? (cardLookup.get(s.cardName) ?? null)
+                  : null;
+                const highlightEmpty = selection.length === 1;
+                const isHandCardSelected =
+                  selection.length === 1 &&
+                  gameState.hand.some((c) => c.cardId === selection[0].cardId);
+                const isCenterCardSelected =
+                  selection.length === 1 &&
+                  gameState.centerCards.some(
+                    (c) => c.cardId === selection[0].cardId,
+                  );
+                const blocked =
+                  (!canPlantFromHand &&
+                    (isHandCardSelected || dragSourceIsHand)) ||
+                  (!canPlantCenterCard &&
+                    (isCenterCardSelected || dragSourceIsCenter));
+                return (
+                  <div
+                    key={s.slotId}
+                    ref={(el) => {
+                      if (el) mySlotRefs.current.set(s.slotId, el);
+                      else mySlotRefs.current.delete(s.slotId);
+                    }}
                   >
-                    {cardForSlot && (
-                      <Card
-                        card={cardForSlot}
-                        flipped={false}
-                        ref={(el) => {
-                          if (el) mySlotCardRefs.current.set(s.slotId, el);
-                          else mySlotCardRefs.current.delete(s.slotId);
-                        }}
-                        hidden={animatingOpponentSlotIds.has(s.slotId)}
-                        onContextMenu={
-                          !counteringOffer
-                            ? () => {
-                                if (phase === "turnTrade")
-                                  openInlineModal({
-                                    cardsRequested: [cardForSlot],
-                                    defaultTargetId: isTurnPlayer
-                                      ? undefined
-                                      : playerTurn,
-                                  });
-                              }
-                            : undefined
-                        }
-                      />
-                    )}
-                  </Slot>
-                </div>
-              );
-            })}
-          </Field>
+                    <Slot
+                      slot={s}
+                      index={index}
+                      dragOverSlot={dragOverSlot}
+                      highlightEmpty={highlightEmpty}
+                      blocked={blocked}
+                      handleDragOver={handleSlotDragOver}
+                      handleDragLeave={handleSlotDragLeave}
+                      handleSlotDrop={handleMySlotDrop}
+                      handleSlotClick={handleSlotClick}
+                      popAnimation={popSlotIds.has(s.slotId)}
+                      onPopComplete={() =>
+                        setPopSlotIds((prev) => {
+                          const next = new Set(prev);
+                          next.delete(s.slotId);
+                          return next;
+                        })
+                      }
+                      isPendingHarvest={pendingHarvestSlotId === s.slotId}
+                      onConfirmHarvest={confirmHarvest}
+                      onCancelHarvest={cancelHarvest}
+                    >
+                      {cardForSlot && (
+                        <Card
+                          card={cardForSlot}
+                          flipped={false}
+                          ref={(el) => {
+                            if (el) mySlotCardRefs.current.set(s.slotId, el);
+                            else mySlotCardRefs.current.delete(s.slotId);
+                          }}
+                          hidden={animatingOpponentSlotIds.has(s.slotId)}
+                          onContextMenu={
+                            !counteringOffer
+                              ? () => {
+                                  if (phase === "turnTrade")
+                                    openInlineModal({
+                                      cardsRequested: [cardForSlot],
+                                      defaultTargetId: isTurnPlayer
+                                        ? undefined
+                                        : playerTurn,
+                                    });
+                                }
+                              : undefined
+                          }
+                        />
+                      )}
+                    </Slot>
+                  </div>
+                );
+              })}
+            </Field>
+          </div>
         }
         tradedCards={
           <div ref={tradedCardsAreaRef}>

@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useRef, useEffect } from "react";
 import { m, AnimatePresence } from "motion/react";
 import { SlotType } from "@/schemas/types";
 
@@ -9,11 +9,17 @@ type SlotProp = {
   interactive?: boolean;
   dragOverSlot?: string | null;
   highlightEmpty?: boolean;
+  blocked?: boolean;
   handleDragOver?: (e: React.DragEvent, slotId: string) => void;
   handleDragLeave?: (e: React.DragEvent) => void;
   handleSlotDrop?: (e: React.DragEvent, slotId: string) => void;
   handleSlotClick?: (slotId: string) => void;
   suppressAnimation?: boolean;
+  popAnimation?: boolean;
+  onPopComplete?: () => void;
+  isPendingHarvest?: boolean;
+  onConfirmHarvest?: () => void;
+  onCancelHarvest?: () => void;
 };
 
 export default function Slot({
@@ -22,16 +28,35 @@ export default function Slot({
   interactive = true,
   dragOverSlot = null,
   highlightEmpty = false,
+  blocked = false,
   handleDragOver,
   handleDragLeave,
   handleSlotDrop,
   handleSlotClick,
   suppressAnimation = false,
+  popAnimation = false,
+  onPopComplete,
+  isPendingHarvest = false,
+  onConfirmHarvest,
+  onCancelHarvest,
 }: SlotProp) {
   const isInteractive = interactive;
   const cardQuantity = slot?.cardIds.length ?? 0;
   const filled = !!(slot?.cardName && cardQuantity > 0);
   const isDragOver = dragOverSlot === slot?.slotId;
+
+  const slotRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isPendingHarvest) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (slotRef.current && !slotRef.current.contains(e.target as Node)) {
+        onCancelHarvest?.();
+      }
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [isPendingHarvest, onCancelHarvest]);
 
   const sharedDragProps =
     isInteractive && slot
@@ -48,6 +73,7 @@ export default function Slot({
   if (filled && children) {
     return (
       <div
+        ref={slotRef}
         className="flex w-31 h-42"
         style={{
           backgroundImage: "url('/slotnobg2.webp')",
@@ -75,10 +101,19 @@ export default function Slot({
             <m.div
               key={`${slot?.slotId}-${slot?.cardName}`}
               initial={
-                suppressAnimation ? false : { scale: 1.25, y: -16, rotate: -2 }
+                popAnimation
+                  ? { scale: 1.12 }
+                  : suppressAnimation
+                    ? false
+                    : { scale: 1.25, y: -16, rotate: -2 }
               }
               animate={{ scale: 1, y: 0, rotate: 0 }}
-              transition={{ type: "spring", stiffness: 480, damping: 24 }}
+              transition={
+                popAnimation
+                  ? { duration: 0.2, ease: "easeOut" }
+                  : { type: "spring", stiffness: 480, damping: 24 }
+              }
+              onAnimationComplete={popAnimation ? onPopComplete : undefined}
             >
               {children}
             </m.div>
@@ -91,6 +126,41 @@ export default function Slot({
           >
             {cardQuantity}
           </div>
+          {isPendingHarvest && (
+            <div
+              className="absolute inset-0 z-20 flex 
+							flex-col items-center justify-center 
+							gap-2 rounded-xl bg-amber-950/75"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <m.button
+                className="w-20 py-1 text-sm bg-amber-500
+								border-2 border-amber-300 rounded
+								text-amber-950 cursor-pointer"
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                onClick={onConfirmHarvest}
+              >
+                Harvest!
+              </m.button>
+              <m.button
+                className="w-20 py-1 text-sm bg-red-900/80 
+								border-2 border-red-700 rounded
+								text-red-200 cursor-pointer"
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                onClick={onCancelHarvest}
+              >
+                Back
+              </m.button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -109,10 +179,14 @@ export default function Slot({
         className={[
           "relative flex flex-col items-center justify-center w-24 h-36 rounded-sm border-2 m-auto",
           isDragOver
-            ? "border-amber-300 border-solid scale-105 shadow-lg shadow-amber-400/40 cursor-copy"
+            ? blocked
+              ? "border-red-500 border-solid cursor-not-allowed"
+              : "border-amber-300 border-solid scale-105 shadow-lg shadow-amber-400/40 cursor-copy"
             : "border-dashed " +
               (highlightEmpty
-                ? "border-amber-400 hover:border-amber-300 cursor-pointer"
+                ? blocked
+                  ? "border-red-500 hover:border-red-400 cursor-pointer"
+                  : "border-amber-400 hover:border-amber-300 cursor-pointer"
                 : "border-amber-900/50"),
         ].join(" ")}
         onClick={handleClick}
@@ -131,9 +205,13 @@ export default function Slot({
           <div
             className={`text-2xl transition-colors ${
               isDragOver
-                ? "text-amber-200"
+                ? blocked
+                  ? "text-red-400"
+                  : "text-amber-200"
                 : highlightEmpty
-                  ? "text-amber-400"
+                  ? blocked
+                    ? "text-red-500"
+                    : "text-amber-400"
                   : "text-amber-900/40"
             }`}
           >

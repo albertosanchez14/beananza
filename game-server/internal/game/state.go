@@ -806,6 +806,77 @@ func (s *State) isPlayerTurn(playerId string) (*Player, error) {
 	return player, nil
 }
 
+// SkipDisconnectedTurn skips the current turn player's remaining actions when
+// they have disconnected and the timeout has fired. It discards center cards
+// and the disconnected player's picked cards, resets per-turn flags, expires
+// outstanding offers, then either parks in plantTrade (if other players still
+// have picked cards to plant) or advances to the next turn.
+// If playerID is not the current turn player the call is a no-op.
+func (s *State) SkipDisconnectedTurn(playerID string) {
+	if len(s.TurnOrder) == 0 {
+		return
+	}
+	currentPlayerID := s.TurnOrder[s.CurrentTurn]
+	if currentPlayerID != playerID {
+		return // Not their turn — nothing to skip
+	}
+
+	if s.DiscardPile == nil {
+		s.DiscardPile = &Deck{Cards: make([]*Card, 0)}
+	}
+
+	// Discard all center cards.
+	s.DiscardPile.AddCards(s.CenterCards)
+	s.CenterCards = make([]*Card, 0)
+
+	// Discard the disconnected player's picked cards and reset per-turn state.
+	if player, ok := s.Players[playerID]; ok {
+		s.DiscardPile.AddCards(player.PickedCards)
+		player.PickedCards = make([]*Card, 0)
+		player.BeansPlantedTurn = 0
+	}
+
+	// Reset turn-tracking flags.
+	s.CardsTurned = false
+	s.CardsDrawned = false
+
+	// Expire outstanding offers.
+	s.expireOffersForPhase()
+
+	// Check if other players still have picked cards to plant.
+	for _, id := range s.TurnOrder {
+		if id == playerID {
+			continue
+		}
+		p, ok := s.Players[id]
+		if !ok {
+			continue
+		}
+		if len(p.PickedCards) > 0 {
+			// Park in plantTrade; PlantBean auto-advances once all are planted.
+			s.Phase = PhaseTypePlantTrade
+			s.markDirty()
+			return
+		}
+	}
+
+	// All clean — advance to next turn.
+	s.nextTurn()
+	s.markDirty()
+}
+
+// ConnectedPlayerCount returns how many players in TurnOrder currently have an
+// active WebSocket connection according to the provided connectedIDs set.
+func (s *State) ConnectedPlayerCount(connectedIDs map[string]bool) int {
+	count := 0
+	for _, id := range s.TurnOrder {
+		if connectedIDs[id] {
+			count++
+		}
+	}
+	return count
+}
+
 // -----------------------------------------------------------------------
 // Offer methods
 // -----------------------------------------------------------------------

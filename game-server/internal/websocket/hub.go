@@ -90,10 +90,12 @@ func (h *Hub) Run() {
 
 		case client := <-h.unregister:
 			var disconnectedRoomID string
+			var disconnectedPlayerID string
 			h.clientsMu.Lock()
 			if _, ok := h.clients[client]; ok {
 				if client.room != nil {
 					disconnectedRoomID = client.room.ID
+					disconnectedPlayerID = client.PlayerId
 					client.room.Leave(client)
 					// NOTE: We do NOT call HandlePlayerLeave here because disconnects
 					// should be temporary - players should be able to reconnect.
@@ -111,6 +113,41 @@ func (h *Hub) Run() {
 			// SyncRoomRegistry acquires roomsMu — must be called outside clientsMu.
 			if disconnectedRoomID != "" {
 				h.SyncRoomRegistry(disconnectedRoomID)
+
+				state := h.gameManager.GetSessionState(disconnectedRoomID)
+				if state == game.SessionStatePlaying || state == game.SessionStatePause {
+					// Active game: arm disconnect timer, then broadcast updated state.
+					if session, ok := h.gameManager.GetSession(disconnectedRoomID); ok {
+						h.ensureSessionHooks(disconnectedRoomID, session)
+
+						h.roomsMu.RLock()
+						room := h.rooms[disconnectedRoomID]
+						h.roomsMu.RUnlock()
+
+						connectedIDs := map[string]bool{}
+						if room != nil {
+							connectedIDs = room.GetConnectedPlayerIDs()
+						}
+						session.HandlePlayerDisconnect(
+							disconnectedPlayerID,
+							connectedIDs,
+							h.config.Game.MinNumberPlayers,
+						)
+					}
+					go h.BroadcastGameStateToRoom(disconnectedRoomID)
+				} else if state == game.SessionStateWaiting {
+					// Waiting lobby: remove player immediately, no timeout.
+					if session, ok := h.gameManager.GetSession(disconnectedRoomID); ok {
+						if err := session.HandleWaitingLobbyDisconnect(disconnectedPlayerID); err != nil {
+							h.logger.Warn("failed to remove player from lobby on disconnect",
+								zap.String("room_id", disconnectedRoomID),
+								zap.String("player_id", disconnectedPlayerID),
+								zap.Error(err),
+							)
+						}
+					}
+					go h.BroadcastWaitingLobbyToRoom(disconnectedRoomID)
+				}
 			}
 
 			h.cleanupEmptyRooms()
@@ -125,8 +162,9 @@ func (h *Hub) Run() {
 			if !ok {
 				continue
 			}
+			connectedIDs := room.GetConnectedPlayerIDs()
 			for _, client := range room.GetClients() {
-				playerSnapshot := ev.session.GetPlayerSnapshot(client.PlayerId)
+				playerSnapshot := ev.session.GetPlayerSnapshot(client.PlayerId, connectedIDs)
 				msg, err := protocol.NewMessage(
 					protocol.MessageTypePlayerState,
 					ev.roomID,
@@ -224,6 +262,15 @@ func (h *Hub) GetRoom(roomID string) *Room {
 	return h.rooms[roomID]
 }
 
+// ensureSessionHooks injects the broadcast callback into a session if it has
+// not been set yet.  Safe to call multiple times — the callback is idempotent
+// for a given roomID.
+func (h *Hub) ensureSessionHooks(roomID string, session *game.Session) {
+	session.SetBroadcastFn(func() {
+		h.BroadcastGameStateToRoom(roomID)
+	})
+}
+
 // cleanupEmptyRooms removes rooms that have no clients.
 func (h *Hub) cleanupEmptyRooms() {
 	h.roomsMu.Lock()
@@ -233,6 +280,10 @@ func (h *Hub) cleanupEmptyRooms() {
 		if room.IsEmpty() {
 			toDelete = append(toDelete, roomID)
 			delete(h.rooms, roomID)
+			// Cancel any pending disconnect timers before removing the session.
+			if session, ok := h.gameManager.GetSession(roomID); ok {
+				session.CancelAllTimers()
+			}
 			h.gameManager.RemoveSession(roomID)
 		}
 	}
@@ -395,8 +446,9 @@ func (h *Hub) BroadcastGameStateToRoom(roomID string) {
 		}
 	}
 
+	connectedIDs := room.GetConnectedPlayerIDs()
 	for _, client := range room.GetClients() {
-		playerSnapshot := session.GetPlayerSnapshot(client.PlayerId)
+		playerSnapshot := session.GetPlayerSnapshot(client.PlayerId, connectedIDs)
 		msg, err := protocol.NewMessage(
 			protocol.MessageTypePlayerState,
 			roomID,
@@ -447,7 +499,11 @@ func (h *Hub) SyncRoomRegistry(roomID string) {
 // single client. The session must already be loaded before calling this.
 func (h *Hub) SendWaitingLobbyToClient(c *Client, roomID string) {
 	session := h.gameManager.GetOrCreateSession(roomID)
-	snapshot := session.GetWaitingLobbySnapshot()
+	var connectedIDs map[string]bool
+	if room := h.GetRoom(roomID); room != nil {
+		connectedIDs = room.GetConnectedPlayerIDs()
+	}
+	snapshot := session.GetWaitingLobbySnapshot(connectedIDs)
 	msg, err := protocol.NewMessage(protocol.WaitingLobbyState, roomID, c.PlayerId, snapshot)
 	if err != nil {
 		h.logger.Error("failed to create waitingLobbyState message for client", zap.Error(err))
@@ -483,7 +539,8 @@ func (h *Hub) BroadcastWaitingLobbyToRoom(roomID string) {
 		}
 	}
 
-	snapshot := session.GetWaitingLobbySnapshot()
+	connectedIDs := room.GetConnectedPlayerIDs()
+	snapshot := session.GetWaitingLobbySnapshot(connectedIDs)
 
 	for _, client := range room.GetClients() {
 		msg, err := protocol.NewMessage(

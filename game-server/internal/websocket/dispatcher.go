@@ -38,9 +38,16 @@ func (c *Client) handleJoin(msg *protocol.Message) {
 				c.sendError(game.ErrCodeGameAlreadyStarted, "Cannot join: game is already in progress")
 				return
 			}
-			// Recognised player — bind them to the room and push their state.
+			// Recognised player — bind them to the room and cancel their skip timer.
 			room.Join(c)
 			c.room = room
+			c.hub.ensureSessionHooks(msg.RoomID, existingSession)
+			connectedIDs := room.GetConnectedPlayerIDs()
+			existingSession.HandlePlayerReconnect(
+				c.PlayerId,
+				connectedIDs,
+				c.hub.config.Game.MinNumberPlayers,
+			)
 			c.sendJoined(msg.RoomID, string(sessionState))
 			c.hub.EnqueueFanout(msg.RoomID, existingSession)
 			return
@@ -339,6 +346,17 @@ func (c *Client) handleReconnect(msg *protocol.Message) {
 		zap.String("player_id", playerID),
 	)
 
+	// Cancel any pending skip/end-game timers for this player.
+	if session.IsPlaying() {
+		c.hub.ensureSessionHooks(msg.RoomID, session)
+		connectedIDs := room.GetConnectedPlayerIDs()
+		session.HandlePlayerReconnect(
+			c.PlayerId,
+			connectedIDs,
+			c.hub.config.Game.MinNumberPlayers,
+		)
+	}
+
 	// Send a joined message with the current session state so the client
 	// can route to the correct view immediately on reconnect.
 	c.sendJoined(msg.RoomID, string(session.GetSessionState()))
@@ -346,11 +364,10 @@ func (c *Client) handleReconnect(msg *protocol.Message) {
 	// Send the player their current game state immediately.
 	c.hub.EnqueueFanout(msg.RoomID, session)
 
-	// If the game hasn't started yet, also push the waiting lobby state so the
-	// reconnecting client doesn't see an empty lobby while waiting for the next
-	// broadcast event.
+	// If the game hasn't started yet, broadcast the waiting lobby to all clients
+	// so their connection-status indicators update when this player reconnects.
 	if !session.IsPlaying() {
-		c.hub.SendWaitingLobbyToClient(c, msg.RoomID)
+		go c.hub.BroadcastWaitingLobbyToRoom(msg.RoomID)
 	}
 }
 
