@@ -219,24 +219,25 @@ export default function Board() {
   const fieldRef = useRef<HTMLDivElement>(null);
   const draftCardsGroupRef = useRef<HTMLDivElement>(null);
 
+  const checkOverflow = useCallback(() => {
+    if (!tradedCardsAreaRef.current || !fieldRef.current) return;
+    const tradedW = tradedCardsAreaRef.current.getBoundingClientRect().width;
+    const fieldRight = fieldRef.current.getBoundingClientRect().right;
+    const available = window.innerWidth - fieldRight - 16;
+    setIsOverflow(tradedW > available);
+  }, []);
+
   useEffect(() => {
-    const check = () => {
-      if (!tradedCardsAreaRef.current || !fieldRef.current) return;
-      const tradedW = tradedCardsAreaRef.current.getBoundingClientRect().width;
-      const fieldRight = fieldRef.current.getBoundingClientRect().right;
-      const available = window.innerWidth - fieldRight - 16;
-      setIsOverflow(tradedW > available);
-    };
-    const ro = new ResizeObserver(check);
+    const ro = new ResizeObserver(checkOverflow);
     if (tradedCardsAreaRef.current) ro.observe(tradedCardsAreaRef.current);
     if (fieldRef.current) ro.observe(fieldRef.current);
-    window.addEventListener("resize", check);
-    check();
+    window.addEventListener("resize", checkOverflow);
+    checkOverflow();
     return () => {
       ro.disconnect();
-      window.removeEventListener("resize", check);
+      window.removeEventListener("resize", checkOverflow);
     };
-  }, []);
+  }, [checkOverflow]);
 
   const CENTER_BOTTOM_DESIGN = 410;
   const CENTER_GAP = 70;
@@ -282,6 +283,14 @@ export default function Board() {
   } = gameState;
 
   const isTurnPlayer = myPlayerId === playerTurn;
+
+  // Re-check overflow when traded cards content changes (adding/removing items
+  // changes the element's width but ResizeObserver may not fire reliably when
+  // content is added vs. when the window is resized).
+  useEffect(() => {
+    const id = requestAnimationFrame(checkOverflow);
+    return () => cancelAnimationFrame(id);
+  }, [pickedCards, offers, checkOverflow]);
 
   // ── Requested-cards edit derived state ───────────────────────────────────────
   const allCatalogCards = useMemo(
