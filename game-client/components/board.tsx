@@ -1755,6 +1755,7 @@ export default function Board() {
                     </Field>
                   </div>
                 }
+                tradedCardsArea={}
                 hand={
                   <FanLayout
                     variant="opponent"
