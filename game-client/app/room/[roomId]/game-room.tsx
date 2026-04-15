@@ -13,6 +13,7 @@ import Toast from "@/components/toast";
 type GameRoomProps = {
   roomId: string;
   playerId: string;
+  myAvatar?: string;
   gameError: GameError | null;
   clearGameError: () => void;
   isConnected: boolean;
@@ -20,6 +21,7 @@ type GameRoomProps = {
 
 export default function GameRoom({
   playerId,
+  myAvatar,
   gameState,
   cardsPerTurn,
   cardLookup,
@@ -152,6 +154,7 @@ export default function GameRoom({
                 {
                   playerId,
                   playerName: "You",
+                  playerAvatar: myAvatar,
                   coins: gameState.coins,
                   isMe: true,
                 },
