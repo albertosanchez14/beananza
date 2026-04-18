@@ -5,6 +5,7 @@ import {
   ExternalPlayer,
   FieldType,
   Offer,
+  RankedPlayer,
   WaitingPlayer,
 } from "@/schemas/types";
 import {
@@ -31,6 +32,8 @@ export type GameState = {
   discardTopCard: CardType | null;
   coins: number;
   minPlayersDeadline: string | null;
+  lobbyResetAt: string | null;
+  rankedPlayers: RankedPlayer[] | null;
 };
 
 export type WaitingLobbyState = {
@@ -59,6 +62,8 @@ const DEFAULT_GAME_STATE: GameState = {
   discardTopCard: null,
   coins: 0,
   minPlayersDeadline: null,
+  lobbyResetAt: null,
+  rankedPlayers: null,
 };
 
 const DEFAULT_LOBBY_STATE: WaitingLobbyState = {
@@ -107,6 +112,8 @@ export function useGameState(lastMessage: WebSocketMessage | null): GameState {
       discardTopCard: payload.discard_top_card ?? state.discardTopCard,
       coins: payload.player?.coins ?? state.coins,
       minPlayersDeadline: payload.min_players_deadline ?? null,
+      lobbyResetAt: payload.lobby_reset_at ?? null,
+      rankedPlayers: payload.ranked_players ?? null,
     };
 
     setState(next);

@@ -37,8 +37,10 @@ type State struct {
 	StartedAt    time.Time
 	EndedAt      time.Time
 	UpdatedAt    time.Time
-	Cards        config.CardsConfig
-	CardsPerTurn int
+	Cards          config.CardsConfig
+	CardsPerTurn   int
+	CardsPerDraw   int
+	ReshuffleCount int
 	// dirty is set to true by every mutation method and cleared by persistState
 	// after a successful Redis write.  It prevents redundant serialisation when
 	// multiple read-only operations happen between two real mutations.
@@ -311,7 +313,13 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 		s.CenterCards = append(s.CenterCards[:cardIndex], s.CenterCards[cardIndex+1:]...)
 	} else if isFromPickedCards {
 		player.PickedCards = append(player.PickedCards[:cardIndex], player.PickedCards[cardIndex+1:]...)
-		// Auto-advance to drawCards when all players have planted their traded cards
+	} else {
+		player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
+		player.BeansPlantedTurn++
+	}
+
+	// Auto-advance to drawCards when all center and picked cards have been planted.
+	if isFromCenter || isFromPickedCards {
 		allPlanted := true
 		for _, id := range s.TurnOrder {
 			p, ok := s.GetPlayer(id)
@@ -324,16 +332,11 @@ func (s *State) PlantBean(playerId string, cardId string, slotId string) error {
 			}
 		}
 		if allPlanted && len(s.CenterCards) == 0 {
-			// All traded cards planted and no center cards remaining:
-			// auto-draw for the turn player and advance to the next turn.
 			turnPlayerId := s.TurnOrder[s.CurrentTurn]
-			if err := s.DrawCards(turnPlayerId, 3); err != nil {
+			if err := s.DrawCards(turnPlayerId, s.CardsPerDraw); err != nil {
 				return err
 			}
 		}
-	} else {
-		player.Hand = append(player.Hand[:cardIndex], player.Hand[cardIndex+1:]...)
-		player.BeansPlantedTurn++
 	}
 
 	// RULE: In plantHand phase, after planting 2 beans advance to the next phase.
@@ -366,7 +369,10 @@ func (s *State) TurnOverBean(playerId string) error {
 	}
 
 	if s.DrawPile == nil || s.DrawPile.IsEmpty() {
-		return NewDeckEmptyError()
+		_ = s.ReShuffle()
+		if s.DrawPile == nil || s.DrawPile.IsEmpty() {
+			return NewDeckEmptyError()
+		}
 	}
 
 	if s.CardsTurned {
@@ -698,6 +704,14 @@ func (s *State) DrawCards(playerId string, cardsToDraw int) error {
 		_ = s.nextPhase(playerId)
 	}
 
+	totalAvailable := s.DrawPile.Size()
+	if s.DiscardPile != nil {
+		totalAvailable += s.DiscardPile.Size()
+	}
+	if totalAvailable < cardsToDraw {
+		return NewInsufficientCardsError(totalAvailable, cardsToDraw)
+	}
+
 	drawnCards := s.DrawPile.Draw(cardsToDraw)
 
 	if len(drawnCards) < cardsToDraw {
@@ -774,9 +788,11 @@ func (s *State) ReShuffle() error {
 		return nil
 	}
 
+	s.ReshuffleCount++
 	s.DiscardPile.Shuffle()
 	s.DrawPile.AddCards(s.DiscardPile.Cards)
 	s.DiscardPile = &Deck{Cards: make([]*Card, 0)}
+	s.markDirty()
 
 	return nil
 }

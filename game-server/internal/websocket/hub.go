@@ -262,13 +262,17 @@ func (h *Hub) GetRoom(roomID string) *Room {
 	return h.rooms[roomID]
 }
 
-// ensureSessionHooks injects the broadcast callback into a session if it has
-// not been set yet.  Safe to call multiple times — the callback is idempotent
-// for a given roomID.
+// ensureSessionHooks injects broadcast callbacks into a session and ensures
+// the lobby-reset timer is running when the game has already ended.
+// Safe to call multiple times — all operations are idempotent for a given roomID.
 func (h *Hub) ensureSessionHooks(roomID string, session *game.Session) {
 	session.SetBroadcastFn(func() {
 		h.BroadcastGameStateToRoom(roomID)
 	})
+	session.SetWaitingBroadcastFn(func() {
+		h.BroadcastWaitingLobbyToRoom(roomID)
+	})
+	session.EnsureLobbyResetTimer()
 }
 
 // cleanupEmptyRooms removes rooms that have no clients.
@@ -445,6 +449,7 @@ func (h *Hub) BroadcastGameStateToRoom(roomID string) {
 			)
 		}
 	}
+	h.ensureSessionHooks(roomID, session)
 
 	connectedIDs := room.GetConnectedPlayerIDs()
 	for _, client := range room.GetClients() {
@@ -537,6 +542,14 @@ func (h *Hub) BroadcastWaitingLobbyToRoom(roomID string) {
 				zap.Error(err),
 			)
 		}
+	}
+
+	// Don't push waiting-lobby state to clients when a game is active.
+	// This prevents a race where the async goroutine spawned by a player_ready
+	// pub/sub event sends waitingLobbyState after game_started has already been
+	// delivered, which would incorrectly revert clients to the waiting lobby.
+	if session.GetSessionState() != game.SessionStateWaiting {
+		return
 	}
 
 	connectedIDs := room.GetConnectedPlayerIDs()

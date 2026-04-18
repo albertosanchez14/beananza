@@ -3,6 +3,7 @@ package game
 import (
 	"context"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -40,15 +41,18 @@ type Session struct {
 	// Disconnect timer state.
 	// Lock ordering: timerMu is ALWAYS acquired stand-alone — never while
 	// holding mu, and never held when acquiring mu.
-	// disconnectDeadlines and minPlayersDeadline are protected by mu (not
-	// timerMu) so they can be read safely inside GetPlayerSnapshot.
-	timerMu            sync.Mutex
-	disconnectTimers   map[string]*timerEntry
-	minPlayersEntry    *timerEntry
-	disconnectTimeout  time.Duration
+	// disconnectDeadlines, minPlayersDeadline, and lobbyResetAt are protected
+	// by mu (not timerMu) so they can be read safely inside GetPlayerSnapshot.
+	timerMu             sync.Mutex
+	disconnectTimers    map[string]*timerEntry
+	minPlayersEntry     *timerEntry
+	lobbyResetEntry     *timerEntry // protected by timerMu
+	disconnectTimeout   time.Duration
 	disconnectDeadlines map[string]time.Time // protected by mu
 	minPlayersDeadline  *time.Time           // protected by mu
-	broadcastFn        func()
+	lobbyResetAt        *time.Time           // protected by mu
+	broadcastFn         func()               // protected by timerMu
+	waitingBroadcastFn  func()               // protected by timerMu
 }
 
 func NewSession(roomID string, cfg *config.Config, repo *storage.Repository, logger *zap.Logger) *Session {
@@ -65,12 +69,19 @@ func NewSession(roomID string, cfg *config.Config, repo *storage.Repository, log
 	}
 }
 
-// SetBroadcastFn injects the function the session uses to push fresh state to
-// all local clients after a timer-driven state change.  Call this once after
-// GetOrCreateSession before any disconnect handling occurs.
+// SetBroadcastFn injects the function the session uses to push fresh game state
+// to all local clients after a timer-driven state change.
 func (s *Session) SetBroadcastFn(fn func()) {
 	s.timerMu.Lock()
 	s.broadcastFn = fn
+	s.timerMu.Unlock()
+}
+
+// SetWaitingBroadcastFn injects the function used to push waiting-lobby state
+// to all local clients (used after the lobby reset timer fires).
+func (s *Session) SetWaitingBroadcastFn(fn func()) {
+	s.timerMu.Lock()
+	s.waitingBroadcastFn = fn
 	s.timerMu.Unlock()
 }
 
@@ -91,7 +102,43 @@ func (s *Session) HandlePlayerDisconnect(playerID string, connectedIDs map[strin
 	s.disconnectDeadlines[playerID] = deadline
 	connectedCount := s.gameState.ConnectedPlayerCount(connectedIDs)
 	startMinTimer := connectedCount < minPlayers
+	isFinished := s.gameState.Phase == PhaseTypeFinished
 	s.mu.Unlock()
+
+	// If the game has finished and all players are now disconnected, reset to
+	// the waiting lobby immediately instead of waiting for the scheduled timer.
+	if isFinished && connectedCount == 0 {
+		s.timerMu.Lock()
+		if s.lobbyResetEntry != nil {
+			s.lobbyResetEntry.cancelled = true
+			s.lobbyResetEntry.timer.Stop()
+			s.lobbyResetEntry = nil
+		}
+		for _, de := range s.disconnectTimers {
+			de.cancelled = true
+			de.timer.Stop()
+		}
+		s.disconnectTimers = make(map[string]*timerEntry)
+		if s.minPlayersEntry != nil {
+			s.minPlayersEntry.cancelled = true
+			s.minPlayersEntry.timer.Stop()
+			s.minPlayersEntry = nil
+		}
+		fn := s.waitingBroadcastFn
+		s.timerMu.Unlock()
+
+		s.mu.Lock()
+		if s.gameState.Phase == PhaseTypeFinished {
+			s.resetToLobby()
+			_ = s.persistState()
+		}
+		s.mu.Unlock()
+
+		if fn != nil {
+			go fn()
+		}
+		return
+	}
 
 	// ── Arm per-player skip timer (under timerMu) ──────────────────────────
 	s.timerMu.Lock()
@@ -110,7 +157,12 @@ func (s *Session) HandlePlayerDisconnect(playerID string, connectedIDs map[strin
 		s.timerMu.Unlock()
 
 		s.mu.Lock()
-		s.gameState.SkipDisconnectedTurn(playerID)
+		// Guard: don't skip the turn if the game has already ended — the
+		// min-players timer may have called endGame() just before this timer
+		// fired, and SkipDisconnectedTurn would overwrite the "finished" phase.
+		if s.gameState.Phase != PhaseTypeFinished {
+			s.gameState.SkipDisconnectedTurn(playerID)
+		}
 		delete(s.disconnectDeadlines, playerID)
 		_ = s.persistState()
 		s.mu.Unlock()
@@ -149,6 +201,7 @@ func (s *Session) HandlePlayerDisconnect(playerID string, connectedIDs map[strin
 			return
 		}
 		s.minPlayersEntry = nil
+		fn := s.broadcastFn
 		s.timerMu.Unlock()
 
 		s.mu.Lock()
@@ -157,9 +210,8 @@ func (s *Session) HandlePlayerDisconnect(playerID string, connectedIDs map[strin
 		_ = s.persistState()
 		s.mu.Unlock()
 
-		s.timerMu.Lock()
-		fn := s.broadcastFn
-		s.timerMu.Unlock()
+		s.startLobbyResetTimer()
+
 		if fn != nil {
 			go fn()
 		}
@@ -225,7 +277,7 @@ func (s *Session) HandleWaitingLobbyDisconnect(playerID string) error {
 	return s.persistState()
 }
 
-// CancelAllTimers stops all pending disconnect and min-players timers.
+// CancelAllTimers stops all pending disconnect, min-players, and lobby-reset timers.
 // Call this when the room is being cleaned up to prevent goroutine leaks.
 func (s *Session) CancelAllTimers() {
 	s.timerMu.Lock()
@@ -241,6 +293,12 @@ func (s *Session) CancelAllTimers() {
 		s.minPlayersEntry.cancelled = true
 		s.minPlayersEntry.timer.Stop()
 		s.minPlayersEntry = nil
+	}
+
+	if s.lobbyResetEntry != nil {
+		s.lobbyResetEntry.cancelled = true
+		s.lobbyResetEntry.timer.Stop()
+		s.lobbyResetEntry = nil
 	}
 }
 
@@ -260,6 +318,14 @@ func (s *Session) GetSessionState() SessionState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.state
+}
+
+// IsInWaitingLobby reports whether the given player is currently in the waiting lobby.
+func (s *Session) IsInWaitingLobby(playerID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.waitingLobby.Players[playerID]
+	return ok
 }
 
 // HasPlayer reports whether the given player is a member of the active game.
@@ -327,6 +393,13 @@ func (s *Session) GetPlayerSnapshot(playerId string, connectedIDs map[string]boo
 		minPlayersDeadlineStr = &formatted
 	}
 
+	// Include the lobby-reset deadline when the game has ended.
+	var lobbyResetAtStr *string
+	if s.lobbyResetAt != nil {
+		formatted := s.lobbyResetAt.UTC().Format(time.RFC3339)
+		lobbyResetAtStr = &formatted
+	}
+
 	snapshot := map[string]any{
 		"room_id":              s.gameState.RoomID,
 		"phase":                s.gameState.Phase,
@@ -339,6 +412,7 @@ func (s *Session) GetPlayerSnapshot(playerId string, connectedIDs map[string]boo
 		"ended_at":             s.gameState.EndedAt,
 		"updated_at":           s.gameState.UpdatedAt,
 		"min_players_deadline": minPlayersDeadlineStr,
+		"lobby_reset_at":       lobbyResetAtStr,
 	}
 
 	// Include deck size but not the actual deck contents
@@ -390,6 +464,35 @@ func (s *Session) GetPlayerSnapshot(playerId string, connectedIDs map[string]boo
 	}
 	snapshot["external_players"] = externalPlayers
 
+	if s.gameState.Phase == "finished" {
+		type rankedPlayer struct {
+			PlayerID   string `json:"playerId"`
+			PlayerName string `json:"playerName"`
+			Avatar     string `json:"playerAvatar,omitempty"`
+			Coins      int    `json:"playerCoins"`
+		}
+		ranked := make([]rankedPlayer, 0, len(s.gameState.Players))
+		for _, p := range s.gameState.Players {
+			ranked = append(ranked, rankedPlayer{
+				PlayerID:   p.ID,
+				PlayerName: p.Name,
+				Avatar:     p.Avatar,
+				Coins:      p.Coins,
+			})
+		}
+		turnIdx := make(map[string]int, len(s.gameState.TurnOrder))
+		for i, id := range s.gameState.TurnOrder {
+			turnIdx[id] = i
+		}
+		sort.Slice(ranked, func(i, j int) bool {
+			if ranked[i].Coins != ranked[j].Coins {
+				return ranked[i].Coins > ranked[j].Coins
+			}
+			return turnIdx[ranked[i].PlayerID] > turnIdx[ranked[j].PlayerID]
+		})
+		snapshot["ranked_players"] = ranked
+	}
+
 	return snapshot
 }
 
@@ -404,13 +507,15 @@ func (s *Session) GetWaitingLobbySnapshot(connectedIDs map[string]bool) map[stri
 
 	players := make(map[string]any, len(s.waitingLobby.Players))
 	for id, p := range s.waitingLobby.Players {
+		if !connectedIDs[id] {
+			continue // omit disconnected players from the snapshot
+		}
 		players[id] = map[string]any{
 			"id":        p.ID,
 			"name":      p.Name,
 			"avatar":    p.Avatar,
 			"ready":     p.Ready,
 			"joined_at": p.JoinedAt,
-			"connected": connectedIDs[id],
 		}
 	}
 
@@ -471,7 +576,6 @@ func (s *Session) HandlePlayerJoin(playerID, playerName, avatar string) error {
 // HandlePlayerLeave handles a player leaving the game
 func (s *Session) HandlePlayerLeave(playerID string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	s.gameState.RemovePlayer(playerID)
 	s.logger.Info("player left game",
@@ -479,13 +583,22 @@ func (s *Session) HandlePlayerLeave(playerID string) error {
 		zap.Int("player_count", s.gameState.PlayerCount()),
 	)
 
-	// End game if not enough players during an active game (not during waiting phase)
+	gameEnded := false
 	if s.gameState.Phase != PhaseTypeWaiting &&
+		s.gameState.Phase != PhaseTypeFinished &&
 		s.gameState.PlayerCount() < s.config.Game.MinNumberPlayers {
 		s.endGame()
+		gameEnded = true
 	}
 
-	return s.persistState()
+	persistErr := s.persistState()
+	s.mu.Unlock()
+
+	if gameEnded {
+		s.startLobbyResetTimer()
+	}
+
+	return persistErr
 }
 
 // HandlePlayerReady sets a player's ready state during the waiting phase
@@ -532,6 +645,7 @@ func (s *Session) HandleStartGame() (bool, error) {
 func (s *Session) startGame() {
 	s.gameState.Cards = s.config.Game.Cards
 	s.gameState.CardsPerTurn = s.config.Game.CardsPerTurn
+	s.gameState.CardsPerDraw = s.config.Game.CardsPerDraw
 	s.gameState.DrawPile = NewDeck(s.config.Game.Cards)
 	s.gameState.DrawPile.Shuffle()
 	s.gameState.DiscardPile = &Deck{Cards: make([]*Card, 0)}
@@ -573,41 +687,191 @@ func (s *Session) shuffleTurnOrder() {
 	})
 }
 
-// endGame transitions the game to finished phase
+// endGame transitions the game to finished phase and records the lobby reset
+// deadline. Must be called with s.mu held.
+// After releasing s.mu, callers must call startLobbyResetTimer().
 func (s *Session) endGame() {
 	s.gameState.SetPhase("finished")
-	s.logger.Info("game ended")
+	s.state = SessionStatePause
+	resetAt := time.Now().Add(time.Duration(s.config.Game.LobbyResetSecs) * time.Second)
+	s.lobbyResetAt = &resetAt
+	s.logger.Info("game ended", zap.Time("lobby_reset_at", resetAt))
+}
+
+// startLobbyResetTimer arms the lobby-reset timer using the deadline already
+// stored in s.lobbyResetAt. Must be called WITHOUT holding s.mu.
+func (s *Session) startLobbyResetTimer() {
+	s.mu.RLock()
+	resetAt := s.lobbyResetAt
+	s.mu.RUnlock()
+	if resetAt == nil {
+		return
+	}
+
+	s.timerMu.Lock()
+	// Cancel any existing reset timer before arming a new one.
+	if s.lobbyResetEntry != nil {
+		s.lobbyResetEntry.cancelled = true
+		s.lobbyResetEntry.timer.Stop()
+	}
+	entry := &timerEntry{}
+	entry.timer = time.AfterFunc(time.Until(*resetAt), func() {
+		s.timerMu.Lock()
+		if entry.cancelled {
+			s.timerMu.Unlock()
+			return
+		}
+		s.lobbyResetEntry = nil
+		// Cancel all game timers before resetting state.
+		for _, de := range s.disconnectTimers {
+			de.cancelled = true
+			de.timer.Stop()
+		}
+		s.disconnectTimers = make(map[string]*timerEntry)
+		if s.minPlayersEntry != nil {
+			s.minPlayersEntry.cancelled = true
+			s.minPlayersEntry.timer.Stop()
+			s.minPlayersEntry = nil
+		}
+		fn := s.waitingBroadcastFn
+		s.timerMu.Unlock()
+
+		s.mu.Lock()
+		if s.gameState.Phase == PhaseTypeFinished {
+			s.resetToLobby()
+			_ = s.persistState()
+		}
+		s.mu.Unlock()
+
+		if fn != nil {
+			go fn()
+		}
+	})
+	s.lobbyResetEntry = entry
+	s.timerMu.Unlock()
+}
+
+// EnsureLobbyResetTimer starts the lobby reset timer if the game is in the
+// finished phase and no timer is already running. Safe to call multiple times.
+// Must be called WITHOUT holding s.mu.
+func (s *Session) EnsureLobbyResetTimer() {
+	s.mu.Lock()
+	phase := s.gameState.Phase
+	if phase == PhaseTypeFinished && s.lobbyResetAt == nil {
+		// Server restarted while in finished state — restart with full duration.
+		resetAt := time.Now().Add(time.Duration(s.config.Game.LobbyResetSecs) * time.Second)
+		s.lobbyResetAt = &resetAt
+	}
+	s.mu.Unlock()
+
+	s.timerMu.Lock()
+	alreadyRunning := s.lobbyResetEntry != nil
+	s.timerMu.Unlock()
+
+	if phase == PhaseTypeFinished && !alreadyRunning {
+		s.startLobbyResetTimer()
+	}
+}
+
+// resetToLobby wipes the game state and returns the room to the waiting lobby.
+// Only players who were still active (not disconnected or explicitly left) at the
+// time of the reset are re-added; disconnected/left players are dropped.
+// Must be called with s.mu held.
+func (s *Session) resetToLobby() {
+	roomID := s.gameState.RoomID
+
+	type playerInfo struct{ id, name, avatar string }
+	existing := make([]playerInfo, 0, len(s.gameState.Players))
+	for _, p := range s.gameState.Players {
+		// Skip players who disconnected — they were never actively present at
+		// the end of the game. Players who explicitly left are already absent
+		// from s.gameState.Players (removed by HandlePlayerLeave).
+		if p.Status == "disconnected" {
+			continue
+		}
+		existing = append(existing, playerInfo{p.ID, p.Name, p.Avatar})
+	}
+
+	s.gameState = NewState(roomID)
+	s.gameState.markDirty()
+	s.state = SessionStateWaiting
+	s.lobbyResetAt = nil
+	s.disconnectDeadlines = make(map[string]time.Time)
+	s.minPlayersDeadline = nil
+
+	s.waitingLobby = NewWaitingLobby(roomID, s.config.Game.MinNumberPlayers, s.config.Game.MaxNumberPlayers)
+	for _, p := range existing {
+		_ = s.waitingLobby.AddPlayer(p.id, p.name, p.avatar)
+	}
+
+	s.logger.Info("lobby reset after game end", zap.Int("player_count", len(existing)))
 }
 
 // HandlePlantBean handles planting a bean card on a field
 func (s *Session) HandlePlantBean(playerID string, cardID string, slotId string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	if err := s.gameState.PlantBean(playerID, cardID, slotId); err != nil {
-		return s.logAndReturnError("plant_bean", err)
+	plantErr := s.gameState.PlantBean(playerID, cardID, slotId)
+
+	gameEnded := false
+	if gameErr, ok := plantErr.(*GameError); ok && gameErr.Code == ErrCodeInsufficientCards {
+		s.endGame()
+		gameEnded = true
+		plantErr = nil
+	}
+
+	if persistErr := s.persistState(); persistErr != nil {
+		s.logger.Error("failed to persist state after plant bean", zap.Error(persistErr))
+	}
+	s.mu.Unlock()
+
+	if gameEnded {
+		s.startLobbyResetTimer()
+	}
+
+	if plantErr != nil {
+		return s.logAndReturnError("plant_bean", plantErr)
 	}
 
 	s.logger.Info("bean planted",
 		zap.String("player_id", playerID),
 		zap.String("card_id", cardID),
 	)
-
-	return s.persistState()
+	return nil
 }
 
 // HandleTurnOverBean handles turning over a bean from the center deck
 func (s *Session) HandleTurnOverBean(playerId string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	if err := s.gameState.TurnOverBean(playerId); err != nil {
-		return s.logAndReturnError("turn_over_bean", err)
+	turnErr := s.gameState.TurnOverBean(playerId)
+
+	gameEnded := false
+	if gameErr, ok := turnErr.(*GameError); ok && gameErr.Code == ErrCodeDeckEmpty {
+		s.endGame()
+		gameEnded = true
+		turnErr = nil
+	} else if s.gameState.ReshuffleCount >= s.config.Game.MaxReshuffles &&
+		s.gameState.Phase != PhaseTypeFinished {
+		s.endGame()
+		gameEnded = true
+	}
+
+	if persistErr := s.persistState(); persistErr != nil {
+		s.logger.Error("failed to persist state after turn over bean", zap.Error(persistErr))
+	}
+	s.mu.Unlock()
+
+	if gameEnded {
+		s.startLobbyResetTimer()
+	}
+
+	if turnErr != nil {
+		return s.logAndReturnError("turn_over_bean", turnErr)
 	}
 
 	s.logger.Info("beans turned over")
-
-	return s.persistState()
+	return nil
 }
 
 // HandleTradeBean handles trading a bean card between players
@@ -647,24 +911,37 @@ func (s *Session) HandleHarvestField(playerID, slotId string) error {
 // HandleDrawCards handles drawing a card from the middle
 func (s *Session) HandleDrawCards(playerId string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	// RULE: Can only draw 3 cards from the deck when ending the turn
-	cardsToDraw := 3
-	err := s.gameState.DrawCards(playerId, cardsToDraw)
-	// Always persist: the phase may have advanced to plantTrade even if
-	// drawing was deferred (other players still have picked cards to plant).
+	drawErr := s.gameState.DrawCards(playerId, s.gameState.CardsPerDraw)
+
+	gameEnded := false
+	if gameErr, ok := drawErr.(*GameError); ok && gameErr.Code == ErrCodeInsufficientCards {
+		s.endGame()
+		gameEnded = true
+		drawErr = nil
+	} else if s.gameState.Phase != PhaseTypeFinished {
+		pilesEmpty := s.gameState.DrawPile.IsEmpty() && s.gameState.DiscardPile.IsEmpty()
+		if s.gameState.ReshuffleCount >= s.config.Game.MaxReshuffles || pilesEmpty {
+			s.endGame()
+			gameEnded = true
+		}
+	}
+
+	// Always persist: the phase may have advanced even if drawing was deferred.
 	if persistErr := s.persistState(); persistErr != nil {
 		s.logger.Error("failed to persist state after draw cards", zap.Error(persistErr))
 	}
-	if err != nil {
-		return s.logAndReturnError("draw_cards", err)
+	s.mu.Unlock()
+
+	if gameEnded {
+		s.startLobbyResetTimer()
 	}
 
-	s.logger.Info("draw cards action processed",
-		zap.String("player_id", playerId),
-	)
+	if drawErr != nil {
+		return s.logAndReturnError("draw_cards", drawErr)
+	}
 
+	s.logger.Info("draw cards action processed", zap.String("player_id", playerId))
 	return nil
 }
 
