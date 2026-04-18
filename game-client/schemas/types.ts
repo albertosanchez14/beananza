@@ -89,6 +89,13 @@ export type Offer = {
   created_at: string;
 };
 
+export type RankedPlayer = {
+  playerId: string;
+  playerName: string;
+  playerAvatar?: string;
+  playerCoins: number;
+};
+
 export type ToastEntry = {
   id: string;
   message: string;

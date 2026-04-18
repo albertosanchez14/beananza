@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence } from "motion/react";
 
 import { ToastEntry } from "@/schemas/types";
@@ -13,13 +14,16 @@ import Toast from "@/components/toast";
 type GameRoomProps = {
   roomId: string;
   playerId: string;
+  myAvatar?: string;
   gameError: GameError | null;
   clearGameError: () => void;
   isConnected: boolean;
 } & GameRoomContext;
 
 export default function GameRoom({
+  roomId,
   playerId,
+  myAvatar,
   gameState,
   cardsPerTurn,
   cardLookup,
@@ -34,7 +38,15 @@ export default function GameRoom({
   clearGameError,
   isConnected,
 }: GameRoomProps) {
+  const router = useRouter();
   const [transientToasts, setTransientToasts] = useState<ToastEntry[]>([]);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+
+  function handleLeaveRoom() {
+    sessionStorage.removeItem(`session_token:${roomId}`);
+    router.push("/room");
+  }
+
   const toasts: ToastEntry[] = [
     ...(!isConnected
       ? [
@@ -145,23 +157,69 @@ export default function GameRoom({
           {!isConnected && (
             <div className="absolute inset-0 z-40 pointer-events-auto" />
           )}
+          <button
+            onClick={() => setShowLeaveConfirm(true)}
+            className="absolute top-3 left-3 z-30 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg font-semibold text-xs transition-all"
+          >
+            Leave
+          </button>
+          {showLeaveConfirm && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div
+                className="overflow-hidden w-60 shadow-xl"
+                style={{
+                  backgroundImage: "url('/wanted-poster-bg.webp')",
+                  backgroundSize: "100% 100%",
+                }}
+              >
+                <div className="px-6 pt-8 pb-6 flex flex-col items-center gap-5">
+                  <p
+                    className="font-black tracking-widest uppercase text-center"
+                    style={{ color: "#5c3a1e", fontSize: "1rem" }}
+                  >
+                    Leave the game?
+                  </p>
+                  <p
+                    className="text-xs text-center font-semibold"
+                    style={{ color: "#7a4f2e" }}
+                  >
+                    You will be disconnected.
+                  </p>
+                  <div className="flex gap-3 w-full">
+                    <button
+                      onClick={() => setShowLeaveConfirm(false)}
+                      className="flex-1 py-2 bg-transparent hover:bg-amber-900/20 font-bold uppercase tracking-widest border-2 border-amber-800/60 transition-colors text-xs cursor-pointer"
+                      style={{
+                        color: "#5c3a1e",
+                        textShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                      }}
+                    >
+                      Stay
+                    </button>
+                    <button
+                      onClick={handleLeaveRoom}
+                      className="flex-1 py-2 bg-red-800 hover:bg-red-700 active:bg-red-900 text-amber-100 font-bold uppercase tracking-widest border-2 border-red-600 transition-colors text-xs cursor-pointer"
+                      style={{ textShadow: "0 1px 3px rgba(0,0,0,0.5)" }}
+                    >
+                      Leave
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           <Board />
           {gameState.phase === "finished" && (
             <ResultsScreen
-              players={[
-                {
-                  playerId,
-                  playerName: "You",
-                  coins: gameState.coins,
-                  isMe: true,
-                },
-                ...gameState.players.map((p) => ({
-                  playerId: p.playerId,
-                  playerName: p.playerName,
-                  playerAvatar: p.playerAvatar,
-                  coins: p.playerCoins,
-                })),
-              ]}
+              lobbyResetAt={gameState.lobbyResetAt}
+              players={(gameState.rankedPlayers ?? []).map((p) => ({
+                playerId: p.playerId,
+                playerName: p.playerName,
+                playerAvatar:
+                  p.playerId === playerId ? myAvatar : p.playerAvatar,
+                coins: p.playerCoins,
+                isMe: p.playerId === playerId,
+              }))}
             />
           )}
         </div>

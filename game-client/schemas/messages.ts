@@ -4,6 +4,7 @@ import {
   FieldType,
   Offer,
   Player,
+  RankedPlayer,
   WaitingPlayer,
 } from "@/schemas/types";
 
@@ -53,6 +54,8 @@ export type GameStateResponsePayload = {
   turn_order: Array<string>;
   updated_at: string;
   min_players_deadline?: string | null;
+  lobby_reset_at?: string | null;
+  ranked_players?: Array<RankedPlayer>;
 };
 
 /** Sent by the server after a successful join or reconnect. */

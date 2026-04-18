@@ -65,6 +65,7 @@ export default function RoomPage() {
           <GameRoom
             roomId={roomId}
             playerId={profile.id}
+            myAvatar={profile.avatar}
             {...game}
             gameError={gameError}
             clearGameError={clearGameError}

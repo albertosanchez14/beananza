@@ -84,6 +84,14 @@ export function useRoomConnection(
       return;
     }
 
+    if (lastMessage.type === "waitingLobbyState") {
+      if (viewState === "dealing" || viewState === "playing" || viewState === "pause") {
+        dealTriggeredRef.current = false;
+        setViewState("waiting");
+      }
+      return;
+    }
+
     if (lastMessage.type === "broadcast") {
       const event = (lastMessage.payload as { event: string }).event;
       if (

@@ -65,7 +65,16 @@ type GameConfig struct {
 	// skipping a disconnected player's turn (or ending the game if too few
 	// players are connected).  Configurable via DISCONNECT_TIMEOUT_SECS (default 60).
 	DisconnectTimeoutSecs int
-	Cards                 CardsConfig
+	// MaxReshuffles is the number of times the draw pile can be reshuffled from
+	// the discard pile before the game ends. Configurable via MAX_RESHUFFLES (default 3).
+	MaxReshuffles int
+	// CardsPerDraw is the number of cards a player draws at the end of their turn.
+	// Configurable via CARDS_PER_DRAW (default 3).
+	CardsPerDraw int
+	// LobbyResetSecs is the number of seconds after a game ends before the room
+	// automatically resets to the waiting lobby. Configurable via LOBBY_RESET_SECS (default 30).
+	LobbyResetSecs int
+	Cards          CardsConfig
 }
 
 type CardsConfig struct {
@@ -117,6 +126,9 @@ func Load() *Config {
 			MinNumberPlayers:      getEnvAsInt("MIN_NUMBER_PLAYERS", 3),
 			CardsPerTurn:          getEnvAsInt("CARDS_PER_TURN", 2),
 			DisconnectTimeoutSecs: getEnvAsInt("DISCONNECT_TIMEOUT_SECS", 60),
+			MaxReshuffles:         getEnvAsInt("MAX_RESHUFFLES", 3),
+			CardsPerDraw:          getEnvAsInt("CARDS_PER_DRAW", 3),
+			LobbyResetSecs:        getEnvAsInt("LOBBY_RESET_SECS", 30),
 			Cards:                 cards,
 		},
 	}
