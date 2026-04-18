@@ -280,6 +280,12 @@ func (c *Client) handleAction(msg *protocol.Message) {
 		return
 	}
 
+	// Ensure session broadcast hooks are wired up. This guarantees that the
+	// lobby-reset timer's waitingBroadcastFn is non-nil when the game ends,
+	// even in single-instance setups where the pub/sub path (state_updated →
+	// BroadcastGameStateToRoom → ensureSessionHooks) may never fire.
+	c.hub.ensureSessionHooks(c.room.ID, session)
+
 	// Fan out fresh personalised snapshots to all local clients asynchronously
 	// via the hub's event loop — decouples the ReadPump from O(N) marshal work.
 	c.hub.EnqueueFanout(c.room.ID, session)
@@ -363,6 +369,19 @@ func (c *Client) handleReconnect(msg *protocol.Message) {
 
 	// Send the player their current game state immediately.
 	c.hub.EnqueueFanout(msg.RoomID, session)
+
+	// If the session has already reset to the waiting lobby (e.g. the lobby-reset
+	// timer fired while this player was disconnected), re-add them so they appear
+	// in the lobby.  resetToLobby() intentionally omits disconnected players, so
+	// without this they would see the lobby UI but not be listed in it.
+	if session.GetSessionState() == game.SessionStateWaiting && !session.IsInWaitingLobby(c.PlayerId) {
+		if err := session.HandlePlayerJoin(c.PlayerId, c.PlayerName, c.Avatar); err != nil {
+			c.logger.Warn("could not re-add reconnecting player to waiting lobby",
+				zap.String("player_id", c.PlayerId),
+				zap.Error(err),
+			)
+		}
+	}
 
 	// If the game hasn't started yet, broadcast the waiting lobby to all clients
 	// so their connection-status indicators update when this player reconnects.

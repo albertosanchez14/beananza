@@ -150,21 +150,15 @@ export default function GameRoom({
           <Board />
           {gameState.phase === "finished" && (
             <ResultsScreen
-              players={[
-                {
-                  playerId,
-                  playerName: "You",
-                  playerAvatar: myAvatar,
-                  coins: gameState.coins,
-                  isMe: true,
-                },
-                ...gameState.players.map((p) => ({
-                  playerId: p.playerId,
-                  playerName: p.playerName,
-                  playerAvatar: p.playerAvatar,
-                  coins: p.playerCoins,
-                })),
-              ]}
+              lobbyResetAt={gameState.lobbyResetAt}
+              players={(gameState.rankedPlayers ?? []).map((p) => ({
+                playerId: p.playerId,
+                playerName: p.playerName,
+                playerAvatar:
+                  p.playerId === playerId ? myAvatar : p.playerAvatar,
+                coins: p.playerCoins,
+                isMe: p.playerId === playerId,
+              }))}
             />
           )}
         </div>

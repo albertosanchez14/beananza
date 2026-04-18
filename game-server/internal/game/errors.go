@@ -24,6 +24,7 @@ const (
 	ErrCodeCardNotInHand            = "CARD_NOT_IN_HAND"
 	ErrCodeCardNotInCenter          = "CARD_NOT_IN_CENTER"
 	ErrCodeDeckEmpty                = "DECK_EMPTY"
+	ErrCodeInsufficientCards        = "INSUFFICIENT_CARDS"
 	ErrCodeFieldEmpty               = "FIELD_EMPTY"
 	ErrCodeMinBeansRequired         = "MIN_BEANS_REQUIRED"
 	ErrCodeCenterCardsRemain        = "CENTER_CARDS_REMAINING"
@@ -107,6 +108,19 @@ func NewCardNotInCenterError(cardID string) *GameError {
 		Message: "card not found in center",
 		Details: map[string]any{
 			"card_id": cardID,
+		},
+	}
+}
+
+// NewInsufficientCardsError creates an error when the combined draw+discard pile
+// has fewer cards than needed for a full draw.
+func NewInsufficientCardsError(available, needed int) *GameError {
+	return &GameError{
+		Code:    ErrCodeInsufficientCards,
+		Message: "not enough cards remaining to draw",
+		Details: map[string]any{
+			"available": available,
+			"needed":    needed,
 		},
 	}
 }

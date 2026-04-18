@@ -3,6 +3,7 @@
 import { m } from "motion/react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useEffect, useState } from "react";
 
 type ResultsPlayer = {
   playerId: string;
@@ -14,6 +15,7 @@ type ResultsPlayer = {
 
 type ResultsScreenProps = {
   players: ResultsPlayer[];
+  lobbyResetAt?: string | null;
 };
 
 function WantedPoster({
@@ -21,11 +23,13 @@ function WantedPoster({
   isWinner,
   delay,
   large,
+  isMe,
 }: {
   player: ResultsPlayer;
   isWinner: boolean;
   delay: number;
   large?: boolean;
+  isMe?: boolean;
 }) {
   const width = large ? 240 : 148;
   const avatarSize = large ? 120 : 64;
@@ -48,7 +52,9 @@ function WantedPoster({
       style={{
         width,
         aspectRatio: "2 / 3",
-        filter: "drop-shadow(5px 8px 18px rgba(0,0,0,0.75))",
+        filter: isMe
+          ? "drop-shadow(5px 8px 18px rgba(0,0,0,0.75)) drop-shadow(0 0 18px rgba(251,191,36,0.85)) drop-shadow(0 0 36px rgba(251,191,36,0.45))"
+          : "drop-shadow(5px 8px 18px rgba(0,0,0,0.75))",
       }}
     >
       <Image
@@ -212,11 +218,34 @@ function WantedPoster({
   );
 }
 
-export default function ResultsScreen({ players }: ResultsScreenProps) {
+function useCountdown(resetAt: string | null | undefined): number | null {
+  const [secsLeft, setSecsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!resetAt) return;
+    const target = new Date(resetAt).getTime();
+
+    const update = () => {
+      const diff = Math.max(0, Math.round((target - Date.now()) / 1000));
+      setSecsLeft(diff);
+    };
+
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [resetAt]);
+
+  return secsLeft;
+}
+
+export default function ResultsScreen({
+  players,
+  lobbyResetAt,
+}: ResultsScreenProps) {
   const router = useRouter();
-  const sorted = [...players].sort((a, b) => b.coins - a.coins);
-  const winner = sorted[0];
-  const losers = sorted.slice(1);
+  const secsLeft = useCountdown(lobbyResetAt);
+  const winner = players[0];
+  const losers = players.slice(1);
 
   return (
     <div
@@ -245,7 +274,15 @@ export default function ResultsScreen({ players }: ResultsScreenProps) {
       </m.h1>
 
       <div className="flex items-center gap-10">
-        {winner && <WantedPoster player={winner} isWinner delay={0.3} large />}
+        {winner && (
+          <WantedPoster
+            player={winner}
+            isWinner
+            delay={0.3}
+            large
+            isMe={winner.isMe}
+          />
+        )}
 
         {losers.length > 0 && (
           <div className="flex flex-col gap-4">
@@ -255,6 +292,7 @@ export default function ResultsScreen({ players }: ResultsScreenProps) {
                 player={player}
                 isWinner={false}
                 delay={0.62 + i * 0.15}
+                isMe={player.isMe}
               />
             ))}
           </div>
@@ -290,6 +328,19 @@ export default function ResultsScreen({ players }: ResultsScreenProps) {
           Leave Town
         </button>
       </m.div>
+
+      {secsLeft !== null && (
+        <m.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.4, duration: 0.3 }}
+          className="text-xl text-amber-600 uppercase tracking-widest"
+        >
+          {secsLeft > 0
+            ? `Returning to lobby in ${secsLeft}…`
+            : "Returning to lobby…"}
+        </m.p>
+      )}
     </div>
   );
 }
