@@ -456,6 +456,7 @@ func (s *Session) GetPlayerSnapshot(playerId string, connectedIDs map[string]boo
 			"playerCoins":                 player.Coins,
 			"playerHandSize":              len(player.Hand),
 			"playerPickedCardsCount":      len(player.PickedCards),
+				"playerPickedCards":           player.PickedCards,
 			"playerField":                 player.Field,
 			"playerConnected":             connectedIDs[id],
 			"playerDisconnectDeadline":    deadlineStr,

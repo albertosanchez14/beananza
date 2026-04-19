@@ -1980,11 +1980,12 @@ export default function Board() {
                 onDragLeave={handlePlayerDragLeave}
                 onDrop={(e) => handlePlayerDrop(e, player)}
                 tradedCardsArea={
-                  phase === "turnTrade" &&
-                  (pIncoming.length > 0 || pOutgoing.length > 0 || draftOfferedCards.length > 0) ? (
+                  (phase === "turnTrade" &&
+                  (pIncoming.length > 0 || pOutgoing.length > 0 || draftOfferedCards.length > 0)) ||
+                  player.playerPickedCards.length > 0 ? (
                     <TradedCardsArea
                       phase={phase}
-                      pickedCards={[]}
+                      pickedCards={player.playerPickedCards}
                       incomingOffers={pIncoming}
                       outgoingOffers={pOutgoing}
                       onOfferHover={setHoveredOfferId}

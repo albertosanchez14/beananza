@@ -45,6 +45,7 @@ export type ExternalPlayer = {
   playerCoins: number;
   playerHandSize: number;
   playerPickedCardsCount: number;
+  playerPickedCards: CardType[];
   playerField: FieldType;
   playerConnected?: boolean;
   playerDisconnectDeadline?: string | null;
