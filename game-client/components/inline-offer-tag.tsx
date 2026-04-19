@@ -141,6 +141,7 @@ export default function InlineOfferTag({
           onAccept={onAccept}
           onCounter={(offer) => {
             setTreeOpen(false);
+            onHover?.(null);
             onCounter(offer);
           }}
           onToggleDraftPicker={onToggleDraftPicker}

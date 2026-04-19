@@ -1928,7 +1928,14 @@ export default function Board() {
             const pOutgoing = offers.filter(
               (o) =>
                 o.creator_id === player.playerId &&
-                o.parent_offer_id === "" &&
+                (o.parent_offer_id === "" ||
+                  offers.some(
+                    (root) =>
+                      root.id === o.parent_offer_id &&
+                      root.parent_offer_id === "" &&
+                      root.creator_id !== player.playerId &&
+                      root.target_id !== player.playerId,
+                  )) &&
                 o.status === "pending",
             );
 
@@ -1995,6 +2002,7 @@ export default function Board() {
                         setInlineModal(null);
                         setDraftState(null);
                         setCounteringOffer(offer);
+                        setHoveredOfferId(null);
                       }}
                       selection={[]}
                       clearSelection={() => {}}
@@ -2308,6 +2316,7 @@ export default function Board() {
                 setInlineModal(null);
                 setDraftState(null);
                 setCounteringOffer(offer);
+                setHoveredOfferId(null);
               }}
               selection={selection}
               clearSelection={clearSelection}
