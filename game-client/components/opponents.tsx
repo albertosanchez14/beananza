@@ -98,7 +98,7 @@ function Opponents({ children }: OpponentsProps) {
                   left: fieldLeft,
                   top: fieldTop,
                   transform: fieldTransform,
-                  zIndex: 9,
+                  zIndex: 11,
                 }}
               >
                 {tradedCardsAreaEl}
@@ -113,7 +113,7 @@ function Opponents({ children }: OpponentsProps) {
                 left: avatarLeft,
                 top: avatarTop,
                 transform: "translate(-50%, -50%)",
-                zIndex: 10,
+                zIndex: 12,
               }}
             >
               {avatarChild}

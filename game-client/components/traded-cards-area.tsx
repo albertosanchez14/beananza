@@ -37,7 +37,7 @@ type Props = {
   onRequestDrop: (cards: CardType[]) => void;
   onOpenModal: () => void;
   draftCards?: CardType[];
-  draftCardsGroupRef?: React.RefObject<HTMLDivElement | null>;
+  draftCardsGroupRef?: React.Ref<HTMLDivElement>;
   draftColor?: string;
   // Inline editing mode
   isEditingDraft?: boolean;

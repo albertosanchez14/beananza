@@ -222,6 +222,7 @@ export default function Board() {
   const opponentTagWrapperRefs = useRef<
     Map<string, Map<string, HTMLDivElement>>
   >(new Map());
+  const opponentDraftGroupRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const checkOverflow = useCallback(() => {
     if (!tradedCardsAreaRef.current || !fieldRef.current) return;
@@ -1252,7 +1253,7 @@ export default function Board() {
         }
       }
 
-      // Giving arrows: offered card elements → target opponent field(s)
+      // Giving arrows: offered card elements → target opponent draft group (fallback: field)
       const seenOffer = new Set<HTMLElement>();
       let oi = 0;
       draftState.offered.forEach((card) => {
@@ -1263,7 +1264,10 @@ export default function Board() {
           players
             .filter((p) => p.playerId !== myPlayerId)
             .forEach((p) => {
-              const targetEl = oFieldRefs.get(p.playerId) ?? null;
+              const targetEl =
+                opponentDraftGroupRefs.current.get(p.playerId) ??
+                oFieldRefs.get(p.playerId) ??
+                null;
               if (targetEl)
                 addPath(
                   next,
@@ -1276,6 +1280,7 @@ export default function Board() {
             });
         } else {
           const targetEl =
+            opponentDraftGroupRefs.current.get(draftState.targetId!) ??
             opponentTagWrapperRefs.current
               .get(draftState.targetId!)
               ?.get("__draft__") ??
@@ -1710,6 +1715,16 @@ export default function Board() {
     }
   };
 
+  // Whether the ghost offer has a non-empty parent chain (i.e. attaches to an existing tree node).
+  // ghost.parent_offer_id = isDirectResponse ? counteringOffer.id : counteringOffer.parent_offer_id
+  const isCounterDirectResponse = counteringOffer
+    ? myPlayerId === counteringOffer.target_id ||
+      (counteringOffer.target_id === "" && myPlayerId === playerTurn)
+    : false;
+  const ghostHasParent = counteringOffer
+    ? isCounterDirectResponse || counteringOffer.parent_offer_id !== ""
+    : false;
+
   // Root offer IDs already visible to the current player (own roots + incoming roots).
   const visibleRootIds = new Set(
     offers
@@ -1733,6 +1748,8 @@ export default function Board() {
     }
     return cur.id;
   };
+  // Root id of the counteringOffer's ancestry chain (used to detect ghost visibility in opponent trees).
+  const counteringOfferRootId = counteringOffer ? findRootId(counteringOffer) : null;
   // Include all pending offers the player created. For counter offers, only add
   // them as standalone roots when their ancestor root is not already visible
   // (avoids duplicating counters that already appear inside a tree).
@@ -1915,6 +1932,24 @@ export default function Board() {
                 o.status === "pending",
             );
 
+            // Ghost appears in this opponent's tree when it has a parent chain whose
+            // root IS visible to this opponent (in pIncoming or pOutgoing).
+            const ghostInOpponentTree =
+              ghostHasParent &&
+              !!counteringOfferRootId &&
+              (pIncoming.some((o) => o.id === counteringOfferRootId) ||
+                pOutgoing.some((o) => o.id === counteringOfferRootId));
+            const showDraftOffered =
+              (!!inlineModal || (!!counteringOffer && !ghostInOpponentTree)) &&
+              !!draftState?.offered.length;
+            const draftOfferedCards = showDraftOffered
+              ? !draftState!.targetId
+                ? draftState!.offered
+                : draftState!.targetId === player.playerId
+                  ? draftState!.offered
+                  : []
+              : [];
+
             return (
               <Player
                 key={player.playerId}
@@ -1939,7 +1974,7 @@ export default function Board() {
                 onDrop={(e) => handlePlayerDrop(e, player)}
                 tradedCardsArea={
                   phase === "turnTrade" &&
-                  (pIncoming.length > 0 || pOutgoing.length > 0) ? (
+                  (pIncoming.length > 0 || pOutgoing.length > 0 || draftOfferedCards.length > 0) ? (
                     <TradedCardsArea
                       phase={phase}
                       pickedCards={[]}
@@ -1965,6 +2000,12 @@ export default function Board() {
                       clearSelection={() => {}}
                       onRequestDrop={() => {}}
                       onOpenModal={() => {}}
+                      draftCards={draftOfferedCards.length > 0 ? draftOfferedCards : undefined}
+                      draftCardsGroupRef={(el) => {
+                        if (el) opponentDraftGroupRefs.current.set(player.playerId, el);
+                        else opponentDraftGroupRefs.current.delete(player.playerId);
+                      }}
+                      draftColor={draftColor}
                     />
                   ) : undefined
                 }
