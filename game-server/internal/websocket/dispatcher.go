@@ -456,10 +456,11 @@ func (c *Client) handleCounterOffer(s *game.Session, payload map[string]any) {
 		return
 	}
 
+	targetID, _ := payload["target_player_id"].(string)
 	cardsOffered := parseOfferCards(payload["cards_offered"])
 	cardsRequested := parseOfferCards(payload["cards_requested"])
 
-	if _, err := s.HandleCounterOffer(parentOfferID, c.PlayerId, cardsOffered, cardsRequested); err != nil {
+	if _, err := s.HandleCounterOffer(parentOfferID, c.PlayerId, targetID, cardsOffered, cardsRequested); err != nil {
 		c.sendGameError(err)
 	}
 }

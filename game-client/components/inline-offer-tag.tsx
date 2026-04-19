@@ -12,11 +12,14 @@ type Props = {
   rootOffer: Offer;
   subtree: Offer[];
   myPlayerId: string;
+  viewerPlayerId: string;
+  turnPlayerId: string;
   cardLookup: Map<string, CardType>;
   hand: CardType[];
   centerCards: CardType[];
   isTurnPlayer?: boolean;
   tagWrapperRefs: React.RefObject<Map<string, HTMLDivElement>>;
+  readOnly?: boolean;
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
   onAccept: (offer: Offer) => void;
   onCounter: (offer: Offer) => void;
@@ -31,11 +34,14 @@ export default function InlineOfferTag({
   rootOffer,
   subtree,
   myPlayerId,
+  viewerPlayerId,
+  turnPlayerId,
   cardLookup,
   hand,
   centerCards,
   isTurnPlayer = false,
   tagWrapperRefs,
+  readOnly,
   onRespond,
   onAccept,
   onCounter,
@@ -86,10 +92,13 @@ export default function InlineOfferTag({
             key={leaf.id}
             offer={leaf}
             myPlayerId={myPlayerId}
+            viewerPlayerId={viewerPlayerId}
+            turnPlayerId={turnPlayerId}
             cardLookup={cardLookup}
             hand={hand}
             centerCards={centerCards}
             isTurnPlayer={isTurnPlayer}
+            readOnly={readOnly}
             onRespond={onRespond}
             onAccept={onAccept}
             onCounter={onCounter}
@@ -117,11 +126,14 @@ export default function InlineOfferTag({
           rootOfferId={rootOffer.id}
           containerEl={containerEl}
           myPlayerId={myPlayerId}
+          viewerPlayerId={viewerPlayerId}
+          turnPlayerId={turnPlayerId}
           cardLookup={cardLookup}
           hand={hand}
           centerCards={centerCards}
           isTurnPlayer={isTurnPlayer}
           tagWrapperRefs={tagWrapperRefs}
+          readOnly={readOnly}
           onClose={hasDraft ? () => {} : () => setTreeOpen(false)}
           onHover={onHover}
           onRespond={onRespond}

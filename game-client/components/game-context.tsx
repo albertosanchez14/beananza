@@ -65,6 +65,7 @@ type GameContextValue = {
     parentId: string,
     offered: OfferCard[],
     requested: OfferCard[],
+    targetId?: string,
   ) => void;
 };
 
@@ -100,6 +101,7 @@ type GameProviderProps = {
     parentId: string,
     offered: OfferCard[],
     requested: OfferCard[],
+    targetId?: string,
   ) => void;
 };
 

@@ -950,7 +950,7 @@ func (s *State) CreateOffer(creatorID, targetID string, cardsOffered, cardsReque
 // CounterOffer creates a counteroffer against an existing pending offer.
 // The counter-creator proposes their own cardsOffered/cardsRequested swap.
 // Multiple players may counter the same parent offer simultaneously.
-func (s *State) CounterOffer(parentOfferID, creatorID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
+func (s *State) CounterOffer(parentOfferID, creatorID, targetID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
 	if s.Phase != PhaseTypeTurnTrade {
 		return nil, NewInvalidPhaseError(s.Phase)
 	}
@@ -977,11 +977,31 @@ func (s *State) CounterOffer(parentOfferID, creatorID string, cardsOffered, card
 		return nil, err
 	}
 
+	turnPlayerID := s.TurnOrder[s.CurrentTurn]
+	resolvedTarget := targetID
+	if resolvedTarget == "" {
+		if creatorID == turnPlayerID {
+			resolvedTarget = parent.CreatorID
+		} else {
+			resolvedTarget = turnPlayerID
+		}
+	}
+
+	// Third-party counters (not the named target, not the turn player responding
+	// to a non-turn player) land as siblings rather than children, so the tree
+	// depth reflects negotiation rounds, not the number of participants.
+	isDirectResponse := creatorID == parent.TargetID ||
+		(parent.TargetID == "" && creatorID == turnPlayerID)
+	newParentID := parentOfferID
+	if !isDirectResponse {
+		newParentID = parent.ParentOfferID // "" when countering root → offer becomes a new root
+	}
+
 	offer := &Offer{
 		ID:             newOfferID(),
 		CreatorID:      creatorID,
-		TargetID:       parent.CreatorID,
-		ParentOfferID:  parentOfferID,
+		TargetID:       resolvedTarget,
+		ParentOfferID:  newParentID,
 		CardsOffered:   cardsOffered,
 		CardsRequested: cardsRequested,
 		Status:         OfferStatusPending,
@@ -1026,13 +1046,9 @@ func (s *State) AcceptOffer(offerID, acceptorID string, selectedCards []OfferCar
 			return NewInvalidActionError("offer is targeted at a different player")
 		}
 	} else {
-		// Counteroffer — only the parent offer's creator can accept.
-		parent := s.findOffer(offer.ParentOfferID)
-		if parent == nil {
-			return NewOfferNotFoundError(offer.ParentOfferID)
-		}
-		if acceptorID != parent.CreatorID {
-			return NewInvalidActionError("only the original offer creator can accept a counteroffer")
+		// Counteroffer — only the explicit target may accept (target is always set by CounterOffer).
+		if acceptorID != offer.TargetID {
+			return NewInvalidActionError("counteroffer is targeted at a different player")
 		}
 	}
 
@@ -1174,12 +1190,8 @@ func (s *State) RejectOffer(offerID, rejectorID string) error {
 			return NewInvalidActionError("offer is targeted at a different player")
 		}
 	} else {
-		parent := s.findOffer(offer.ParentOfferID)
-		if parent == nil {
-			return NewOfferNotFoundError(offer.ParentOfferID)
-		}
-		if rejectorID != parent.CreatorID {
-			return NewInvalidActionError("only the original offer creator can reject a counteroffer")
+		if rejectorID != offer.TargetID {
+			return NewInvalidActionError("counteroffer is targeted at a different player")
 		}
 	}
 

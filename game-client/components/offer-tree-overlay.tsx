@@ -128,11 +128,14 @@ type Props = {
   rootOfferId: string;
   containerEl?: HTMLElement | null;
   myPlayerId: string;
+  viewerPlayerId: string;
+  turnPlayerId: string;
   cardLookup: Map<string, CardType>;
   hand: CardType[];
   centerCards: CardType[];
   isTurnPlayer: boolean;
   tagWrapperRefs: React.RefObject<Map<string, HTMLDivElement>>;
+  readOnly?: boolean;
   onClose: () => void;
   onHover?: (id: string | null) => void;
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
@@ -149,11 +152,14 @@ export default function OfferTreeOverlay({
   rootOfferId,
   containerEl,
   myPlayerId,
+  viewerPlayerId,
+  turnPlayerId,
   cardLookup,
   hand,
   centerCards,
   isTurnPlayer,
   tagWrapperRefs,
+  readOnly,
   onClose,
   onHover,
   onRespond,
@@ -242,10 +248,13 @@ export default function OfferTreeOverlay({
             key={offer.id}
             offer={offer}
             myPlayerId={myPlayerId}
+            viewerPlayerId={viewerPlayerId}
+            turnPlayerId={turnPlayerId}
             cardLookup={cardLookup}
             hand={hand}
             centerCards={centerCards}
             isTurnPlayer={isTurnPlayer}
+            readOnly={readOnly}
             onRespond={onRespond}
             onAccept={onAccept}
             onCounter={onCounter}
