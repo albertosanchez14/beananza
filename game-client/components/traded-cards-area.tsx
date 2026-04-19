@@ -158,7 +158,7 @@ export default function TradedCardsArea({
       ].join(" ")}
       style={readOnly ? undefined : isEditingDraft ? { minHeight: 160 } : { height: 160 }}
     >
-      <TradedCards pickedCards={pickedCards} selection={selection} />
+      <TradedCards pickedCards={pickedCards} selection={selection} readOnly={readOnly} />
 
       {draftGroups.length > 0 && (
         <div ref={draftCardsGroupRef} className="flex items-center gap-3">

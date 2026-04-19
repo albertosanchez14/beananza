@@ -11,9 +11,10 @@ const MAX_LAYERS = 6;
 type Props = {
   pickedCards: Array<CardType>;
   selection: CardType[];
+  readOnly?: boolean;
 };
 
-export default function TradedCards({ pickedCards, selection }: Props) {
+export default function TradedCards({ pickedCards, selection, readOnly = false }: Props) {
   const pickedGroups: { cardName: string; cards: CardType[] }[] = [];
   const groupIndex = new Map<string, number>();
   for (const card of pickedCards) {
@@ -56,11 +57,11 @@ export default function TradedCards({ pickedCards, selection }: Props) {
               <Card
                 card={topCard}
                 flipped={false}
-                draggable
-                isSelected={cards.some((c) =>
+                draggable={!readOnly}
+                isSelected={!readOnly && cards.some((c) =>
                   selection.some((s) => s.cardId === c.cardId),
                 )}
-                onDragStart={(e) => {
+                onDragStart={readOnly ? undefined : (e) => {
                   e.dataTransfer.setData(
                     "application/card",
                     JSON.stringify(topCard),
