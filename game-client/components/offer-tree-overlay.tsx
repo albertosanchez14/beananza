@@ -11,6 +11,7 @@ const ROOT_W = 96;
 const CARD_H = 144;
 const PEEK = 24; // px visible below each layer
 const PEEK_OFFSET = CARD_H - PEEK; // how far each depth level is shifted down
+const PEEK_OFFSET_COMPACT = 48; // tighter offset for readonly/spectator view
 const GAP_X = 20;
 
 // ── Actual node width (mirrors OfferNode's own nodeWidth computation) ─────────
@@ -136,6 +137,7 @@ type Props = {
   isTurnPlayer: boolean;
   tagWrapperRefs: React.RefObject<Map<string, HTMLDivElement>>;
   readOnly?: boolean;
+  compact?: boolean;
   onClose: () => void;
   onHover?: (id: string | null) => void;
   onRespond: (offerId: string, action: "accept" | "reject" | "cancel") => void;
@@ -160,6 +162,7 @@ export default function OfferTreeOverlay({
   isTurnPlayer,
   tagWrapperRefs,
   readOnly,
+  compact,
   onClose,
   onHover,
   onRespond,
@@ -171,6 +174,8 @@ export default function OfferTreeOverlay({
   onDraftCancel,
 }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  const peekOffset = compact ? PEEK_OFFSET_COMPACT : PEEK_OFFSET;
 
   // Click outside to close (also exclude the InlineOfferTag container)
   useEffect(() => {
@@ -209,16 +214,14 @@ export default function OfferTreeOverlay({
     myPlayerId,
     cardLookup,
   );
-  // Root stays at Y=0 (same level as inline nodes); each child is pushed up by PEEK_OFFSET.
-  // Total height = root card + upward extent.
-  const overlayH = CARD_H + maxDepth * PEEK_OFFSET;
+  const overlayH = CARD_H + maxDepth * peekOffset;
 
   return (
     <div
       ref={overlayRef}
       style={{
         position: "absolute",
-        top: -(maxDepth * PEEK_OFFSET),
+        top: -(maxDepth * peekOffset),
         left: "50%",
         transform: "translateX(-50%)",
         width: totalW,
@@ -236,7 +239,7 @@ export default function OfferTreeOverlay({
         const actualW = widths.get(offer.id) ?? baseW;
         // Leaves at top (depth=maxDepth, translateY=0); root shifted down to peek below.
         const left = isRoot ? (totalW - actualW) / 2 : pos.x;
-        const translateY = (maxDepth - pos.depth) * PEEK_OFFSET;
+        const translateY = (maxDepth - pos.depth) * peekOffset;
         const accent =
           offer.target_id === ""
             ? { border: "border-pink-500/80", bg: "bg-pink-900/40" }

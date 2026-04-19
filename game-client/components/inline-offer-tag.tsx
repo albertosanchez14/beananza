@@ -134,6 +134,7 @@ export default function InlineOfferTag({
           isTurnPlayer={isTurnPlayer}
           tagWrapperRefs={tagWrapperRefs}
           readOnly={readOnly}
+          compact={readOnly}
           onClose={hasDraft ? () => {} : () => setTreeOpen(false)}
           onHover={onHover}
           onRespond={onRespond}

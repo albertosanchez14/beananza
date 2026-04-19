@@ -540,33 +540,37 @@ export default function Board() {
         : ORIGIN_COLORS.hand; // outgoing non-broadcast: always cyan
     for (const c of myCards) {
       if (c.card_id) {
-        // Explicit card ID — resolve color from the specific card's location.
-        const color =
-          isIncoming && !isBroadcast && !amTurnPlayer
-            ? hand.some((h) => h.cardId === c.card_id)
-              ? highlightColor
-              : null
-            : highlightColor;
-        if (color && !cardH.has(c.card_id)) cardH.set(c.card_id, color);
-      } else {
-        // Type-only request: highlight exactly one unclaimed card.
-        // Priority: center cards first (turn player only), then hand — first in array order.
-        const priorityPool: Array<{ card: CardType; color: string }> = [];
-        if (amTurnPlayer) {
-          for (const cc of centerCards) {
-            if (cc.cardName === c.card_type)
-              priorityPool.push({ card: cc, color: highlightColor });
-          }
+        const inHand = hand.some((h) => h.cardId === c.card_id);
+        const inCenter = amTurnPlayer && centerCards.some((cc) => cc.cardId === c.card_id);
+        if (inHand || inCenter) {
+          const color =
+            isIncoming && !isBroadcast && !amTurnPlayer
+              ? inHand
+                ? highlightColor
+                : null
+              : highlightColor;
+          if (color && !cardH.has(c.card_id)) cardH.set(c.card_id, color);
+          continue;
         }
-        for (const hc of hand) {
-          if (hc.cardName === c.card_type)
-            priorityPool.push({ card: hc, color: highlightColor });
+        // Specific card traded away — fall through to type-based highlighting
+      }
+      // Type-only or stale card_id: highlight exactly one unclaimed card.
+      // Priority: center cards first (turn player only), then hand — first in array order.
+      const priorityPool: Array<{ card: CardType; color: string }> = [];
+      if (amTurnPlayer) {
+        for (const cc of centerCards) {
+          if (cc.cardName === c.card_type)
+            priorityPool.push({ card: cc, color: highlightColor });
         }
-        for (const { card, color } of priorityPool) {
-          if (!cardH.has(card.cardId)) {
-            cardH.set(card.cardId, color);
-            break;
-          }
+      }
+      for (const hc of hand) {
+        if (hc.cardName === c.card_type)
+          priorityPool.push({ card: hc, color: highlightColor });
+      }
+      for (const { card, color } of priorityPool) {
+        if (!cardH.has(card.cardId)) {
+          cardH.set(card.cardId, color);
+          break;
         }
       }
     }
@@ -703,12 +707,10 @@ export default function Board() {
     const requiredByType: Record<string, number> = {};
     const missingByType: Record<string, number> = {};
     for (const c of requiredCards) {
-      if (c.card_id) {
-        if (!availableIds.has(c.card_id)) {
-          missingByType[c.card_type] = (missingByType[c.card_type] ?? 0) + 1;
-        }
+      if (c.card_id && availableIds.has(c.card_id)) {
         continue;
       }
+      // No card_id, or specific card was traded away — resolve by type
       requiredByType[c.card_type] = (requiredByType[c.card_type] ?? 0) + 1;
     }
 

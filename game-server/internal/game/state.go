@@ -1104,12 +1104,12 @@ func (s *State) AcceptOffer(offerID, acceptorID string, selectedCards []OfferCar
 				// Explicit ID: validate ownership, then mark as claimed.
 				inHand := acceptorHandIDs[c.CardID]
 				inCenter := isTurnPlayer && centerCardIDs[c.CardID]
-				if !inHand && !inCenter {
-					return NewCardNotInHandError(acceptorID, c.CardID)
+				if inHand || inCenter {
+					claimedIDs[c.CardID] = true
+					requestedIDs = append(requestedIDs, c.CardID)
+					continue
 				}
-				claimedIDs[c.CardID] = true
-				requestedIDs = append(requestedIDs, c.CardID)
-				continue
+				// Specific card no longer available (traded away); fall back to type resolution.
 			}
 			// Resolve by card type from hand first, then center (turn player only).
 			resolved := false

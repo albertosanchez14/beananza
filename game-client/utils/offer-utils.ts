@@ -14,8 +14,12 @@ export function canAcceptOffer(
       const has =
         myHand.some((h) => h.cardId === c.card_id) ||
         (isTurnPlayer && centerCards.some((h) => h.cardId === c.card_id));
-      if (!has) return false;
-      consumedIds.add(c.card_id);
+      if (has) {
+        consumedIds.add(c.card_id);
+      } else {
+        // Specific card was traded away; fall back to type matching
+        needed[c.card_type] = (needed[c.card_type] ?? 0) + 1;
+      }
     } else {
       needed[c.card_type] = (needed[c.card_type] ?? 0) + 1;
     }
