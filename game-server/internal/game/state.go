@@ -997,15 +997,20 @@ func (s *State) CounterOffer(parentOfferID, creatorID, targetID string, cardsOff
 		newParentID = parent.ParentOfferID // "" when countering root → offer becomes a new root
 	}
 
+	triggeredBy := ""
+	if !isDirectResponse {
+		triggeredBy = parentOfferID
+	}
 	offer := &Offer{
-		ID:             newOfferID(),
-		CreatorID:      creatorID,
-		TargetID:       resolvedTarget,
-		ParentOfferID:  newParentID,
-		CardsOffered:   cardsOffered,
-		CardsRequested: cardsRequested,
-		Status:         OfferStatusPending,
-		CreatedAt:      time.Now(),
+		ID:                 newOfferID(),
+		CreatorID:          creatorID,
+		TargetID:           resolvedTarget,
+		ParentOfferID:      newParentID,
+		TriggeredByOfferID: triggeredBy,
+		CardsOffered:       cardsOffered,
+		CardsRequested:     cardsRequested,
+		Status:             OfferStatusPending,
+		CreatedAt:          time.Now(),
 	}
 
 	s.Offers = append(s.Offers, offer)
@@ -1221,6 +1226,11 @@ func (s *State) RejectOffer(offerID, rejectorID string) error {
 	// Expire any counteroffers the rejector created against this offer, and
 	// all of their descendants — they are moot now that the parent is rejected.
 	s.expireChildrenByCreator(offerID, rejectorID)
+	// If the offer is now fully rejected, expire all remaining children
+	// (including third-party counters that may be siblings structurally).
+	if offer.Status == OfferStatusRejected {
+		s.expireChildren(offerID)
+	}
 
 	s.markDirty()
 	return nil
@@ -1325,7 +1335,7 @@ func (s *State) expireTreeExcept(nodeID, exceptID string) {
 // is the given offerID.
 func (s *State) expireChildren(parentOfferID string) {
 	for _, o := range s.Offers {
-		if o.ParentOfferID == parentOfferID && o.Status == OfferStatusPending {
+		if (o.ParentOfferID == parentOfferID || o.TriggeredByOfferID == parentOfferID) && o.Status == OfferStatusPending {
 			o.Status = OfferStatusExpired
 			s.expireChildren(o.ID)
 		}
