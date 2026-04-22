@@ -950,7 +950,7 @@ func (s *State) CreateOffer(creatorID, targetID string, cardsOffered, cardsReque
 // CounterOffer creates a counteroffer against an existing pending offer.
 // The counter-creator proposes their own cardsOffered/cardsRequested swap.
 // Multiple players may counter the same parent offer simultaneously.
-func (s *State) CounterOffer(parentOfferID, creatorID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
+func (s *State) CounterOffer(parentOfferID, creatorID, targetID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
 	if s.Phase != PhaseTypeTurnTrade {
 		return nil, NewInvalidPhaseError(s.Phase)
 	}
@@ -977,15 +977,40 @@ func (s *State) CounterOffer(parentOfferID, creatorID string, cardsOffered, card
 		return nil, err
 	}
 
+	turnPlayerID := s.TurnOrder[s.CurrentTurn]
+	resolvedTarget := targetID
+	if resolvedTarget == "" {
+		if creatorID == turnPlayerID {
+			resolvedTarget = parent.CreatorID
+		} else {
+			resolvedTarget = turnPlayerID
+		}
+	}
+
+	// Third-party counters (not the named target, not the turn player responding
+	// to a non-turn player) land as siblings rather than children, so the tree
+	// depth reflects negotiation rounds, not the number of participants.
+	isDirectResponse := creatorID == parent.TargetID ||
+		(parent.TargetID == "" && creatorID == turnPlayerID)
+	newParentID := parentOfferID
+	if !isDirectResponse {
+		newParentID = parent.ParentOfferID // "" when countering root → offer becomes a new root
+	}
+
+	triggeredBy := ""
+	if !isDirectResponse {
+		triggeredBy = parentOfferID
+	}
 	offer := &Offer{
-		ID:             newOfferID(),
-		CreatorID:      creatorID,
-		TargetID:       parent.CreatorID,
-		ParentOfferID:  parentOfferID,
-		CardsOffered:   cardsOffered,
-		CardsRequested: cardsRequested,
-		Status:         OfferStatusPending,
-		CreatedAt:      time.Now(),
+		ID:                 newOfferID(),
+		CreatorID:          creatorID,
+		TargetID:           resolvedTarget,
+		ParentOfferID:      newParentID,
+		TriggeredByOfferID: triggeredBy,
+		CardsOffered:       cardsOffered,
+		CardsRequested:     cardsRequested,
+		Status:             OfferStatusPending,
+		CreatedAt:          time.Now(),
 	}
 
 	s.Offers = append(s.Offers, offer)
@@ -1026,13 +1051,9 @@ func (s *State) AcceptOffer(offerID, acceptorID string, selectedCards []OfferCar
 			return NewInvalidActionError("offer is targeted at a different player")
 		}
 	} else {
-		// Counteroffer — only the parent offer's creator can accept.
-		parent := s.findOffer(offer.ParentOfferID)
-		if parent == nil {
-			return NewOfferNotFoundError(offer.ParentOfferID)
-		}
-		if acceptorID != parent.CreatorID {
-			return NewInvalidActionError("only the original offer creator can accept a counteroffer")
+		// Counteroffer — only the explicit target may accept (target is always set by CounterOffer).
+		if acceptorID != offer.TargetID {
+			return NewInvalidActionError("counteroffer is targeted at a different player")
 		}
 	}
 
@@ -1088,12 +1109,12 @@ func (s *State) AcceptOffer(offerID, acceptorID string, selectedCards []OfferCar
 				// Explicit ID: validate ownership, then mark as claimed.
 				inHand := acceptorHandIDs[c.CardID]
 				inCenter := isTurnPlayer && centerCardIDs[c.CardID]
-				if !inHand && !inCenter {
-					return NewCardNotInHandError(acceptorID, c.CardID)
+				if inHand || inCenter {
+					claimedIDs[c.CardID] = true
+					requestedIDs = append(requestedIDs, c.CardID)
+					continue
 				}
-				claimedIDs[c.CardID] = true
-				requestedIDs = append(requestedIDs, c.CardID)
-				continue
+				// Specific card no longer available (traded away); fall back to type resolution.
 			}
 			// Resolve by card type from hand first, then center (turn player only).
 			resolved := false
@@ -1174,12 +1195,8 @@ func (s *State) RejectOffer(offerID, rejectorID string) error {
 			return NewInvalidActionError("offer is targeted at a different player")
 		}
 	} else {
-		parent := s.findOffer(offer.ParentOfferID)
-		if parent == nil {
-			return NewOfferNotFoundError(offer.ParentOfferID)
-		}
-		if rejectorID != parent.CreatorID {
-			return NewInvalidActionError("only the original offer creator can reject a counteroffer")
+		if rejectorID != offer.TargetID {
+			return NewInvalidActionError("counteroffer is targeted at a different player")
 		}
 	}
 
@@ -1209,6 +1226,11 @@ func (s *State) RejectOffer(offerID, rejectorID string) error {
 	// Expire any counteroffers the rejector created against this offer, and
 	// all of their descendants — they are moot now that the parent is rejected.
 	s.expireChildrenByCreator(offerID, rejectorID)
+	// If the offer is now fully rejected, expire all remaining children
+	// (including third-party counters that may be siblings structurally).
+	if offer.Status == OfferStatusRejected {
+		s.expireChildren(offerID)
+	}
 
 	s.markDirty()
 	return nil
@@ -1313,7 +1335,7 @@ func (s *State) expireTreeExcept(nodeID, exceptID string) {
 // is the given offerID.
 func (s *State) expireChildren(parentOfferID string) {
 	for _, o := range s.Offers {
-		if o.ParentOfferID == parentOfferID && o.Status == OfferStatusPending {
+		if (o.ParentOfferID == parentOfferID || o.TriggeredByOfferID == parentOfferID) && o.Status == OfferStatusPending {
 			o.Status = OfferStatusExpired
 			s.expireChildren(o.ID)
 		}

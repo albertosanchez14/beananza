@@ -19,23 +19,27 @@ type Props = {
   tagWrapperRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
   allOffers: Offer[];
   myPlayerId: string;
+  viewerPlayerId: string;
+  turnPlayerId: string;
   cardLookup: Map<string, CardType>;
   hand: CardType[];
   centerCards: CardType[];
   isTurnPlayer: boolean;
-  onRespondOffer: (
+  readOnly?: boolean;
+  onRespondOffer?: (
     offerId: string,
     action: "accept" | "reject" | "cancel",
   ) => void;
-  onAcceptOffer: (offer: Offer) => void;
+  onAcceptOffer?: (offer: Offer) => void;
   onCounterOffer: (offer: Offer) => void;
   selection: CardType[];
   clearSelection: () => void;
   onRequestDrop: (cards: CardType[]) => void;
   onOpenModal: () => void;
   draftCards?: CardType[];
-  draftCardsGroupRef?: React.RefObject<HTMLDivElement | null>;
+  draftCardsGroupRef?: React.Ref<HTMLDivElement>;
   draftColor?: string;
+  flashSignal?: number;
   // Inline editing mode
   isEditingDraft?: boolean;
   reqQty?: Record<string, number>;
@@ -59,10 +63,13 @@ export default function TradedCardsArea({
   tagWrapperRefs,
   allOffers,
   myPlayerId,
+  viewerPlayerId,
+  turnPlayerId,
   cardLookup,
   hand,
   centerCards,
   isTurnPlayer,
+  readOnly = false,
   onRespondOffer,
   onAcceptOffer,
   onCounterOffer,
@@ -84,6 +91,7 @@ export default function TradedCardsArea({
   onDraftAdjustReq,
   onDraftRemoveReq,
   onDraftCancel,
+  flashSignal = 0,
 }: Props) {
   // Group draft cards by cardName for stacked rendering.
   const draftGroups: { cardName: string; cards: CardType[] }[] = [];
@@ -104,6 +112,8 @@ export default function TradedCardsArea({
   const rootOffers = [...incomingOffers, ...outgoingOffers];
   const hasContent =
     pickedCards.length > 0 || draftGroups.length > 0 || rootOffers.length > 0;
+
+  if (readOnly && !hasContent) return null;
 
   const totalReq = reqQty
     ? Object.values(reqQty).reduce((s, n) => s + n, 0)
@@ -130,27 +140,27 @@ export default function TradedCardsArea({
   return (
     <div
       onDragOver={
-        isTurnTrade
+        !readOnly && isTurnTrade
           ? (e) => {
               e.preventDefault();
               setDragOver(true);
             }
           : undefined
       }
-      onDragLeave={isTurnTrade ? () => setDragOver(false) : undefined}
-      onDrop={isTurnTrade ? handleDrop : undefined}
+      onDragLeave={!readOnly && isTurnTrade ? () => setDragOver(false) : undefined}
+      onDrop={!readOnly && isTurnTrade ? handleDrop : undefined}
       className={[
         "relative flex flex-row items-center gap-2 px-2 rounded-xl transition-all",
-        isTurnTrade ? "min-w-48 border-2" : "",
-        isTurnTrade
+        !readOnly && isTurnTrade ? "min-w-48 border-2" : "",
+        !readOnly && isTurnTrade
           ? dragOver
             ? "border-dashed border-amber-300 scale-105 shadow-lg shadow-amber-400/40"
             : "border-dashed border-white/70"
           : "",
       ].join(" ")}
-      style={isEditingDraft ? { minHeight: 160 } : { height: 160 }}
+      style={readOnly ? undefined : isEditingDraft ? { minHeight: 160 } : { height: 160 }}
     >
-      <TradedCards pickedCards={pickedCards} selection={selection} />
+      <TradedCards pickedCards={pickedCards} selection={selection} readOnly={readOnly} flashSignal={flashSignal} />
 
       {draftGroups.length > 0 && (
         <div ref={draftCardsGroupRef} className="flex items-center gap-3">
@@ -275,13 +285,16 @@ export default function TradedCardsArea({
                   rootOffer={rootOffer}
                   subtree={subtree}
                   myPlayerId={myPlayerId}
+                  viewerPlayerId={viewerPlayerId}
+                  turnPlayerId={turnPlayerId}
                   cardLookup={cardLookup}
                   hand={hand}
                   centerCards={centerCards}
                   isTurnPlayer={isTurnPlayer}
                   tagWrapperRefs={tagWrapperRefs}
-                  onRespond={onRespondOffer}
-                  onAccept={onAcceptOffer}
+                  readOnly={readOnly}
+                  onRespond={onRespondOffer ?? (() => {})}
+                  onAccept={onAcceptOffer ?? (() => {})}
                   onCounter={onCounterOffer}
                   onToggleDraftPicker={onToggleDraftPicker}
                   onDraftAdjustReq={onDraftAdjustReq}
@@ -296,7 +309,7 @@ export default function TradedCardsArea({
       )}
 
       {/* Empty-state placeholder: hidden during drag-over and when editing */}
-      {isTurnTrade && !hasContent && !isEditingDraft && (
+      {!readOnly && isTurnTrade && !hasContent && !isEditingDraft && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 select-none">
           {dragOver ? (
             <span className="text-2xl text-amber-200 pointer-events-none">
@@ -320,7 +333,7 @@ export default function TradedCardsArea({
       )}
 
       {/* Has-content + button — hidden when editing */}
-      {isTurnTrade && hasContent && !dragOver && !isEditingDraft && (
+      {!readOnly && isTurnTrade && hasContent && !dragOver && !isEditingDraft && (
         <button
           onClick={onOpenModal}
           className="w-8 h-8 rounded-full bg-black/60 text-white text-lg font-bold

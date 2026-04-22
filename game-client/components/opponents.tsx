@@ -70,32 +70,38 @@ function Opponents({ children }: OpponentsProps) {
         const { avatarLeft, avatarTop, fieldLeft, fieldTop, fieldRotation } =
           getPosition(index, items.length);
 
-        // Extract field element from child's props
-        const fieldEl = isValidElement(child)
-          ? ((child.props as Record<string, unknown>).field as ReactNode)
+        const childProps = isValidElement(child)
+          ? (child.props as Record<string, unknown>)
           : null;
 
-        // Render avatar-only child (field stripped out)
+        const fieldEl = childProps?.field as ReactNode;
+        const tradedCardsAreaEl = childProps?.tradedCardsArea as ReactNode;
+
+        // Render avatar-only child (field and tradedCardsArea stripped out)
         const avatarChild = isValidElement(child)
           ? cloneElement(child as React.ReactElement<Record<string, unknown>>, {
               field: null,
+              tradedCardsArea: null,
               fieldRotation,
             })
           : child;
 
+        const fieldTransform = `translate(-50%, -50%) scaleY(${Math.cos((25 * Math.PI) / 180).toFixed(4)}) rotate(${fieldRotation}deg) scale(0.8)`;
+
         return (
           <div key={index}>
-            {/* Field at green ellipse */}
-            {fieldEl && (
+            {/* Field + tradedCardsArea at green ellipse, same perspective transform */}
+            {(fieldEl || tradedCardsAreaEl) && (
               <div
-                className="absolute"
+                className="absolute flex flex-col items-center gap-2"
                 style={{
                   left: fieldLeft,
                   top: fieldTop,
-                  transform: `translate(-50%, -50%) scaleY(${Math.cos((25 * Math.PI) / 180).toFixed(4)}) rotate(${fieldRotation}deg) scale(0.8)`,
-                  zIndex: 9,
+                  transform: fieldTransform,
+                  zIndex: 11,
                 }}
               >
+                {tradedCardsAreaEl}
                 {fieldEl}
               </div>
             )}
@@ -107,7 +113,7 @@ function Opponents({ children }: OpponentsProps) {
                 left: avatarLeft,
                 top: avatarTop,
                 transform: "translate(-50%, -50%)",
-                zIndex: 10,
+                zIndex: 12,
               }}
             >
               {avatarChild}

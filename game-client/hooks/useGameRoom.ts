@@ -24,6 +24,7 @@ export type GameRoomContext = {
     parentId: string,
     offered: OfferCard[],
     requested: OfferCard[],
+    targetId?: string,
   ) => boolean;
   respondOffer: (
     offerId: string,
@@ -84,12 +85,13 @@ export function useGameRoom(
   );
 
   const counterOffer = useCallback(
-    (parentId: string, offered: OfferCard[], requested: OfferCard[]) =>
+    (parentId: string, offered: OfferCard[], requested: OfferCard[], targetId?: string) =>
       send("action", roomId, {
         type: "counterOffer",
         parent_offer_id: parentId,
         cards_offered: offered,
         cards_requested: requested,
+        ...(targetId ? { target_player_id: targetId } : {}),
       }),
     [send, roomId],
   );

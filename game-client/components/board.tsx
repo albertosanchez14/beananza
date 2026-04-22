@@ -23,6 +23,7 @@ import FanLayout from "@/components/fan-layout";
 import Card from "@/components/card";
 import Player from "@/components/player";
 import { FlyingCard } from "@/components/flying-card";
+import { FlashWrapper } from "@/components/flash-wrapper";
 import { PlantFlyingCard } from "@/components/plant-flying-card";
 import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
 import AcceptCardPicker from "@/components/accept-card-picker";
@@ -69,6 +70,7 @@ const ORIGIN_COLORS = {
   center: "#a3e635",
   player: "#f472b6",
   blocked: "#ef4444",
+  spectator: "#e2e8f0",
 } as const;
 
 function enrichWithCenterIds(
@@ -178,6 +180,7 @@ export default function Board() {
     onCreateOffer,
     onRespondOffer,
     onCounterOffer,
+    blockedDrawSignal,
   } = useGameContext();
   const [hoveredOfferId, setHoveredOfferId] = useState<string | null>(null);
 
@@ -218,6 +221,10 @@ export default function Board() {
   const tradedCardsAreaRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLDivElement>(null);
   const draftCardsGroupRef = useRef<HTMLDivElement>(null);
+  const opponentTagWrapperRefs = useRef<
+    Map<string, Map<string, HTMLDivElement>>
+  >(new Map());
+  const opponentDraftGroupRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const checkOverflow = useCallback(() => {
     if (!tradedCardsAreaRef.current || !fieldRef.current) return;
@@ -401,7 +408,13 @@ export default function Board() {
     const handCopy = [...hand];
     const centerCopy = isTurnPlayer ? [...centerCards] : [];
     const preOffered: CardType[] = [];
-    for (const c of counteringOffer.cards_requested) {
+    // Turn player: offer what was requested from them.
+    // Third party countering the turn player's own offer: same swap (give what turn player wants, get what they give).
+    // Third party countering a non-turn offer: mirror as-is (give what was offered to turn player, request what turn player gives).
+    const isOfferByTurnPlayer = counteringOffer.creator_id === playerTurn;
+    const toOffer = (isTurnPlayer || isOfferByTurnPlayer) ? counteringOffer.cards_requested : counteringOffer.cards_offered;
+    const toRequest = (isTurnPlayer || isOfferByTurnPlayer) ? counteringOffer.cards_offered : counteringOffer.cards_requested;
+    for (const c of toOffer) {
       const handIdx = handCopy.findIndex((h) => h.cardName === c.card_type);
       if (handIdx >= 0) {
         preOffered.push(handCopy[handIdx]);
@@ -417,29 +430,37 @@ export default function Board() {
       }
     }
     setOfferedCards(preOffered);
-    // requestedQty ← parent's cards_offered (what they offered us)
     const initQty: Record<string, number> = {};
-    for (const c of counteringOffer.cards_offered) {
+    for (const c of toRequest) {
       initQty[c.card_type] = (initQty[c.card_type] ?? 0) + 1;
     }
     setReqQty(initQty);
-    setReqTarget(counteringOffer.creator_id);
+    // Turn player counters back to the creator; third-party counter targets the turn player.
+    const counterTarget = isTurnPlayer ? counteringOffer.creator_id : playerTurn;
+    setReqTarget(counterTarget);
     setShowReqPicker(false);
     setDraftState({
       offered: preOffered,
       requested: [],
-      targetId: counteringOffer.creator_id,
+      targetId: counterTarget,
     });
   }, [counteringOffer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build ghost offer node for live counter draft preview.
   const allOffersWithGhost = useMemo<Offer[]>(() => {
     if (!counteringOffer) return offers;
+    const counterTarget = myPlayerId === playerTurn ? counteringOffer.creator_id : playerTurn;
+    const isDirectResponse =
+      myPlayerId === counteringOffer.target_id ||
+      (counteringOffer.target_id === "" && myPlayerId === playerTurn);
+    const ghostParentId = isDirectResponse
+      ? counteringOffer.id
+      : counteringOffer.parent_offer_id; // "" when countering root → ghost is also a new root
     const ghost: Offer = {
       id: "__draft__",
       creator_id: myPlayerId,
-      target_id: counteringOffer.creator_id,
-      parent_offer_id: counteringOffer.id,
+      target_id: counterTarget,
+      parent_offer_id: ghostParentId,
       cards_offered: offeredCards.map((c) => ({
         card_type: c.cardName,
         card_id: c.cardId,
@@ -473,8 +494,41 @@ export default function Board() {
     const isIncoming =
       (offer.target_id === myPlayerId || offer.target_id === "") &&
       offer.creator_id !== myPlayerId;
-    if (!isOwn && !isIncoming)
+    const isThirdParty = !isOwn && !isIncoming;
+
+    if (isThirdParty) {
+      const centerCardIds = new Set(centerCards.map((cc) => cc.cardId));
+
+      for (const c of [...offer.cards_offered, ...offer.cards_requested]) {
+        if (c.card_id && centerCardIds.has(c.card_id)) {
+          if (!cardH.has(c.card_id)) cardH.set(c.card_id, ORIGIN_COLORS.spectator);
+        }
+      }
+
+      const creatorHandCount = offer.cards_offered.filter(
+        (c) => !(c.card_id && centerCardIds.has(c.card_id)),
+      ).length;
+      const targetHandCount = offer.cards_requested.filter(
+        (c) => !(c.card_id && centerCardIds.has(c.card_id)),
+      ).length;
+
+      if (creatorHandCount > 0) {
+        const existing = playerH.get(offer.creator_id);
+        playerH.set(offer.creator_id, {
+          color: ORIGIN_COLORS.spectator,
+          count: (existing?.count ?? 0) + creatorHandCount,
+        });
+      }
+      if (targetHandCount > 0 && offer.target_id) {
+        const existing = playerH.get(offer.target_id);
+        playerH.set(offer.target_id, {
+          color: ORIGIN_COLORS.spectator,
+          count: (existing?.count ?? 0) + targetHandCount,
+        });
+      }
+
       return { cardHighlights: cardH, playerHighlights: playerH };
+    }
 
     // Cards from my side (my hand or my center).
     // For incoming offers the current player is not the turn player and cannot
@@ -489,33 +543,37 @@ export default function Board() {
         : ORIGIN_COLORS.hand; // outgoing non-broadcast: always cyan
     for (const c of myCards) {
       if (c.card_id) {
-        // Explicit card ID — resolve color from the specific card's location.
-        const color =
-          isIncoming && !isBroadcast && !amTurnPlayer
-            ? hand.some((h) => h.cardId === c.card_id)
-              ? highlightColor
-              : null
-            : highlightColor;
-        if (color && !cardH.has(c.card_id)) cardH.set(c.card_id, color);
-      } else {
-        // Type-only request: highlight exactly one unclaimed card.
-        // Priority: center cards first (turn player only), then hand — first in array order.
-        const priorityPool: Array<{ card: CardType; color: string }> = [];
-        if (amTurnPlayer) {
-          for (const cc of centerCards) {
-            if (cc.cardName === c.card_type)
-              priorityPool.push({ card: cc, color: highlightColor });
-          }
+        const inHand = hand.some((h) => h.cardId === c.card_id);
+        const inCenter = amTurnPlayer && centerCards.some((cc) => cc.cardId === c.card_id);
+        if (inHand || inCenter) {
+          const color =
+            isIncoming && !isBroadcast && !amTurnPlayer
+              ? inHand
+                ? highlightColor
+                : null
+              : highlightColor;
+          if (color && !cardH.has(c.card_id)) cardH.set(c.card_id, color);
+          continue;
         }
-        for (const hc of hand) {
-          if (hc.cardName === c.card_type)
-            priorityPool.push({ card: hc, color: highlightColor });
+        // Specific card traded away — fall through to type-based highlighting
+      }
+      // Type-only or stale card_id: highlight exactly one unclaimed card.
+      // Priority: center cards first (turn player only), then hand — first in array order.
+      const priorityPool: Array<{ card: CardType; color: string }> = [];
+      if (amTurnPlayer) {
+        for (const cc of centerCards) {
+          if (cc.cardName === c.card_type)
+            priorityPool.push({ card: cc, color: highlightColor });
         }
-        for (const { card, color } of priorityPool) {
-          if (!cardH.has(card.cardId)) {
-            cardH.set(card.cardId, color);
-            break;
-          }
+      }
+      for (const hc of hand) {
+        if (hc.cardName === c.card_type)
+          priorityPool.push({ card: hc, color: highlightColor });
+      }
+      for (const { card, color } of priorityPool) {
+        if (!cardH.has(card.cardId)) {
+          cardH.set(card.cardId, color);
+          break;
         }
       }
     }
@@ -652,12 +710,10 @@ export default function Board() {
     const requiredByType: Record<string, number> = {};
     const missingByType: Record<string, number> = {};
     for (const c of requiredCards) {
-      if (c.card_id) {
-        if (!availableIds.has(c.card_id)) {
-          missingByType[c.card_type] = (missingByType[c.card_type] ?? 0) + 1;
-        }
+      if (c.card_id && availableIds.has(c.card_id)) {
         continue;
       }
+      // No card_id, or specific card was traded away — resolve by type
       requiredByType[c.card_type] = (requiredByType[c.card_type] ?? 0) + 1;
     }
 
@@ -1199,7 +1255,7 @@ export default function Board() {
         }
       }
 
-      // Giving arrows: offered card elements → target opponent field(s)
+      // Giving arrows: offered card elements → target opponent draft group (fallback: field)
       const seenOffer = new Set<HTMLElement>();
       let oi = 0;
       draftState.offered.forEach((card) => {
@@ -1210,7 +1266,10 @@ export default function Board() {
           players
             .filter((p) => p.playerId !== myPlayerId)
             .forEach((p) => {
-              const targetEl = oFieldRefs.get(p.playerId) ?? null;
+              const targetEl =
+                opponentDraftGroupRefs.current.get(p.playerId) ??
+                oFieldRefs.get(p.playerId) ??
+                null;
               if (targetEl)
                 addPath(
                   next,
@@ -1222,7 +1281,13 @@ export default function Board() {
                 );
             });
         } else {
-          const targetEl = oFieldRefs.get(draftState.targetId!) ?? null;
+          const targetEl =
+            opponentDraftGroupRefs.current.get(draftState.targetId!) ??
+            opponentTagWrapperRefs.current
+              .get(draftState.targetId!)
+              ?.get("__draft__") ??
+            oFieldRefs.get(draftState.targetId!) ??
+            null;
           if (targetEl)
             addPath(next, `draft_o_${oi++}`, offEl, targetEl, color);
         }
@@ -1366,7 +1431,12 @@ export default function Board() {
             }
           }
 
-          // Offering arrows: one per unique source element → destination field.
+          // Offering arrows: one per unique source element → destination offer tag (fallback: field).
+          const resolveDestEl = (playerId: string) =>
+            opponentTagWrapperRefs.current.get(playerId)?.get(offer.id) ??
+            oFieldRefs.get(playerId) ??
+            null;
+
           if (isOutgoing) {
             offer.cards_offered.forEach((c, i) => {
               const offEl = resolveOfferedEl(
@@ -1378,22 +1448,26 @@ export default function Board() {
               );
               if (!offEl) return;
               if (isBroadcast) {
-                addPathsToTargets(
-                  next,
-                  oFieldRefs,
-                  `${offer.id}_o_${i}`,
-                  offEl,
-                  targets!,
-                  color,
-                );
+                targets!.forEach((p) => {
+                  const destEl = resolveDestEl(p.playerId);
+                  if (destEl)
+                    addPath(
+                      next,
+                      `${offer.id}_o_${i}_${p.playerId}`,
+                      offEl,
+                      destEl,
+                      color,
+                      p.playerId,
+                    );
+                });
               } else {
-                const targetEl = oFieldRefs.get(offer.target_id) ?? null;
+                const targetEl = resolveDestEl(offer.target_id);
                 if (targetEl)
                   addPath(next, `${offer.id}_o_${i}`, offEl, targetEl, color);
               }
             });
           } else {
-            const creatorEl = oFieldRefs.get(offer.creator_id) ?? null;
+            const creatorEl = resolveDestEl(offer.creator_id);
             if (creatorEl) {
               const claimed = new Set<string>();
               const seenOffer = new Set<HTMLElement>();
@@ -1424,6 +1498,100 @@ export default function Board() {
             }
           }
         });
+
+      // Third-party hover arrows: only drawn when the offer is hovered.
+      // Both creator and target are always opponents from the spectator's perspective.
+      if (hoveredOfferId) {
+        const hoveredOffer = offers.find(
+          (o) =>
+            o.id === hoveredOfferId &&
+            o.status === "pending" &&
+            o.creator_id !== myPlayerId &&
+            o.target_id !== myPlayerId &&
+            o.target_id !== "",
+        );
+        if (hoveredOffer) {
+          const resolveOpponentTagEl = (playerId: string) =>
+            opponentTagWrapperRefs.current.get(playerId)?.get(hoveredOffer.id) ??
+            oFieldRefs.get(playerId) ??
+            null;
+
+          // Offering arrows: creator's cards → target's offer tag / field.
+          // Use the specific card element for center cards; fall back to the
+          // creator's hand container for type-only or hand cards.
+          const targetDestEl = resolveOpponentTagEl(hoveredOffer.target_id);
+          if (targetDestEl) {
+            const seenOffer = new Set<HTMLElement>();
+            let oi = 0;
+            for (const c of hoveredOffer.cards_offered) {
+              const inCenter = !!(
+                c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
+              );
+              const srcEl = inCenter
+                ? (crefs.get(c.card_id) ?? null)
+                : (oHandRefs.get(hoveredOffer.creator_id) ?? null);
+              if (srcEl && !seenOffer.has(srcEl)) {
+                seenOffer.add(srcEl);
+                addPath(
+                  next,
+                  `${hoveredOffer.id}_sp_o_${oi++}`,
+                  srcEl,
+                  targetDestEl,
+                  ORIGIN_COLORS.spectator,
+                );
+              }
+            }
+            if (seenOffer.size === 0) {
+              const creatorHandEl = oHandRefs.get(hoveredOffer.creator_id) ?? null;
+              if (creatorHandEl)
+                addPath(
+                  next,
+                  `${hoveredOffer.id}_sp_o_0`,
+                  creatorHandEl,
+                  targetDestEl,
+                  ORIGIN_COLORS.spectator,
+                );
+            }
+          }
+
+          // Requesting arrows: target's cards → creator's offer tag / field.
+          // Same logic: specific card element for center cards, hand container otherwise.
+          const creatorDestEl = resolveOpponentTagEl(hoveredOffer.creator_id);
+          if (creatorDestEl) {
+            const seenReq = new Set<HTMLElement>();
+            let ri = 0;
+            for (const c of hoveredOffer.cards_requested) {
+              const inCenter = !!(
+                c.card_id && centerCards.some((cc) => cc.cardId === c.card_id)
+              );
+              const srcEl = inCenter
+                ? (crefs.get(c.card_id) ?? null)
+                : (oHandRefs.get(hoveredOffer.target_id) ?? null);
+              if (srcEl && !seenReq.has(srcEl)) {
+                seenReq.add(srcEl);
+                addPath(
+                  next,
+                  `${hoveredOffer.id}_sp_r_${ri++}`,
+                  srcEl,
+                  creatorDestEl,
+                  ORIGIN_COLORS.spectator,
+                );
+              }
+            }
+            if (seenReq.size === 0) {
+              const targetHandEl = oHandRefs.get(hoveredOffer.target_id) ?? null;
+              if (targetHandEl)
+                addPath(
+                  next,
+                  `${hoveredOffer.id}_sp_r_0`,
+                  targetHandEl,
+                  creatorDestEl,
+                  ORIGIN_COLORS.spectator,
+                );
+            }
+          }
+        }
+      }
 
       // Ghost card arrows: blocked paths from missing cards → destination field(s).
       if (hoveredOfferId && ghostCards.length > 0) {
@@ -1549,11 +1717,49 @@ export default function Board() {
     }
   };
 
-  const outgoingOffer = offers.filter(
+  // Whether the ghost offer has a non-empty parent chain (i.e. attaches to an existing tree node).
+  // ghost.parent_offer_id = isDirectResponse ? counteringOffer.id : counteringOffer.parent_offer_id
+  const isCounterDirectResponse = counteringOffer
+    ? myPlayerId === counteringOffer.target_id ||
+      (counteringOffer.target_id === "" && myPlayerId === playerTurn)
+    : false;
+  const ghostHasParent = counteringOffer
+    ? isCounterDirectResponse || counteringOffer.parent_offer_id !== ""
+    : false;
+
+  // Root offer IDs already visible to the current player (own roots + incoming roots).
+  const visibleRootIds = new Set(
+    offers
+      .filter(
+        (o) =>
+          o.status === "pending" &&
+          o.parent_offer_id === "" &&
+          (o.creator_id === myPlayerId ||
+            o.target_id === myPlayerId ||
+            o.target_id === ""),
+      )
+      .map((o) => o.id),
+  );
+  const offerById = new Map(offers.map((o) => [o.id, o]));
+  const findRootId = (offer: Offer): string => {
+    let cur = offer;
+    while (cur.parent_offer_id) {
+      const parent = offerById.get(cur.parent_offer_id);
+      if (!parent) break;
+      cur = parent;
+    }
+    return cur.id;
+  };
+  // Root id of the counteringOffer's ancestry chain (used to detect ghost visibility in opponent trees).
+  const counteringOfferRootId = counteringOffer ? findRootId(counteringOffer) : null;
+  // Include all pending offers the player created. For counter offers, only add
+  // them as standalone roots when their ancestor root is not already visible
+  // (avoids duplicating counters that already appear inside a tree).
+  const outgoingOfferBase = offers.filter(
     (o) =>
       o.creator_id === myPlayerId &&
-      o.parent_offer_id === "" &&
-      o.status === "pending",
+      o.status === "pending" &&
+      (o.parent_offer_id === "" || !visibleRootIds.has(findRootId(o))),
   );
   const incomingOffer = offers.filter(
     (o) =>
@@ -1562,6 +1768,26 @@ export default function Board() {
       o.parent_offer_id === "" &&
       o.status === "pending",
   );
+  // Inject the __draft__ ghost as a root entry so it appears in the current player's
+  // TradedCardsArea and the InlineModal anchor can find it via tagWrapperRefs.
+  // Skip injection when the ghost's ancestor root is already visible in this player's
+  // area (it will render as a leaf inside that root's subtree instead).
+  const draftGhost = (() => {
+    if (!counteringOffer) return null;
+    const ghost = allOffersWithGhost.find((o) => o.id === "__draft__");
+    if (!ghost) return null;
+    // Ghost is a new root (third party countering a root offer) — always inject.
+    if (!ghost.parent_offer_id) return ghost;
+    // Otherwise only inject when the ghost's ancestor root isn't already visible.
+    const ghostRootId = findRootId(offerById.get(ghost.parent_offer_id) ?? counteringOffer);
+    const rootAlreadyVisible =
+      incomingOffer.some((o) => o.id === ghostRootId) ||
+      outgoingOfferBase.some((o) => o.id === ghostRootId);
+    return rootAlreadyVisible ? null : ghost;
+  })();
+  const outgoingOffer = draftGhost
+    ? [...outgoingOfferBase, draftGhost]
+    : outgoingOfferBase;
 
   return (
     <div
@@ -1686,6 +1912,53 @@ export default function Board() {
             const playerHighlight =
               draftPlayerHighlights.get(player.playerId) ??
               playerHighlights.get(player.playerId);
+
+            if (!opponentTagWrapperRefs.current.has(player.playerId)) {
+              opponentTagWrapperRefs.current.set(player.playerId, new Map());
+            }
+            const pTagRefs = {
+              current: opponentTagWrapperRefs.current.get(player.playerId)!,
+            };
+            const pIsTurnPlayer = player.playerId === playerTurn;
+            const pIncoming = offers.filter(
+              (o) =>
+                (o.target_id === player.playerId || o.target_id === "") &&
+                o.creator_id !== player.playerId &&
+                o.parent_offer_id === "" &&
+                o.status === "pending",
+            );
+            const pOutgoing = offers.filter(
+              (o) =>
+                o.creator_id === player.playerId &&
+                (o.parent_offer_id === "" ||
+                  offers.some(
+                    (root) =>
+                      root.id === o.parent_offer_id &&
+                      root.parent_offer_id === "" &&
+                      root.creator_id !== player.playerId &&
+                      root.target_id !== player.playerId,
+                  )) &&
+                o.status === "pending",
+            );
+
+            // Ghost appears in this opponent's tree when it has a parent chain whose
+            // root IS visible to this opponent (in pIncoming or pOutgoing).
+            const ghostInOpponentTree =
+              ghostHasParent &&
+              !!counteringOfferRootId &&
+              (pIncoming.some((o) => o.id === counteringOfferRootId) ||
+                pOutgoing.some((o) => o.id === counteringOfferRootId));
+            const showDraftOffered =
+              (!!inlineModal || (!!counteringOffer && !ghostInOpponentTree)) &&
+              !!draftState?.offered.length;
+            const draftOfferedCards = showDraftOffered
+              ? !draftState!.targetId
+                ? draftState!.offered
+                : draftState!.targetId === player.playerId
+                  ? draftState!.offered
+                  : []
+              : [];
+
             return (
               <Player
                 key={player.playerId}
@@ -1708,6 +1981,46 @@ export default function Board() {
                 onDragOver={(e) => handlePlayerDragOver(e, player.playerId)}
                 onDragLeave={handlePlayerDragLeave}
                 onDrop={(e) => handlePlayerDrop(e, player)}
+                tradedCardsArea={
+                  (phase === "turnTrade" &&
+                  (pIncoming.length > 0 || pOutgoing.length > 0 || draftOfferedCards.length > 0)) ||
+                  player.playerPickedCards.length > 0 ? (
+                    <TradedCardsArea
+                      phase={phase}
+                      pickedCards={player.playerPickedCards}
+                      flashSignal={blockedDrawSignal}
+                      incomingOffers={pIncoming}
+                      outgoingOffers={pOutgoing}
+                      onOfferHover={setHoveredOfferId}
+                      tagWrapperRefs={pTagRefs}
+                      allOffers={allOffersWithGhost}
+                      myPlayerId={player.playerId}
+                      viewerPlayerId={myPlayerId}
+                      turnPlayerId={playerTurn}
+                      cardLookup={cardLookup}
+                      hand={hand}
+                      centerCards={centerCards}
+                      isTurnPlayer={pIsTurnPlayer}
+                      readOnly
+                      onCounterOffer={(offer) => {
+                        setInlineModal(null);
+                        setDraftState(null);
+                        setCounteringOffer(offer);
+                        setHoveredOfferId(null);
+                      }}
+                      selection={[]}
+                      clearSelection={() => {}}
+                      onRequestDrop={() => {}}
+                      onOpenModal={() => {}}
+                      draftCards={draftOfferedCards.length > 0 ? draftOfferedCards : undefined}
+                      draftCardsGroupRef={(el) => {
+                        if (el) opponentDraftGroupRefs.current.set(player.playerId, el);
+                        else opponentDraftGroupRefs.current.delete(player.playerId);
+                      }}
+                      draftColor={draftColor}
+                    />
+                  ) : undefined
+                }
                 field={
                   <div
                     ref={(el) => {
@@ -1826,8 +2139,9 @@ export default function Board() {
             label="Draw"
             count={deckSize}
             topCard={anyCardWithBack}
-            onClickAction={handleDrawDeckClick}
+            onClickAction={isTurnPlayer ? handleDrawDeckClick : undefined}
             deckRef={deckRef}
+
           />
           <div ref={centerCardsRef}>
             <CenterCards slots={cardsPerTurn ?? 3}>
@@ -1836,8 +2150,8 @@ export default function Board() {
                   (c) => c.cardId === card.cardId,
                 );
                 return (
+                  <FlashWrapper key={card.cardId} flashSignal={blockedDrawSignal}>
                   <Card
-                    key={card.cardId}
                     card={card}
                     ref={(el) => {
                       if (el) cardRefs.current.set(card.cardId, el);
@@ -1887,6 +2201,7 @@ export default function Board() {
                         : undefined
                     }
                   />
+                  </FlashWrapper>
                 );
               })}
             </CenterCards>
@@ -1989,12 +2304,15 @@ export default function Board() {
             <TradedCardsArea
               phase={phase}
               pickedCards={pickedCards}
+              flashSignal={blockedDrawSignal}
               incomingOffers={incomingOffer}
               outgoingOffers={outgoingOffer}
               onOfferHover={setHoveredOfferId}
               tagWrapperRefs={tagWrapperRefs}
               allOffers={allOffersWithGhost}
               myPlayerId={myPlayerId}
+              viewerPlayerId={myPlayerId}
+              turnPlayerId={playerTurn}
               cardLookup={cardLookup}
               hand={hand}
               centerCards={centerCards}
@@ -2005,6 +2323,7 @@ export default function Board() {
                 setInlineModal(null);
                 setDraftState(null);
                 setCounteringOffer(offer);
+                setHoveredOfferId(null);
               }}
               selection={selection}
               clearSelection={clearSelection}
@@ -2171,6 +2490,7 @@ export default function Board() {
                 gameState.centerCards,
                 isTurnPlayer,
               ),
+              reqTarget,
             );
             setCounteringOffer(null);
           }}

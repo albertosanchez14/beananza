@@ -8,6 +8,8 @@ import { canAcceptOffer } from "@/utils/offer-utils";
 type OfferNodeProps = {
   offer: Offer;
   myPlayerId: string;
+  viewerPlayerId: string;
+  turnPlayerId: string;
   cardLookup: Map<string, CardType>;
   hand: CardType[];
   centerCards: CardType[];
@@ -16,6 +18,7 @@ type OfferNodeProps = {
   width: number;
   cardHeight: number;
   isDraft?: boolean;
+  readOnly?: boolean;
   onToggleDraftPicker?: () => void;
   onDraftAdjustReq?: (cardName: string, delta: number) => void;
   onDraftRemoveReq?: (cardName: string) => void;
@@ -34,6 +37,8 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
     const {
       offer,
       myPlayerId,
+      viewerPlayerId,
+      turnPlayerId,
       cardLookup,
       hand,
       centerCards,
@@ -44,6 +49,7 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
       width,
       cardHeight,
       isDraft = false,
+      readOnly = false,
       onToggleDraftPicker,
       onDraftAdjustReq,
       onDraftRemoveReq,
@@ -76,6 +82,12 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
 
     const totalReq = relevantCards.length;
     const cardTypeCount = Object.keys(counts).length;
+
+    const canCounter =
+      offer.creator_id !== viewerPlayerId &&
+      isPending &&
+      !isDraft &&
+      (!readOnly || isTurnPlayer);
 
     const crossSvg = (
       <div className="flex-1 flex items-center justify-center opacity-40">
@@ -120,7 +132,7 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
           }
         }}
       >
-        {isIncoming && isPending && !canAccept && (
+        {isIncoming && isPending && !canAccept && !readOnly && (
           <div
             className="absolute inset-x-0 z-10 flex justify-center pointer-events-none"
             style={{ bottom: "calc(100% + 0.25rem)" }}
@@ -165,7 +177,7 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
                 </div>
               ))}
 
-          {!isDraft && (
+          {!isDraft && (!readOnly || canCounter) && (
             <div
               className="absolute bottom-0 inset-x-0 z-10 flex gap-0.5 px-1 pb-1 pt-4"
               style={{
@@ -173,7 +185,7 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
                   "linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%)",
               }}
             >
-              {isIncoming && (
+              {!readOnly && isIncoming && (
                 <button
                   onClick={() => onAccept(offer)}
                   disabled={!canAccept}
@@ -186,19 +198,20 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
                   ✓
                 </button>
               )}
-              <button
-                onClick={() =>
-                  onRespond(offer.id, isIncoming ? "reject" : "cancel")
-                }
-                title={isIncoming ? "Reject" : "Cancel"}
-                className="flex-1 text-[8px] font-semibold py-0.5
+              {!readOnly && (
+                <button
+                  onClick={() =>
+                    onRespond(offer.id, isIncoming ? "reject" : "cancel")
+                  }
+                  title={isIncoming ? "Reject" : "Cancel"}
+                  className="flex-1 text-[8px] font-semibold py-0.5
 						rounded bg-red-900/60 hover:bg-red-800
 						text-red-300 border border-red-700/50 transition-colors"
-              >
-                ✕
-              </button>
-
-              {isIncoming && (
+                >
+                  ✕
+                </button>
+              )}
+              {canCounter && (
                 <button
                   onClick={() => onCounter(offer)}
                   title="Counter"
@@ -214,7 +227,7 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
         </div>
 
         {/* Draft controls overlay — full opacity, positioned over the card */}
-        {isDraft && !isFree && (
+        {isDraft && !isFree && !readOnly && (
           <div
             className="absolute inset-0 flex flex-row pointer-events-none"
             style={{ zIndex: 20 }}
@@ -267,7 +280,7 @@ export const OfferNode = forwardRef<HTMLDivElement, OfferNodeProps>(
           </div>
         )}
 
-        {isDraft && (
+        {isDraft && !readOnly && (
           <button
             onClick={onToggleDraftPicker}
             title="Add requested card"

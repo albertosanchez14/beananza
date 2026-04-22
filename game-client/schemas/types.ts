@@ -45,6 +45,7 @@ export type ExternalPlayer = {
   playerCoins: number;
   playerHandSize: number;
   playerPickedCardsCount: number;
+  playerPickedCards: CardType[];
   playerField: FieldType;
   playerConnected?: boolean;
   playerDisconnectDeadline?: string | null;
@@ -82,6 +83,7 @@ export type Offer = {
   creator_id: string;
   target_id: string;
   parent_offer_id: string;
+  triggered_by_offer_id?: string;
   cards_offered: OfferCard[];
   cards_requested: OfferCard[];
   status: "pending" | "accepted" | "rejected" | "cancelled" | "expired";

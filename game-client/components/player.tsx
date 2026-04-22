@@ -26,6 +26,7 @@ type ActivePlayerProps = {
   playerDisconnectDeadline?: string | null;
   isCurrentTurn?: boolean;
   gamePhase?: string;
+  tradedCardsArea?: ReactNode;
   field?: ReactNode;
   hand?: ReactNode;
   isDragTarget?: boolean;
@@ -117,6 +118,7 @@ function ActivePlayer({
   playerDisconnectDeadline,
   isCurrentTurn = false,
   gamePhase,
+  tradedCardsArea,
   field,
   hand,
   isDragTarget = false,
@@ -266,6 +268,7 @@ function ActivePlayer({
       </div>
 
       {field && <div style={{ marginTop: 18 }}>{field}</div>}
+      {tradedCardsArea && <div style={{ marginTop: 8 }}>{tradedCardsArea}</div>}
     </div>
   );
 }

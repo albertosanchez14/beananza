@@ -456,6 +456,7 @@ func (s *Session) GetPlayerSnapshot(playerId string, connectedIDs map[string]boo
 			"playerCoins":                 player.Coins,
 			"playerHandSize":              len(player.Hand),
 			"playerPickedCardsCount":      len(player.PickedCards),
+				"playerPickedCards":           player.PickedCards,
 			"playerField":                 player.Field,
 			"playerConnected":             connectedIDs[id],
 			"playerDisconnectDeadline":    deadlineStr,
@@ -965,11 +966,11 @@ func (s *Session) HandleCreateOffer(creatorID, targetID string, cardsOffered, ca
 }
 
 // HandleCounterOffer handles a player creating a counteroffer against an existing offer.
-func (s *Session) HandleCounterOffer(parentOfferID, creatorID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
+func (s *Session) HandleCounterOffer(parentOfferID, creatorID, targetID string, cardsOffered, cardsRequested []OfferCard) (*Offer, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	offer, err := s.gameState.CounterOffer(parentOfferID, creatorID, cardsOffered, cardsRequested)
+	offer, err := s.gameState.CounterOffer(parentOfferID, creatorID, targetID, cardsOffered, cardsRequested)
 	if err != nil {
 		return nil, s.logAndReturnError("counter_offer", err)
 	}
@@ -978,6 +979,7 @@ func (s *Session) HandleCounterOffer(parentOfferID, creatorID string, cardsOffer
 		zap.String("offer_id", offer.ID),
 		zap.String("parent_offer_id", parentOfferID),
 		zap.String("creator_id", creatorID),
+		zap.String("target_id", offer.TargetID),
 	)
 
 	return offer, s.persistState()

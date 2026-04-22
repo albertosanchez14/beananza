@@ -112,7 +112,7 @@ export function claimCard<T extends { cardId: string; cardName: string }>(
 ): HTMLElement | null {
   for (const item of pool) {
     const matches = c.card_id
-      ? item.cardId === c.card_id
+      ? item.cardId === c.card_id || item.cardName === c.card_type
       : item.cardName === c.card_type;
     if (matches && !claimed.has(item.cardId)) {
       claimed.add(item.cardId);
