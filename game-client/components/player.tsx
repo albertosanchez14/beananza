@@ -268,6 +268,7 @@ function ActivePlayer({
       </div>
 
       {field && <div style={{ marginTop: 18 }}>{field}</div>}
+      {tradedCardsArea && <div style={{ marginTop: 8 }}>{tradedCardsArea}</div>}
     </div>
   );
 }

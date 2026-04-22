@@ -13,6 +13,7 @@ type GameContextValue = {
   cardsPerTurn: number;
   cardLookup: Map<string, CardType>;
   myPlayerId: string;
+  blockedDrawSignal: number;
   // Cards state and handlers
   selection: CardType[];
   clearSelection: () => void;
@@ -119,6 +120,7 @@ export function GameProvider({
   onRespondOffer,
   onCounterOffer,
 }: GameProviderProps) {
+  const [blockedDrawCount, setBlockedDrawCount] = useState(0);
   const [pendingHarvestSlotId, setPendingHarvestSlotId] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   const [dragSourceIsHand, setDragSourceIsHand] = useState(false);
@@ -373,6 +375,16 @@ export function GameProvider({
   const handleDrawDeckClick = () => {
     if (gameState.phase === "plantHand") {
       onTurnOverBean();
+    } else if (gameState.phase === "plantTrade") {
+      const hasBlockingCards =
+        gameState.pickedCards.length > 0 ||
+        gameState.centerCards.length > 0 ||
+        gameState.players.some((p) => p.playerPickedCards.length > 0);
+      if (hasBlockingCards) {
+        setBlockedDrawCount((c) => c + 1);
+      } else {
+        onDrawCards();
+      }
     } else {
       onDrawCards();
     }
@@ -383,6 +395,7 @@ export function GameProvider({
     cardsPerTurn,
     cardLookup,
     myPlayerId,
+    blockedDrawSignal: blockedDrawCount,
     selection,
     clearSelection,
     handleCardClick,

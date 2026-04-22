@@ -39,6 +39,7 @@ type Props = {
   draftCards?: CardType[];
   draftCardsGroupRef?: React.Ref<HTMLDivElement>;
   draftColor?: string;
+  flashSignal?: number;
   // Inline editing mode
   isEditingDraft?: boolean;
   reqQty?: Record<string, number>;
@@ -90,6 +91,7 @@ export default function TradedCardsArea({
   onDraftAdjustReq,
   onDraftRemoveReq,
   onDraftCancel,
+  flashSignal = 0,
 }: Props) {
   // Group draft cards by cardName for stacked rendering.
   const draftGroups: { cardName: string; cards: CardType[] }[] = [];
@@ -158,7 +160,7 @@ export default function TradedCardsArea({
       ].join(" ")}
       style={readOnly ? undefined : isEditingDraft ? { minHeight: 160 } : { height: 160 }}
     >
-      <TradedCards pickedCards={pickedCards} selection={selection} readOnly={readOnly} />
+      <TradedCards pickedCards={pickedCards} selection={selection} readOnly={readOnly} flashSignal={flashSignal} />
 
       {draftGroups.length > 0 && (
         <div ref={draftCardsGroupRef} className="flex items-center gap-3">

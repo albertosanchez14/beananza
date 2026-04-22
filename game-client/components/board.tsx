@@ -23,6 +23,7 @@ import FanLayout from "@/components/fan-layout";
 import Card from "@/components/card";
 import Player from "@/components/player";
 import { FlyingCard } from "@/components/flying-card";
+import { FlashWrapper } from "@/components/flash-wrapper";
 import { PlantFlyingCard } from "@/components/plant-flying-card";
 import { TurnOverFlyingCard } from "@/components/turn-over-flying-card";
 import AcceptCardPicker from "@/components/accept-card-picker";
@@ -179,6 +180,7 @@ export default function Board() {
     onCreateOffer,
     onRespondOffer,
     onCounterOffer,
+    blockedDrawSignal,
   } = useGameContext();
   const [hoveredOfferId, setHoveredOfferId] = useState<string | null>(null);
 
@@ -1986,6 +1988,7 @@ export default function Board() {
                     <TradedCardsArea
                       phase={phase}
                       pickedCards={player.playerPickedCards}
+                      flashSignal={blockedDrawSignal}
                       incomingOffers={pIncoming}
                       outgoingOffers={pOutgoing}
                       onOfferHover={setHoveredOfferId}
@@ -2136,8 +2139,9 @@ export default function Board() {
             label="Draw"
             count={deckSize}
             topCard={anyCardWithBack}
-            onClickAction={handleDrawDeckClick}
+            onClickAction={isTurnPlayer ? handleDrawDeckClick : undefined}
             deckRef={deckRef}
+
           />
           <div ref={centerCardsRef}>
             <CenterCards slots={cardsPerTurn ?? 3}>
@@ -2146,8 +2150,8 @@ export default function Board() {
                   (c) => c.cardId === card.cardId,
                 );
                 return (
+                  <FlashWrapper key={card.cardId} flashSignal={blockedDrawSignal}>
                   <Card
-                    key={card.cardId}
                     card={card}
                     ref={(el) => {
                       if (el) cardRefs.current.set(card.cardId, el);
@@ -2197,6 +2201,7 @@ export default function Board() {
                         : undefined
                     }
                   />
+                  </FlashWrapper>
                 );
               })}
             </CenterCards>
@@ -2299,6 +2304,7 @@ export default function Board() {
             <TradedCardsArea
               phase={phase}
               pickedCards={pickedCards}
+              flashSignal={blockedDrawSignal}
               incomingOffers={incomingOffer}
               outgoingOffers={outgoingOffer}
               onOfferHover={setHoveredOfferId}

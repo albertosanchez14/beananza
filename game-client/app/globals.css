@@ -225,6 +225,7 @@ body {
   animation: fade-out-ui 0.45s ease-out forwards;
 }
 
+
 @media (prefers-reduced-motion: reduce) {
   .animate-deal,
   .cloud-slow,

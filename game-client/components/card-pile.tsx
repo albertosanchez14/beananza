@@ -78,10 +78,7 @@ export function CardPile({
       <div
         ref={deckRef}
         className={`absolute left-0 ${count === 0 ? "opacity-40" : ""}`}
-        style={{
-          bottom: faceBottom,
-          zIndex: layers + 1,
-        }}
+        style={{ bottom: faceBottom, zIndex: layers + 1 }}
       >
         <Card card={topCard} flipped={true} onClick={onClickAction} />
       </div>
