@@ -13,10 +13,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-ARG NEXT_PUBLIC_HOST
-
-ENV NEXT_PUBLIC_HOST=$NEXT_PUBLIC_HOST
-
 RUN npm run build
 
 FROM node:22-alpine AS runner
@@ -37,5 +33,6 @@ USER nextjs
 EXPOSE 3000
 
 ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
 CMD ["node", "server.js"]

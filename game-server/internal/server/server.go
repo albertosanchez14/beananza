@@ -74,6 +74,8 @@ func (s *Server) Start() error {
 
 	mux.HandleFunc("/config", s.handleConfig)
 
+	mux.HandleFunc("/healthz", s.handleHealthz)
+
 	os.MkdirAll("./uploads/avatars", 0755)
 	mux.Handle("/user-avatars/", http.StripPrefix("/user-avatars/", http.FileServer(http.Dir("./uploads/avatars"))))
 	mux.HandleFunc("/upload-avatar", s.handleUploadAvatar)
@@ -94,6 +96,17 @@ func (s *Server) Start() error {
 	}
 
 	return nil
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write([]byte("ok\n")); err != nil {
+		s.logger.Error("failed to write health response", zap.Error(err))
+	}
 }
 
 // Shutdown gracefully shuts down the server
@@ -342,10 +355,10 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type configResponse struct {
-		MaxPlayers   int                      `json:"max_players"`
-		MinPlayers   int                      `json:"min_players"`
-		CardsPerTurn int                      `json:"cards_per_turn"`
-		Cards        []config.CardTypeConfig  `json:"card_types"`
+		MaxPlayers   int                     `json:"max_players"`
+		MinPlayers   int                     `json:"min_players"`
+		CardsPerTurn int                     `json:"cards_per_turn"`
+		Cards        []config.CardTypeConfig `json:"card_types"`
 	}
 
 	resp := configResponse{

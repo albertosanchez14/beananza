@@ -1,7 +1,9 @@
 -include .env
 PORT ?= 80
+HTTP_PORT ?= $(PORT)
+HTTPS_PORT ?= 443
 
-.PHONY: help local lan teardown-lan up up-d down restart logs ps redis dev dev-server dev-client build test lint
+.PHONY: help local lan teardown-lan up up-d prod prod-d down down-v restart logs ps redis dev dev-server dev-client build test lint
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -9,15 +11,7 @@ help:
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 local:
-	APP_HOST=localhost:$(PORT) PORT=$(PORT) docker compose up --build
-
-ifeq ($(OS),Windows_NT)
-lan:
-	powershell.exe -ExecutionPolicy Bypass -File scripts\setup-lan.ps1 $(if $(IP),-IP $(IP),) -Port $(PORT)
-else
-lan: 
-	@IP="$(IP)" PORT="$(PORT)" bash scripts/setup-lan.sh
-endif
+	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 dev: 
 	@echo "Starting Redis..."
@@ -30,31 +24,26 @@ dev:
 
 # ── Docker: manage ───────────────────────────────────────────────────────────
 
-ifeq ($(OS),Windows_NT)
-teardown-lan: ## Remove LAN firewall rules / portproxy
-	powershell.exe -ExecutionPolicy Bypass -File scripts\teardown-lan.ps1
-else
-teardown-lan: ## Remove LAN firewall rules / portproxy
-	@TEARDOWN=true PORT="$(PORT)" bash scripts/setup-lan.sh
-endif
-
 up: 
-	docker compose up
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 up-d: 
-	docker compose up -d
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 down: 
-	docker compose down -v
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.prod.yml down
+
+down-v:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.prod.yml down -v
 
 restart: 
-	docker compose restart
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml restart
 
 logs: 
-	docker compose logs -f
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f
 
 ps: 
-	docker compose ps
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
 
 redis: 
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml up redis -d

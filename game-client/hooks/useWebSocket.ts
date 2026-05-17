@@ -1,7 +1,7 @@
 "use client";
 import { useCallback } from "react";
 import useWebSocketLib, { ReadyState } from "react-use-websocket";
-import { wsUrl } from "@/lib/config";
+import { getWebSocketUrl } from "@/lib/config";
 
 export type MessageType =
   | "join"
@@ -41,7 +41,7 @@ export function useWebSocket(
   authToken: string,
 ): WebSocketConnection {
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocketLib(
-    wsUrl,
+    getWebSocketUrl(),
     { share: false, shouldReconnect: () => true },
   );
 

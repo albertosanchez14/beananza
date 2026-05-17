@@ -1,4 +1,10 @@
-card_types:
+cards_per_turn: 2
+max_number_players: 5
+min_number_players: 3
+max_reshuffles: 3
+cards_per_draw: 3
+
+cards:
   - name: "Judicultor"
     count: 6
     front_image: "/cards/judicultor-front.gif"

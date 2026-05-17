@@ -1,4 +1,4 @@
-import { apiBaseUrl } from "./config";
+import { getServerApiBaseUrl } from "@/lib/config";
 
 export interface Room {
   id: string;
@@ -8,8 +8,9 @@ export interface Room {
 }
 
 export async function getRooms(): Promise<Room[]> {
-  const baseUrl = process.env.INTERNAL_API_URL ?? apiBaseUrl;
-  const res = await fetch(`${baseUrl}/rooms`);
+  const res = await fetch(`${getServerApiBaseUrl()}/rooms`, {
+    cache: "no-store",
+  });
   if (!res.ok) throw new Error(`Server responded with ${res.status}`);
   const data: Room[] = await res.json();
   return data;

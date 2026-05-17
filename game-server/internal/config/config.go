@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
@@ -58,27 +57,30 @@ type WebSocketConfig struct {
 type GameConfig struct {
 	MaxNumberPlayers int
 	MinNumberPlayers int
-	// CardsPerTurn is the number of cards flipped face-up from the draw pile
-	// during the "turn over beans" phase. Configurable via CARDS_PER_TURN (default 2).
-	CardsPerTurn int
+	CardsPerTurn     int
+	MaxReshuffles    int
+	CardsPerDraw     int
+	Cards            CardsConfig
+	// LobbyResetSecs is the number of seconds after a game ends before the room
+	// automatically resets to the waiting lobby. Configurable via LOBBY_RESET_SECS (default 30).
+	LobbyResetSecs int
 	// DisconnectTimeoutSecs is the number of seconds the server waits before
 	// skipping a disconnected player's turn (or ending the game if too few
 	// players are connected).  Configurable via DISCONNECT_TIMEOUT_SECS (default 60).
 	DisconnectTimeoutSecs int
-	// MaxReshuffles is the number of times the draw pile can be reshuffled from
-	// the discard pile before the game ends. Configurable via MAX_RESHUFFLES (default 3).
-	MaxReshuffles int
-	// CardsPerDraw is the number of cards a player draws at the end of their turn.
-	// Configurable via CARDS_PER_DRAW (default 3).
-	CardsPerDraw int
-	// LobbyResetSecs is the number of seconds after a game ends before the room
-	// automatically resets to the waiting lobby. Configurable via LOBBY_RESET_SECS (default 30).
-	LobbyResetSecs int
-	Cards          CardsConfig
+}
+
+type GameFileConfig struct {
+	CardsPerTurn     int              `yaml:"cards_per_turn"`
+	MaxNumberPlayers int              `yaml:"max_number_players"`
+	MinNumberPlayers int              `yaml:"min_number_players"`
+	MaxReshuffles    int              `yaml:"max_reshuffles"`
+	CardsPerDraw     int              `yaml:"cards_per_draw"`
+	Cards            []CardTypeConfig `yaml:"cards"`
 }
 
 type CardsConfig struct {
-	CardTypes []CardTypeConfig `yaml:"card_types"`
+	CardTypes []CardTypeConfig
 }
 
 type CardTypeConfig struct {
@@ -94,10 +96,10 @@ func Load() *Config {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	cardsPath := getEnv("CARDS_CONFIG_PATH", "cards.yaml")
-	cards, err := LoadCards(cardsPath)
+	gameConfigPath := getGameConfigPath()
+	gameFile, err := LoadGameFile(gameConfigPath)
 	if err != nil {
-		log.Fatalf("failed to load cards config: %v", err)
+		log.Fatalf("failed to load game config: %v", err)
 	}
 
 	return &Config{
@@ -122,46 +124,53 @@ func Load() *Config {
 			RateBurst:       getEnvAsInt("WS_RATE_BURST", 20),
 		},
 		Game: GameConfig{
-			MaxNumberPlayers:      getEnvAsInt("MAX_NUMBER_PLAYERS", 5),
-			MinNumberPlayers:      getEnvAsInt("MIN_NUMBER_PLAYERS", 3),
-			CardsPerTurn:          getEnvAsInt("CARDS_PER_TURN", 2),
-			DisconnectTimeoutSecs: getEnvAsInt("DISCONNECT_TIMEOUT_SECS", 60),
-			MaxReshuffles:         getEnvAsInt("MAX_RESHUFFLES", 3),
-			CardsPerDraw:          getEnvAsInt("CARDS_PER_DRAW", 3),
+			MaxNumberPlayers:      gameFile.MaxNumberPlayers,
+			MinNumberPlayers:      gameFile.MinNumberPlayers,
+			CardsPerTurn:          gameFile.CardsPerTurn,
+			MaxReshuffles:         gameFile.MaxReshuffles,
+			CardsPerDraw:          gameFile.CardsPerDraw,
+			Cards:                 CardsConfig{CardTypes: gameFile.Cards},
 			LobbyResetSecs:        getEnvAsInt("LOBBY_RESET_SECS", 30),
-			Cards:                 cards,
+			DisconnectTimeoutSecs: getEnvAsInt("DISCONNECT_TIMEOUT_SECS", 60),
 		},
 	}
 }
 
-var (
-	cardsOnce sync.Once
-	cards     CardsConfig
-)
-
-// LoadCards reads and parses the cards.yaml file at the given path.
-// Returns an error if the file cannot be read, the YAML is invalid, or no
-// card types are defined.
-func LoadCards(path string) (CardsConfig, error) {
-	var loadErr error
-	cardsOnce.Do(func() {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			loadErr = fmt.Errorf("failed to read cards config %q: %w", path, err)
-			return
-		}
-		if err := yaml.Unmarshal(data, &cards); err != nil {
-			loadErr = fmt.Errorf("failed to parse cards config %q: %w", path, err)
-			return
-		}
-		if len(cards.CardTypes) == 0 {
-			loadErr = fmt.Errorf("cards config %q contains no card_types", path)
-		}
-	})
-	if loadErr != nil {
-		return CardsConfig{}, loadErr
+// LoadGameFile reads and parses the game config YAML file at the given path.
+// Returns an error if the file cannot be read, the YAML is invalid, or no cards
+// are defined.
+func LoadGameFile(path string) (GameFileConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return GameFileConfig{}, fmt.Errorf("failed to read game config %q: %w", path, err)
 	}
-	return cards, nil
+
+	var cfg GameFileConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return GameFileConfig{}, fmt.Errorf("failed to parse game config %q: %w", path, err)
+	}
+	if cfg.CardsPerTurn <= 0 {
+		return GameFileConfig{}, fmt.Errorf("game config %q must set cards_per_turn greater than 0", path)
+	}
+	if cfg.MaxNumberPlayers <= 0 {
+		return GameFileConfig{}, fmt.Errorf("game config %q must set max_number_players greater than 0", path)
+	}
+	if cfg.MinNumberPlayers <= 0 {
+		return GameFileConfig{}, fmt.Errorf("game config %q must set min_number_players greater than 0", path)
+	}
+	if cfg.MinNumberPlayers > cfg.MaxNumberPlayers {
+		return GameFileConfig{}, fmt.Errorf("game config %q has min_number_players greater than max_number_players", path)
+	}
+	if cfg.MaxReshuffles < 0 {
+		return GameFileConfig{}, fmt.Errorf("game config %q must set max_reshuffles greater than or equal to 0", path)
+	}
+	if cfg.CardsPerDraw <= 0 {
+		return GameFileConfig{}, fmt.Errorf("game config %q must set cards_per_draw greater than 0", path)
+	}
+	if len(cfg.Cards) == 0 {
+		return GameFileConfig{}, fmt.Errorf("game config %q contains no cards", path)
+	}
+	return cfg, nil
 }
 
 func getEnv(key, defaultValue string) string {
@@ -169,6 +178,17 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func getGameConfigPath() string {
+	if value := os.Getenv("GAME_CONFIG_PATH"); value != "" {
+		return value
+	}
+	const dockerPath = "/app/config/game.yaml"
+	if _, err := os.Stat(dockerPath); err == nil {
+		return dockerPath
+	}
+	return "game.yaml"
 }
 
 func getEnvAsInt(key string, defaultValue int) int {

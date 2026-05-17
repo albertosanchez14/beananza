@@ -20,9 +20,8 @@ RUN apk add --no-cache ca-certificates && \
     adduser --system --uid 1001 --ingroup appgroup appuser
 
 COPY --from=builder /game-server .
-COPY cards.yaml .
 
-RUN mkdir -p /app/uploads/avatars && \
+RUN mkdir -p /app/uploads/avatars /app/config && \
     chown -R appuser:appgroup /app
 
 USER appuser

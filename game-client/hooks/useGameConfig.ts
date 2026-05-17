@@ -7,7 +7,6 @@ import {
   GameConfig,
   DEFAULT_GAME_CONFIG,
 } from "@/schemas/types";
-import { apiBaseUrl } from "@/lib/config";
 
 export type GameConfigState = {
   maxPlayers: number;
@@ -51,7 +50,7 @@ export function useGameConfig(): GameConfigState {
 
     const fetchConfig = async () => {
       try {
-        const res = await fetch(`${apiBaseUrl}/config`);
+        const res = await fetch("/config");
         if (!res.ok) {
           throw new Error(`GET /config returned ${res.status}`);
         }

@@ -1,87 +1,81 @@
 services:
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes
+    command:
+      [
+        "sh",
+        "-c",
+        'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"',
+      ]
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
       interval: 5s
       timeout: 3s
       retries: 5
 
-  game-server-1:
-    build:
-      context: ./game-server
-      dockerfile: Dockerfile
+  game-server:
+    image: ${GAME_SERVER_IMAGE:-card-game-server}:${APP_TAG:-latest}
+    restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: 2
     environment:
-      - REDIS_ADDR=redis:6379
-      - REDIS_DB=0
-      - SERVER_HOST=0.0.0.0
-      - SERVER_PORT=8080
-      - LOG_LEVEL=info
-      - CARDS_PER_TURN=2
-      - MAX_NUMBER_PLAYERS=5
-      - MIN_NUMBER_PLAYERS=3
-      - CARDS_CONFIG_PATH=/app/cards.yaml
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      REDIS_DB: ${REDIS_DB:-0}
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      ALLOWED_ORIGINS: ${PUBLIC_ORIGIN:-}
+      LOG_LEVEL: info
+      READ_BUFFER_SIZE: 1024
+      WRITE_BUFFER_SIZE: 1024
+      WS_SEND_BUFFER_SIZE: 256
+      WS_RATE_LIMIT: 10
+      WS_RATE_BURST: 20
+      LOBBY_RESET_SECS: 30
+      DISCONNECT_TIMEOUT_SECS: 60
     depends_on:
       redis:
         condition: service_healthy
-    expose:
-      - "8080"
     volumes:
       - uploads_data:/app/uploads
-
-  game-server-2:
-    build:
-      context: ./game-server
-      dockerfile: Dockerfile
-    environment:
-      - REDIS_ADDR=redis:6379
-      - REDIS_DB=0
-      - SERVER_HOST=0.0.0.0
-      - SERVER_PORT=8080
-      - LOG_LEVEL=info
-      - CARDS_PER_TURN=2
-      - MAX_NUMBER_PLAYERS=5
-      - MIN_NUMBER_PLAYERS=3
-      - CARDS_CONFIG_PATH=/app/cards.yaml
-    depends_on:
-      redis:
-        condition: service_healthy
-    expose:
-      - "8080"
-    volumes:
-      - uploads_data:/app/uploads
+      - ./game-server/game.yaml:/app/config/game.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   game-client:
-    build:
-      context: ./game-client
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_HOST=${APP_HOST:-localhost}
+    image: ${GAME_CLIENT_IMAGE:-card-game-client}:${APP_TAG:-latest}
+    restart: unless-stopped
     environment:
-      - PORT=3000
-      - INTERNAL_API_URL=http://nginx
+      PORT: 3000
+      INTERNAL_API_URL: http://game-server:8080
     expose:
       - "3000"
     depends_on:
-      - game-server-1
-      - game-server-2
+      game-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   nginx:
-    image: nginx:alpine
-    ports:
-      - "${PORT:-80}:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    image: nginx:stable-alpine
+    restart: unless-stopped
     depends_on:
-      game-server-1:
-        condition: service_started
-      game-server-2:
-        condition: service_started
+      game-server:
+        condition: service_healthy
       game-client:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   redis_data:

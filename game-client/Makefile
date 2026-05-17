@@ -7,5 +7,4 @@ build:
 	npm run build
 
 docker-build: 
-	docker build -t game-server:latest .
-
+	docker build -t game-client:latest .

@@ -9,9 +9,16 @@ A multiplayer card game inspired in the Bohnanza game design by Uwe Rosenberg.
 - Docker + Docker Compose
 - `make`
 
-### 1. Localhost with Docker
+### 1. Local/Dev with Docker Compose
 
-Builds and starts the full stack accessible only from this machine:
+Builds local client and server images, then runs nginx, Redis, one Next.js
+client, and two replicated Go server containers over HTTP.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+
+Or use the Makefile shortcut:
 
 ```bash
 make local
@@ -19,52 +26,62 @@ make local
 
 Open [http://localhost](http://localhost).
 
-### 2. LAN with Docker
+### 2. Production with Docker Compose
 
-Builds and starts the full stack accessible from any device on the same network. The setup script auto-detects your LAN IP and configures the firewall automatically.
-
-**Linux / macOS**
-
-```bash
-make lan
-```
-
-**Windows** (Docker Desktop required — run PowerShell as Administrator):
-
-```powershell
-.\scripts\setup-lan.ps1
-```
-
-Or specify the IP manually:
-
-```powershell
-.\scripts\setup-lan.ps1 -IP 192.168.1.42
-```
-
-Or specify the IP manually on any platform:
+`docker-compose.yml` is image-only for app services. It expects prebuilt client
+and server images. Use the prod override for an HTTPS deployment on port 443:
 
 ```bash
-IP=192.168.1.42 make lan        # Linux / macOS
-make lan IP=192.168.1.42        # Windows
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-Open `http://<your-lan-ip>` from any device on the same Wi-Fi.
+The prod override mounts `./nginx/certs` and expects TLS certificates at:
 
-> Next.js bakes the WebSocket URL into the JS bundle at build time, so the correct IP must be provided at build time — you cannot switch between localhost and LAN without rebuilding.
-
-To tear down the LAN configuration and stop the app:
-
-```bash
-make teardown-lan               # Linux / macOS / Windows (via make)
+```text
+./nginx/certs/fullchain.crt
+./nginx/certs/privkey.pem
 ```
 
-```powershell
-.\scripts\teardown-lan.ps1      # Windows (PowerShell as Administrator)
+Both Compose deploys use the same public-origin routing model: the client, API,
+and WebSocket endpoint are served from the same origin. Local/dev uses HTTP;
+prod uses HTTPS.
+
+Server defaults are set directly in `docker-compose.yml`. Use a local `.env`
+only for secrets or deployment-specific overrides read by compose, for example:
+
+```env
+GAME_CLIENT_IMAGE=ghcr.io/you/card-game-client
+GAME_SERVER_IMAGE=ghcr.io/you/card-game-server
+APP_TAG=1.0.0
+PUBLIC_ORIGIN=https://game.example.com
+REDIS_PASSWORD=use-a-long-random-password
+REDIS_DB=0
+HTTP_PORT=80
+HTTPS_PORT=443
 ```
 
-### 3. Development (no Docker for app services)
+`REDIS_DB` must be a numeric Redis database index. Use `0` unless you have a
+specific reason to separate multiple apps in the same Redis instance.
 
-Runs Redis in Docker, the Go server and Next.js dev server natively — ideal for fast iteration:
+Game rules and card definitions are configured in `./game-server/game.yaml`.
+The file is not baked into the server image; Compose mounts it read-only to
+`/app/config/game.yaml` inside each server container:
+
+```yaml
+cards_per_turn: 2
+max_number_players: 5
+min_number_players: 3
+max_reshuffles: 3
+cards_per_draw: 3
+
+cards:
+  - name: "Judicultor"
+    count: 6
+```
+
+### 3. Development
+
+Runs Redis in Docker, then runs the Go server and Next.js dev server natively:
 
 ```bash
 make dev
@@ -84,5 +101,6 @@ make redis        # Redis only (detached)
 ### Stopping
 
 ```bash
-make down   # Stop and remove volumes
+make down    # Stop containers, keep Redis/uploads volumes
+make down-v  # Stop containers and remove volumes
 ```
