@@ -11,7 +11,7 @@ A multiplayer card game inspired in the Bohnanza game design by Uwe Rosenberg.
 
 ### 1. Local/Dev with Docker Compose
 
-Builds local client and server images, then runs nginx, Redis, one Next.js
+Builds local client and server images, then runs nginx, Redis, one static Vite
 client, and two replicated Go server containers over HTTP.
 
 ```bash
@@ -81,20 +81,20 @@ cards:
 
 ### 3. Development
 
-Runs Redis in Docker, then runs the Go server and Next.js dev server natively:
+Runs Redis in Docker, then runs the Go server and Vite dev server natively:
 
 ```bash
 make dev
 ```
 
-- Next.js dev server: [http://localhost:3000](http://localhost:3000)
+- Vite dev server: [http://localhost:3000](http://localhost:3000)
 - Game server API: [http://localhost:8080](http://localhost:8080)
 
 Individual targets:
 
 ```bash
 make dev-server   # Redis + Go server only
-make dev-client   # Next.js dev server only
+make dev-client   # Vite dev server only
 make redis        # Redis only (detached)
 ```
 

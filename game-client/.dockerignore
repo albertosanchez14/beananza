@@ -1,10 +1,9 @@
 node_modules
+dist
 .next
 .git
 coverage
 .env*
-.vercel
 *.log
 .DS_Store
 *.tsbuildinfo
-next-env.d.ts

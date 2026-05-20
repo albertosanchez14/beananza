@@ -55,8 +55,7 @@ services:
     image: ${GAME_CLIENT_IMAGE:-card-game-client}:${APP_TAG:-latest}
     restart: unless-stopped
     environment:
-      PORT: 3000
-      INTERNAL_API_URL: http://game-server:8080
+      INTERNAL_API_URL: http://nginx
     expose:
       - "3000"
     depends_on:
