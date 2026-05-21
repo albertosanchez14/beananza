@@ -15,9 +15,19 @@ Copy the example env file for standalone local runs:
 cp .env.example .env
 ```
 
-Game rules and card definitions live in `game.yaml`. Docker Compose mounts the
-same file at `/app/config/game.yaml`; standalone local runs use
-`GAME_CONFIG_PATH=game.yaml` from `.env`.
+Game rules are configured with env vars:
+
+```env
+CARDS_PER_TURN=2
+MAX_NUMBER_PLAYERS=5
+MIN_NUMBER_PLAYERS=3
+MAX_RESHUFFLES=3
+CARDS_PER_DRAW=3
+```
+
+Card definitions live in `cards.yaml`. Docker Compose mounts the same file at
+`/app/config/cards.yaml`; standalone local runs use
+`CARDS_CONFIG_PATH=cards.yaml` from `.env`.
 
 ## Run Locally
 
