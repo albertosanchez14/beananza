@@ -1,7 +1,4 @@
 -include .env
-PORT ?= 80
-HTTP_PORT ?= $(PORT)
-HTTPS_PORT ?= 443
 
 .PHONY: help local lan teardown-lan up up-d prod prod-d down down-v restart logs ps redis dev dev-server dev-client build test lint
 
@@ -9,9 +6,6 @@ help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
 # ── Run ───────────────────────────────────────────────────────────────────────
-
-local:
-	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 dev: 
 	@echo "Starting Redis..."
@@ -29,6 +23,9 @@ up:
 
 up-d: 
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+up-build:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 down: 
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.prod.yml down

@@ -63,17 +63,21 @@ HTTPS_PORT=443
 `REDIS_DB` must be a numeric Redis database index. Use `0` unless you have a
 specific reason to separate multiple apps in the same Redis instance.
 
-Game rules and card definitions are configured in `./game-server/game.yaml`.
-The file is not baked into the server image; Compose mounts it read-only to
-`/app/config/game.yaml` inside each server container:
+Game rules are configured with environment variables:
+
+```env
+CARDS_PER_TURN=2
+MAX_NUMBER_PLAYERS=5
+MIN_NUMBER_PLAYERS=3
+MAX_RESHUFFLES=3
+CARDS_PER_DRAW=3
+```
+
+Card definitions live in `./game-server/cards.yaml`. The server image includes
+the default file; Compose also mounts it read-only to `/app/config/cards.yaml`
+inside each server container:
 
 ```yaml
-cards_per_turn: 2
-max_number_players: 5
-min_number_players: 3
-max_reshuffles: 3
-cards_per_draw: 3
-
 cards:
   - name: "Judicultor"
     count: 6
