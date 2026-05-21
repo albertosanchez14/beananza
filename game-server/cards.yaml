@@ -1,0 +1,78 @@
+cards:
+  - name: "Judicultor"
+    count: 6
+    front_image: "/cards/judicultor-front.gif"
+    back_image: "/cards/bohnanza-back.jpg"
+    exchange_rates:
+      2: 2
+      3: 3
+
+  - name: "Judia Colora"
+    count: 8
+    front_image: "/cards/colora-front.jpg"
+    back_image: "/cards/bohnanza-back.jpg"
+    exchange_rates:
+      2: 1
+      3: 2
+      4: 3
+      5: 4
+
+  - name: "Rocky Judia"
+    count: 10
+    front_image: "/cards/rocky-front.jpg"
+    back_image: "/cards/bohnanza-back.jpg"
+    exchange_rates:
+      2: 1
+      4: 2
+      5: 3
+      6: 4
+
+  - name: "Hippy Judia"
+    count: 12
+    front_image: "/cards/hippy-front.jpg"
+    back_image: "/cards/bohnanza-back.jpg"
+    exchange_rates:
+      2: 1
+      4: 2
+      6: 3
+      7: 4
+
+  - name: "La Pocha"
+    count: 14
+    front_image: "/cards/pocha-front.jpg"
+    back_image: "/cards/bohnanza-back.jpg"
+    exchange_rates:
+      3: 1
+      5: 2
+      6: 3
+      7: 4
+
+  - name: "La Apestosa"
+    count: 16
+    front_image: "/cards/apestosa-front.jpg"
+    back_image: "/cards/bohnanza-back.jpg"
+    exchange_rates:
+      3: 1
+      5: 2
+      7: 3
+      8: 4
+
+  - name: "Judia Boom"
+    count: 18
+    front_image: "/cards/boom-front.jpg"
+    back_image: "/cards/bohnanza-back.jpg"
+    exchange_rates:
+      3: 1
+      6: 2
+      8: 3
+      9: 4
+
+  - name: "Judia Bill"
+    count: 20
+    front_image: "/cards/bill-front.jpg"
+    back_image: "/cards/bohnanza-back.jpg"
+    exchange_rates:
+      4: 1
+      6: 2
+      8: 3
+      10: 4
