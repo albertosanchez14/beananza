@@ -37,6 +37,11 @@ services:
       WS_SEND_BUFFER_SIZE: 256
       WS_RATE_LIMIT: 10
       WS_RATE_BURST: 20
+      CARDS_PER_TURN: 2
+      MAX_NUMBER_PLAYERS: 5
+      MIN_NUMBER_PLAYERS: 3
+      MAX_RESHUFFLES: 3
+      CARDS_PER_DRAW: 3
       LOBBY_RESET_SECS: 30
       DISCONNECT_TIMEOUT_SECS: 60
       STORAGE_BACKEND: local
@@ -49,7 +54,8 @@ services:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
-      - ./game-server/game.yaml:/app/config/game.yaml:ro
+      # Adding other card configuration
+      - ./game-server/cards.yaml:/app/config/cards.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 10s
@@ -59,8 +65,6 @@ services:
   game-client:
     image: ${GAME_CLIENT_IMAGE:-card-game-client}:${APP_TAG:-latest}
     restart: unless-stopped
-    environment:
-      INTERNAL_API_URL: http://nginx
     expose:
       - "3000"
     depends_on:

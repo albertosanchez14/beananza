@@ -24,9 +24,7 @@ type ServerConfig struct {
 	Host string
 	Port string
 	// AllowedOrigins is the list of permitted WebSocket / CORS origins.
-	// An empty slice disables the check (useful for local dev).
-	// Set via ALLOWED_ORIGINS as a comma-separated list, e.g.
-	//   ALLOWED_ORIGINS=https://mygame.example.com,https://www.mygame.example.com
+	// An empty slice disables the check.
 	AllowedOrigins []string
 }
 
@@ -87,13 +85,8 @@ type GameConfig struct {
 	DisconnectTimeoutSecs int
 }
 
-type GameFileConfig struct {
-	CardsPerTurn     int              `yaml:"cards_per_turn"`
-	MaxNumberPlayers int              `yaml:"max_number_players"`
-	MinNumberPlayers int              `yaml:"min_number_players"`
-	MaxReshuffles    int              `yaml:"max_reshuffles"`
-	CardsPerDraw     int              `yaml:"cards_per_draw"`
-	Cards            []CardTypeConfig `yaml:"cards"`
+type CardsFileConfig struct {
+	Cards []CardTypeConfig `yaml:"cards"`
 }
 
 type CardsConfig struct {
@@ -113,13 +106,17 @@ func Load() *Config {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	gameConfigPath := getGameConfigPath()
-	gameFile, err := LoadGameFile(gameConfigPath)
+	cardsConfigPath := getCardsConfigPath()
+	cardsFile, err := LoadCardsFile(cardsConfigPath)
+	if err != nil {
+		log.Fatalf("failed to load cards config: %v", err)
+	}
+	gameConfig, err := loadGameConfig(cardsFile.Cards)
 	if err != nil {
 		log.Fatalf("failed to load game config: %v", err)
 	}
 
-	return &Config{
+	cfg := &Config{
 		Server: ServerConfig{
 			Host:           getEnv("SERVER_HOST", "localhost"),
 			Port:           getEnv("SERVER_PORT", "8080"),
@@ -140,16 +137,6 @@ func Load() *Config {
 			RateLimit:       getEnvAsInt("WS_RATE_LIMIT", 10),
 			RateBurst:       getEnvAsInt("WS_RATE_BURST", 20),
 		},
-		Game: GameConfig{
-			MaxNumberPlayers:      gameFile.MaxNumberPlayers,
-			MinNumberPlayers:      gameFile.MinNumberPlayers,
-			CardsPerTurn:          gameFile.CardsPerTurn,
-			MaxReshuffles:         gameFile.MaxReshuffles,
-			CardsPerDraw:          gameFile.CardsPerDraw,
-			Cards:                 CardsConfig{CardTypes: gameFile.Cards},
-			LobbyResetSecs:        getEnvAsInt("LOBBY_RESET_SECS", 30),
-			DisconnectTimeoutSecs: getEnvAsInt("DISCONNECT_TIMEOUT_SECS", 60),
-		},
 		Storage: StorageConfig{
 			Backend:              strings.ToLower(getEnv("STORAGE_BACKEND", "local")),
 			MaxAvatarUploadBytes: int64(getEnvAsInt("MAX_AVATAR_UPLOAD_BYTES", 2<<20)),
@@ -165,44 +152,91 @@ func Load() *Config {
 			S3ForcePathStyle:     getEnvAsBool("S3_FORCE_PATH_STYLE", false),
 			S3ACL:                getEnv("S3_ACL", ""),
 		},
+		Game: gameConfig,
 	}
+	return cfg
 }
 
-// LoadGameFile reads and parses the game config YAML file at the given path.
+// LoadCardsFile reads and parses the card config YAML file at the given path.
 // Returns an error if the file cannot be read, the YAML is invalid, or no cards
 // are defined.
-func LoadGameFile(path string) (GameFileConfig, error) {
+func LoadCardsFile(path string) (CardsFileConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return GameFileConfig{}, fmt.Errorf("failed to read game config %q: %w", path, err)
+		return CardsFileConfig{}, fmt.Errorf("failed to read cards config %q: %w", path, err)
 	}
 
-	var cfg GameFileConfig
+	var cfg CardsFileConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return GameFileConfig{}, fmt.Errorf("failed to parse game config %q: %w", path, err)
-	}
-	if cfg.CardsPerTurn <= 0 {
-		return GameFileConfig{}, fmt.Errorf("game config %q must set cards_per_turn greater than 0", path)
-	}
-	if cfg.MaxNumberPlayers <= 0 {
-		return GameFileConfig{}, fmt.Errorf("game config %q must set max_number_players greater than 0", path)
-	}
-	if cfg.MinNumberPlayers <= 0 {
-		return GameFileConfig{}, fmt.Errorf("game config %q must set min_number_players greater than 0", path)
-	}
-	if cfg.MinNumberPlayers > cfg.MaxNumberPlayers {
-		return GameFileConfig{}, fmt.Errorf("game config %q has min_number_players greater than max_number_players", path)
-	}
-	if cfg.MaxReshuffles < 0 {
-		return GameFileConfig{}, fmt.Errorf("game config %q must set max_reshuffles greater than or equal to 0", path)
-	}
-	if cfg.CardsPerDraw <= 0 {
-		return GameFileConfig{}, fmt.Errorf("game config %q must set cards_per_draw greater than 0", path)
+		return CardsFileConfig{}, fmt.Errorf("failed to parse cards config %q: %w", path, err)
 	}
 	if len(cfg.Cards) == 0 {
-		return GameFileConfig{}, fmt.Errorf("game config %q contains no cards", path)
+		return CardsFileConfig{}, fmt.Errorf("cards config %q contains no cards", path)
 	}
 	return cfg, nil
+}
+
+func loadGameConfig(cardTypes []CardTypeConfig) (GameConfig, error) {
+	maxNumberPlayers, err := getGameEnvAsInt("MAX_NUMBER_PLAYERS", 5)
+	if err != nil {
+		return GameConfig{}, err
+	}
+	minNumberPlayers, err := getGameEnvAsInt("MIN_NUMBER_PLAYERS", 3)
+	if err != nil {
+		return GameConfig{}, err
+	}
+	cardsPerTurn, err := getGameEnvAsInt("CARDS_PER_TURN", 2)
+	if err != nil {
+		return GameConfig{}, err
+	}
+	maxReshuffles, err := getGameEnvAsInt("MAX_RESHUFFLES", 3)
+	if err != nil {
+		return GameConfig{}, err
+	}
+	cardsPerDraw, err := getGameEnvAsInt("CARDS_PER_DRAW", 3)
+	if err != nil {
+		return GameConfig{}, err
+	}
+
+	cfg := GameConfig{
+		MaxNumberPlayers:      maxNumberPlayers,
+		MinNumberPlayers:      minNumberPlayers,
+		CardsPerTurn:          cardsPerTurn,
+		MaxReshuffles:         maxReshuffles,
+		CardsPerDraw:          cardsPerDraw,
+		Cards:                 CardsConfig{CardTypes: cardTypes},
+		LobbyResetSecs:        getEnvAsInt("LOBBY_RESET_SECS", 30),
+		DisconnectTimeoutSecs: getEnvAsInt("DISCONNECT_TIMEOUT_SECS", 60),
+	}
+	if err := validateGameConfig(cfg); err != nil {
+		return GameConfig{}, err
+	}
+	return cfg, nil
+}
+
+func validateGameConfig(cfg GameConfig) error {
+	if cfg.CardsPerTurn <= 0 {
+		return fmt.Errorf("CARDS_PER_TURN must be greater than 0")
+	}
+	if cfg.MaxNumberPlayers <= 0 {
+		return fmt.Errorf("MAX_NUMBER_PLAYERS must be greater than 0")
+	}
+	if cfg.MinNumberPlayers <= 0 {
+		return fmt.Errorf("MIN_NUMBER_PLAYERS must be greater than 0")
+	}
+	if cfg.MinNumberPlayers > cfg.MaxNumberPlayers {
+		return fmt.Errorf("MIN_NUMBER_PLAYERS must be less than or equal to MAX_NUMBER_PLAYERS")
+	}
+	if cfg.MaxReshuffles < 0 {
+		return fmt.Errorf("MAX_RESHUFFLES must be greater than or equal to 0")
+	}
+	if cfg.CardsPerDraw <= 0 {
+		return fmt.Errorf("CARDS_PER_DRAW must be greater than 0")
+	}
+	if len(cfg.Cards.CardTypes) == 0 {
+		return fmt.Errorf("cards config contains no cards")
+	}
+	return nil
 }
 
 func getEnv(key, defaultValue string) string {
@@ -212,15 +246,27 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-func getGameConfigPath() string {
-	if value := os.Getenv("GAME_CONFIG_PATH"); value != "" {
+func getCardsConfigPath() string {
+	if value := os.Getenv("CARDS_CONFIG_PATH"); value != "" {
 		return value
 	}
-	const dockerPath = "/app/config/game.yaml"
+	const dockerPath = "/app/config/cards.yaml"
 	if _, err := os.Stat(dockerPath); err == nil {
 		return dockerPath
 	}
-	return "game.yaml"
+	return "cards.yaml"
+}
+
+func getGameEnvAsInt(key string, defaultValue int) (int, error) {
+	valueStr := os.Getenv(key)
+	if valueStr == "" {
+		return defaultValue, nil
+	}
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer", key)
+	}
+	return value, nil
 }
 
 func getEnvAsInt(key string, defaultValue int) int {

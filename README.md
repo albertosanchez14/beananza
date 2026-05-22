@@ -7,7 +7,6 @@ A multiplayer card game inspired in the Bohnanza game design by Uwe Rosenberg.
 ### Prerequisites
 
 - Docker + Docker Compose
-- `make`
 
 ### 1. Local/Dev with Docker Compose
 
@@ -42,9 +41,10 @@ The prod override mounts `./nginx/certs` and expects TLS certificates at:
 ./nginx/certs/privkey.pem
 ```
 
-Both Compose deploys use the same public-origin routing model: the client, API,
-and WebSocket endpoint are served from the same origin. Local/dev uses HTTP;
-prod uses HTTPS.
+Both Compose deploys use a same-origin routing model: the client, API, and
+WebSocket endpoint are served from the same origin. Local/dev uses HTTP; prod
+uses HTTPS. The browser calls `/rooms`, `/register`, `/config`,
+`/upload-avatar`, `/user-avatars`, and `/ws` directly.
 
 Server defaults are set directly in `docker-compose.yml`. Use a local `.env`
 only for secrets or deployment-specific overrides read by compose, for example:
@@ -53,7 +53,7 @@ only for secrets or deployment-specific overrides read by compose, for example:
 GAME_CLIENT_IMAGE=ghcr.io/you/card-game-client
 GAME_SERVER_IMAGE=ghcr.io/you/card-game-server
 APP_TAG=1.0.0
-PUBLIC_ORIGIN=https://game.example.com
+PUBLIC_ORIGIN=https://app.example.com
 REDIS_PASSWORD=use-a-long-random-password
 REDIS_DB=0
 AVATAR_UPLOAD_PREFIX=avatars
@@ -81,13 +81,23 @@ Game rules and card definitions are configured in `./game-server/game.yaml`.
 The file is not baked into the server image; Compose mounts it read-only to
 `/app/config/game.yaml` inside each server container:
 
-```yaml
-cards_per_turn: 2
-max_number_players: 5
-min_number_players: 3
-max_reshuffles: 3
-cards_per_draw: 3
+Game rules are configured with environment variables:
 
+```env
+CARDS_PER_TURN=2
+MAX_NUMBER_PLAYERS=5
+MIN_NUMBER_PLAYERS=3
+MAX_RESHUFFLES=3
+CARDS_PER_DRAW=3
+```
+
+Card definitions live in `./game-server/cards.yaml`. The server image includes
+the default file; Compose also mounts it read-only to `/app/config/cards.yaml`
+inside each server container:
+
+> > > > > > > origin/main
+
+```yaml
 cards:
   - name: "Judicultor"
     count: 6
@@ -98,11 +108,16 @@ cards:
 Runs Redis in Docker, then runs the Go server and Vite dev server natively:
 
 ```bash
+cp game-client/.env.example game-client/.env
 make dev
 ```
 
 - Vite dev server: [http://localhost:3000](http://localhost:3000)
 - Game server API: [http://localhost:8080](http://localhost:8080)
+
+Native Vite development requires `game-client/.env` to define
+`INTERNAL_API_URL`. Vite uses it only for the local dev proxy; production
+browser requests stay same-origin through nginx.
 
 Individual targets:
 
