@@ -9,7 +9,7 @@ HTTPS_PORT ?= 443
 
 dev: 
 	@echo "Starting Redis..."
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up redis -d
+	@docker compose -f docker-compose.yml -f docker-compose.local.yml up redis -d
 	@echo "Starting Go server and Vite dev server (Ctrl+C to stop both)..."
 	@trap 'kill 0' INT; \
 		$(MAKE) -C game-server run & \
@@ -19,39 +19,39 @@ dev:
 # ── Docker: manage ───────────────────────────────────────────────────────────
 
 up: 
-	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up
 
 up-d: 
-	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 
 up-build:
-	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 prod: 
 	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 down: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.prod.yml down
+	docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.prod.yml down
 
 down-v:
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.prod.yml down -v
+	docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.prod.yml down -v
 
 restart: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml restart
+	docker compose -f docker-compose.yml -f docker-compose.local.yml restart
 
 logs: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f
+	docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f
 
 ps: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
+	docker compose -f docker-compose.yml -f docker-compose.local.yml ps
 
 redis: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml up redis -d
+	docker compose -f docker-compose.yml -f docker-compose.local.yml up redis -d
 
 # ── Dev: individual services ─────────────────────────────────────────────────
 
 dev-server:
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up redis -d
+	@docker compose -f docker-compose.yml -f docker-compose.local.yml up redis -d
 	@$(MAKE) -C game-server run
 
 dev-client: 

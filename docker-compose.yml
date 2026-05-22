@@ -54,8 +54,6 @@ services:
   game-client:
     image: ${GAME_CLIENT_IMAGE:-card-game-client}:${APP_TAG:-latest}
     restart: unless-stopped
-    environment:
-      INTERNAL_API_URL: http://nginx
     expose:
       - "3000"
     depends_on:
