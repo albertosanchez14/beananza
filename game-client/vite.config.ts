@@ -26,7 +26,7 @@ export default defineConfig({
       "/register": apiTarget,
       "/config": apiTarget,
       "/upload-avatar": apiTarget,
-      "/user-avatars": apiTarget,
+      "/user-assets": apiTarget,
       "/ws": {
         target: apiTarget,
         ws: true,

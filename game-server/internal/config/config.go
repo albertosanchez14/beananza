@@ -12,11 +12,12 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig
-	Redis  RedisConfig
-	Logger LoggerConfig
-	WS     WebSocketConfig
-	Game   GameConfig
+	Server  ServerConfig
+	Redis   RedisConfig
+	Logger  LoggerConfig
+	WS      WebSocketConfig
+	Game    GameConfig
+	Storage StorageConfig
 }
 
 type ServerConfig struct {
@@ -33,6 +34,22 @@ type RedisConfig struct {
 	Addr     string
 	Password string
 	DB       int
+}
+
+type StorageConfig struct {
+	Backend              string
+	MaxAvatarUploadBytes int64
+	AvatarUploadPrefix   string
+	LocalObjectDir       string
+	LocalPublicBaseURL   string
+	S3Bucket             string
+	S3Region             string
+	S3Endpoint           string
+	S3AccessKeyID        string
+	S3SecretAccessKey    string
+	S3PublicBaseURL      string
+	S3ForcePathStyle     bool
+	S3ACL                string
 }
 
 type LoggerConfig struct {
@@ -133,6 +150,21 @@ func Load() *Config {
 			LobbyResetSecs:        getEnvAsInt("LOBBY_RESET_SECS", 30),
 			DisconnectTimeoutSecs: getEnvAsInt("DISCONNECT_TIMEOUT_SECS", 60),
 		},
+		Storage: StorageConfig{
+			Backend:              strings.ToLower(getEnv("STORAGE_BACKEND", "local")),
+			MaxAvatarUploadBytes: int64(getEnvAsInt("MAX_AVATAR_UPLOAD_BYTES", 2<<20)),
+			AvatarUploadPrefix:   strings.Trim(getEnv("AVATAR_UPLOAD_PREFIX", getEnv("S3_AVATAR_PREFIX", "avatars")), "/"),
+			LocalObjectDir:       getEnv("LOCAL_OBJECT_DIR", getEnv("LOCAL_AVATAR_DIR", "./uploads")),
+			LocalPublicBaseURL:   strings.TrimRight(getEnv("LOCAL_PUBLIC_BASE_URL", getEnv("LOCAL_AVATAR_PUBLIC_PATH", "/user-assets")), "/"),
+			S3Bucket:             getEnv("S3_BUCKET", ""),
+			S3Region:             getEnv("S3_REGION", ""),
+			S3Endpoint:           getEnv("S3_ENDPOINT", ""),
+			S3AccessKeyID:        getEnv("S3_ACCESS_KEY_ID", ""),
+			S3SecretAccessKey:    getEnv("S3_SECRET_ACCESS_KEY", ""),
+			S3PublicBaseURL:      strings.TrimRight(getEnv("S3_PUBLIC_BASE_URL", ""), "/"),
+			S3ForcePathStyle:     getEnvAsBool("S3_FORCE_PATH_STYLE", false),
+			S3ACL:                getEnv("S3_ACL", ""),
+		},
 	}
 }
 
@@ -197,6 +229,21 @@ func getEnvAsInt(key string, defaultValue int) int {
 		return value
 	}
 	return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+	valueStr := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if valueStr == "" {
+		return defaultValue
+	}
+	switch valueStr {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return defaultValue
+	}
 }
 
 func getEnvAsStringSlice(key string) []string {

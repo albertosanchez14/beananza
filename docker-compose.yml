@@ -39,6 +39,11 @@ services:
       WS_RATE_BURST: 20
       LOBBY_RESET_SECS: 30
       DISCONNECT_TIMEOUT_SECS: 60
+      STORAGE_BACKEND: local
+      MAX_AVATAR_UPLOAD_BYTES: ${MAX_AVATAR_UPLOAD_BYTES:-2097152}
+      AVATAR_UPLOAD_PREFIX: ${AVATAR_UPLOAD_PREFIX:-avatars}
+      LOCAL_OBJECT_DIR: /app/uploads
+      LOCAL_PUBLIC_BASE_URL: /user-assets
     depends_on:
       redis:
         condition: service_healthy

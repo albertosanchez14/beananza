@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -216,16 +217,20 @@ func (r *Repository) GetAllRooms(ctx context.Context) ([]RoomMeta, error) {
 
 const authTokenTTL = 30 * 24 * time.Hour // 30 days
 
+var ErrPlayerAuthNotFound = errors.New("player auth not found")
+
 // PlayerProfile holds the server-assigned identity for a registered player.
 type PlayerProfile struct {
-	PlayerID   string `json:"player_id"`
-	PlayerName string `json:"player_name"`
+	PlayerID        string `json:"player_id"`
+	PlayerName      string `json:"player_name"`
+	AvatarURL       string `json:"avatar_url,omitempty"`
+	AvatarObjectKey string `json:"avatar_object_key,omitempty"`
 }
 
 // SavePlayerAuth stores a long-lived mapping from auth_token to a player
 // profile so the server can verify identity on every WebSocket message.
 func (r *Repository) SavePlayerAuth(ctx context.Context, token string, profile PlayerProfile) error {
-	key := fmt.Sprintf("auth:%s", token)
+	key := playerAuthKey(token)
 	data, err := json.Marshal(profile)
 	if err != nil {
 		return fmt.Errorf("failed to marshal player profile: %w", err)
@@ -242,7 +247,7 @@ func (r *Repository) SavePlayerAuth(ctx context.Context, token string, profile P
 // GetPlayerByToken retrieves the player profile associated with an auth token.
 // Returns nil (no error) when the token does not exist or has expired.
 func (r *Repository) GetPlayerByToken(ctx context.Context, token string) (*PlayerProfile, error) {
-	key := fmt.Sprintf("auth:%s", token)
+	key := playerAuthKey(token)
 	data, err := r.client.Get(ctx, key).Bytes()
 	if err == redis.Nil {
 		return nil, nil // token not found
@@ -255,6 +260,77 @@ func (r *Repository) GetPlayerByToken(ctx context.Context, token string) (*Playe
 		return nil, fmt.Errorf("failed to unmarshal player profile: %w", err)
 	}
 	return &profile, nil
+}
+
+// UpdatePlayerAvatar stores the active avatar URL and owned object key for a
+// registered player. It returns the previous object key so callers can delete
+// stale uploaded assets after the profile update succeeds.
+func (r *Repository) UpdatePlayerAvatar(ctx context.Context, token, avatarURL, avatarObjectKey string) (string, error) {
+	key := playerAuthKey(token)
+	var oldObjectKey string
+	var playerID string
+
+	for attempt := 0; attempt < 3; attempt++ {
+		err := r.client.Watch(ctx, func(tx *redis.Tx) error {
+			data, err := tx.Get(ctx, key).Bytes()
+			if err == redis.Nil {
+				return ErrPlayerAuthNotFound
+			}
+			if err != nil {
+				return fmt.Errorf("failed to get player auth: %w", err)
+			}
+
+			var profile PlayerProfile
+			if err := json.Unmarshal(data, &profile); err != nil {
+				return fmt.Errorf("failed to unmarshal player profile: %w", err)
+			}
+
+			ttl, err := tx.TTL(ctx, key).Result()
+			if err != nil {
+				return fmt.Errorf("failed to get player auth ttl: %w", err)
+			}
+			if ttl <= 0 {
+				ttl = authTokenTTL
+			}
+
+			oldObjectKey = profile.AvatarObjectKey
+			playerID = profile.PlayerID
+			profile.AvatarURL = avatarURL
+			profile.AvatarObjectKey = avatarObjectKey
+
+			updatedData, err := json.Marshal(profile)
+			if err != nil {
+				return fmt.Errorf("failed to marshal player profile: %w", err)
+			}
+
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Set(ctx, key, updatedData, ttl)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			return nil
+		}, key)
+		if err == redis.TxFailedErr {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+
+		r.logger.Debug("player avatar updated",
+			zap.String("player_id", playerID),
+			zap.String("avatar_object_key", avatarObjectKey),
+		)
+		return oldObjectKey, nil
+	}
+
+	return "", fmt.Errorf("failed to update player avatar after concurrent modifications")
+}
+
+func playerAuthKey(token string) string {
+	return fmt.Sprintf("auth:%s", token)
 }
 
 // ----------------------------------------------------------------------------

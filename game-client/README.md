@@ -13,7 +13,9 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000).
 
 The Vite dev server proxies `/rooms`, `/register`, `/config`,
-`/upload-avatar`, `/user-avatars`, and `/ws` to the game server. By default it
+`/upload-avatar`, `/user-assets`, and `/ws` to the game server. The
+`/user-assets` path is used only when the server is configured for local object
+storage; S3-backed uploads return public object URLs. By default the proxy
 targets `http://localhost:8080`; override with `INTERNAL_API_URL` when needed.
 
 ## Scripts

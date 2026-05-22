@@ -1,13 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,18 +16,20 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/yourusername/game-server/internal/config"
+	"github.com/yourusername/game-server/internal/objectstore"
 	"github.com/yourusername/game-server/internal/storage"
 	ws "github.com/yourusername/game-server/internal/websocket"
 )
 
 // Server represents the HTTP server
 type Server struct {
-	config   *config.Config
-	hub      *ws.Hub
-	repo     *storage.Repository
-	logger   *zap.Logger
-	server   *http.Server
-	upgrader websocket.Upgrader
+	config      *config.Config
+	hub         *ws.Hub
+	repo        *storage.Repository
+	logger      *zap.Logger
+	server      *http.Server
+	objectStore objectstore.ObjectStore
+	upgrader    websocket.Upgrader
 }
 
 // newUpgrader returns a WebSocket upgrader that validates the request origin
@@ -52,13 +54,14 @@ func newUpgrader(cfg *config.Config) websocket.Upgrader {
 }
 
 // New creates a new HTTP server
-func New(cfg *config.Config, hub *ws.Hub, repo *storage.Repository, logger *zap.Logger) *Server {
+func New(cfg *config.Config, hub *ws.Hub, repo *storage.Repository, objectStore objectstore.ObjectStore, logger *zap.Logger) *Server {
 	return &Server{
-		config:   cfg,
-		hub:      hub,
-		repo:     repo,
-		logger:   logger,
-		upgrader: newUpgrader(cfg),
+		config:      cfg,
+		hub:         hub,
+		repo:        repo,
+		logger:      logger,
+		objectStore: objectStore,
+		upgrader:    newUpgrader(cfg),
 	}
 }
 
@@ -76,8 +79,11 @@ func (s *Server) Start() error {
 
 	mux.HandleFunc("/healthz", s.handleHealthz)
 
-	os.MkdirAll("./uploads/avatars", 0755)
-	mux.Handle("/user-avatars/", http.StripPrefix("/user-avatars/", http.FileServer(http.Dir("./uploads/avatars"))))
+	if (s.config.Storage.Backend == "" || s.config.Storage.Backend == "local") &&
+		strings.HasPrefix(s.config.Storage.LocalPublicBaseURL, "/") {
+		publicPath := strings.TrimRight(s.config.Storage.LocalPublicBaseURL, "/") + "/"
+		mux.Handle(publicPath, http.StripPrefix(publicPath, http.FileServer(http.Dir(s.config.Storage.LocalObjectDir))))
+	}
 	mux.HandleFunc("/upload-avatar", s.handleUploadAvatar)
 
 	addr := fmt.Sprintf("%s:%s", s.config.Server.Host, s.config.Server.Port)
@@ -229,13 +235,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleUploadAvatar accepts a multipart image upload, saves it to disk and
-// returns the URL path under which the client can retrieve it.
+// handleUploadAvatar accepts a multipart image upload, saves it to object
+// storage and returns the URL under which the client can retrieve it.
 //
 // POST /upload-avatar
 //
 //	Body: multipart/form-data with field "avatar" containing the image file
-//	Response: { "url": "/avatars/<filename>" }
+//	Response: { "url": "<public avatar URL>" }
 func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
 	if len(s.config.Server.AllowedOrigins) == 0 {
@@ -250,7 +256,7 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
@@ -262,50 +268,149 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(2 << 20); err != nil {
-		http.Error(w, "file too large (max 2 MB)", http.StatusBadRequest)
+	if s.objectStore == nil {
+		http.Error(w, "object storage is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if s.repo == nil {
+		http.Error(w, "avatar upload requires player storage", http.StatusServiceUnavailable)
 		return
 	}
 
-	file, header, err := r.FormFile("avatar")
+	authToken := bearerToken(r)
+	if authToken == "" {
+		http.Error(w, "missing auth token", http.StatusUnauthorized)
+		return
+	}
+
+	authCtx, authCancel := context.WithTimeout(r.Context(), 3*time.Second)
+	profile, err := s.repo.GetPlayerByToken(authCtx, authToken)
+	authCancel()
+	if err != nil {
+		s.logger.Error("failed to authenticate avatar upload", zap.Error(err))
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if profile == nil {
+		http.Error(w, "invalid or expired auth token", http.StatusUnauthorized)
+		return
+	}
+
+	maxUploadBytes := s.config.Storage.MaxAvatarUploadBytes
+	if maxUploadBytes <= 0 {
+		maxUploadBytes = 2 << 20
+	}
+	tooLargeMessage := fmt.Sprintf("file too large (max %d bytes)", maxUploadBytes)
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+(1<<20))
+	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
+		http.Error(w, tooLargeMessage, http.StatusBadRequest)
+		return
+	}
+
+	file, _, err := r.FormFile("avatar")
 	if err != nil {
 		http.Error(w, "missing avatar field", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
-	contentType := header.Header.Get("Content-Type")
-	if !strings.HasPrefix(contentType, "image/") {
+	data, err := io.ReadAll(io.LimitReader(file, maxUploadBytes+1))
+	if err != nil {
+		s.logger.Error("failed to read avatar upload", zap.Error(err))
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if int64(len(data)) > maxUploadBytes {
+		http.Error(w, tooLargeMessage, http.StatusBadRequest)
+		return
+	}
+
+	contentType := http.DetectContentType(data)
+	ext, ok := avatarExtension(contentType)
+	if !ok {
 		http.Error(w, "file must be an image", http.StatusBadRequest)
 		return
 	}
 
-	ext := filepath.Ext(header.Filename)
-	if ext == "" {
-		ext = ".webp"
-	}
+	objectKey := assetObjectKey(s.config.Storage.AvatarUploadPrefix, uuid.NewString()+ext)
 
-	filename := uuid.NewString() + ext
-	dst, err := os.Create(filepath.Join("./uploads/avatars", filename))
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	avatarURL, err := s.objectStore.Put(ctx, objectKey, bytes.NewReader(data), contentType)
 	if err != nil {
-		s.logger.Error("failed to create avatar file", zap.Error(err))
+		s.logger.Error("failed to store avatar", zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	defer dst.Close()
 
-	if _, err := io.Copy(dst, file); err != nil {
-		s.logger.Error("failed to write avatar file", zap.Error(err))
+	oldObjectKey, err := s.repo.UpdatePlayerAvatar(ctx, authToken, avatarURL, objectKey)
+	if err != nil {
+		if deleteErr := s.objectStore.Delete(context.Background(), objectKey); deleteErr != nil {
+			s.logger.Warn("failed to delete newly uploaded avatar after profile update failure",
+				zap.String("object_key", objectKey),
+				zap.Error(deleteErr),
+			)
+		}
+		if errors.Is(err, storage.ErrPlayerAuthNotFound) {
+			http.Error(w, "invalid or expired auth token", http.StatusUnauthorized)
+			return
+		}
+		s.logger.Error("failed to update player avatar profile", zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
+	}
+	if oldObjectKey != "" && oldObjectKey != objectKey {
+		if err := s.objectStore.Delete(context.Background(), oldObjectKey); err != nil {
+			s.logger.Warn("failed to delete replaced avatar object",
+				zap.String("object_key", oldObjectKey),
+				zap.Error(err),
+			)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(map[string]string{
-		"url": "/user-avatars/" + filename,
+		"url": avatarURL,
 	}); err != nil {
 		s.logger.Error("failed to encode upload response", zap.Error(err))
+	}
+}
+
+func bearerToken(r *http.Request) string {
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader == "" {
+		return ""
+	}
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return ""
+	}
+	return strings.TrimSpace(parts[1])
+}
+
+func assetObjectKey(prefix, filename string) string {
+	prefix = strings.Trim(prefix, "/")
+	if prefix == "" {
+		return filename
+	}
+	return prefix + "/" + filename
+}
+
+func avatarExtension(contentType string) (string, bool) {
+	switch contentType {
+	case "image/jpeg":
+		return ".jpg", true
+	case "image/png":
+		return ".png", true
+	case "image/gif":
+		return ".gif", true
+	case "image/webp":
+		return ".webp", true
+	default:
+		return "", false
 	}
 }
 
