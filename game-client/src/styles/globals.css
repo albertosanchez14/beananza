@@ -1,0 +1,247 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Bohnanza";
+  src: url("/fonts/bonanza.ttf") format("truetype");
+  font-display: swap;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Bohnanza", system-ui, sans-serif;
+  /* letter-spacing: 0.06em; */
+}
+
+.western-input::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.western-input:-webkit-autofill,
+.western-input:-webkit-autofill:hover,
+.western-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px rgba(20, 10, 3, 0.9) inset;
+  -webkit-text-fill-color: white;
+}
+
+/* Deal-from-deck animation
+   --deck-dx / --deck-dy: pixel offset from the card's resting position to the deck.
+   The card starts AT the deck (translated there, face-down / rotated), then
+   slides into its natural place and flips face-up. */
+@keyframes deal-from-deck {
+  0% {
+    transform: translate(var(--deck-dx, -160px), var(--deck-dy, 0px))
+      rotateY(90deg) scale(0.85);
+    opacity: 0.6;
+    filter: brightness(0.4);
+  }
+  40% {
+    transform: translate(
+        calc(var(--deck-dx, -160px) * 0.15),
+        calc(var(--deck-dy, 0px) * 0.15)
+      )
+      rotateY(15deg) scale(1.08);
+    opacity: 1;
+    filter: brightness(1.15);
+  }
+  65% {
+    transform: translate(0, 0) rotateY(-6deg) scale(1.03);
+    filter: brightness(1);
+  }
+  82% {
+    transform: translate(0, 0) rotateY(2deg) scale(1);
+  }
+  100% {
+    transform: translate(0, 0) rotateY(0deg) scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.animate-deal {
+  animation: deal-from-deck 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Card face/back ──────────────────────────────────────────────────────────
+   .card-face      — front face (rotateY 0°), hidden when flipped
+   .card-back      — back face (rotateY 180°), hidden when not flipped
+   backface-visibility: hidden ensures only one face is visible at a time.
+   transformStyle: preserve-3d is set as inline style on the motion.div.
+───────────────────────────────────────────────────────────────────────────── */
+.card-face,
+.card-back {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.card-back {
+  transform: rotateY(180deg);
+}
+
+/* ── Waiting-room deal animation ─────────────────────────────────────────────
+   Cards fly from the center of the board to each player's seat position.
+   --deal-dx / --deal-dy: pixel offset (target from center of viewport).
+   The card starts at translate(0,0) (center) and travels to (--deal-dx, --deal-dy).
+─────────────────────────────────────────────────────────────────────────────── */
+@keyframes deal-to-player {
+  0% {
+    transform: translate(-50%, -50%) scale(0.7) rotateZ(-8deg);
+    opacity: 0.5;
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1) rotateZ(0deg);
+  }
+  100% {
+    transform: translate(
+        calc(-50% + var(--deal-dx, 0px)),
+        calc(-50% + var(--deal-dy, 0px))
+      )
+      scale(0.9) rotateZ(4deg);
+    opacity: 0.85;
+  }
+}
+
+/* Pulsing ring for not-ready player avatars in the waiting room */
+@keyframes pulse-ring {
+  0% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+}
+
+/* ── Hero landscape animations ───────────────────────────────────────────── */
+@keyframes cloud-drift-slow {
+  0%,
+  100% {
+    transform: translateX(0px);
+  }
+  50% {
+    transform: translateX(18px);
+  }
+}
+@keyframes cloud-drift-medium {
+  0%,
+  100% {
+    transform: translateX(0px);
+  }
+  50% {
+    transform: translateX(-24px);
+  }
+}
+@keyframes cloud-drift-fast {
+  0%,
+  100% {
+    transform: translateX(0px);
+  }
+  50% {
+    transform: translateX(14px);
+  }
+}
+@keyframes cactus-sway {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(0.6deg);
+  }
+  75% {
+    transform: rotate(-0.6deg);
+  }
+}
+
+.cloud-slow {
+  animation: cloud-drift-slow 18s ease-in-out infinite;
+}
+.cloud-medium {
+  animation: cloud-drift-medium 12s ease-in-out infinite;
+}
+.cloud-fast {
+  animation: cloud-drift-fast 9s ease-in-out infinite;
+}
+.cactus-sway {
+  animation: cactus-sway 6s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+/* ── "Fly to sky" transition ─────────────────────────────────────────────── */
+@keyframes fly-to-sky {
+  0% {
+    transform: translateX(-50%) translateY(0) scale(1);
+    filter: blur(0px);
+  }
+  40% {
+    transform: translateX(-50%) translateY(-25vh) scale(1.3);
+    filter: blur(0px);
+  }
+  72% {
+    transform: translateX(-50%) translateY(-60vh) scale(2);
+    filter: blur(6px);
+  }
+  100% {
+    transform: translateX(-50%) translateY(-95vh) scale(2.8);
+    filter: blur(50px);
+  }
+}
+
+.fly-to-sky {
+  animation: fly-to-sky 1.8s cubic-bezier(0.3, 0, 0.8, 1) forwards;
+}
+
+@keyframes fade-out-ui {
+  0% {
+    opacity: 1;
+  }
+  25% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.fade-out-ui {
+  animation: fade-out-ui 0.45s ease-out forwards;
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-deal,
+  .cloud-slow,
+  .cloud-medium,
+  .cloud-fast,
+  .cactus-sway,
+  .fly-to-sky,
+  .fade-out-ui {
+    animation: none;
+  }
+}

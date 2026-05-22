@@ -7,11 +7,10 @@ A multiplayer card game inspired in the Bohnanza game design by Uwe Rosenberg.
 ### Prerequisites
 
 - Docker + Docker Compose
-- `make`
 
 ### 1. Local/Dev with Docker Compose
 
-Builds local client and server images, then runs nginx, Redis, one Next.js
+Builds local client and server images, then runs nginx, Redis, one static Vite
 client, and two replicated Go server containers over HTTP.
 
 ```bash
@@ -42,9 +41,10 @@ The prod override mounts `./nginx/certs` and expects TLS certificates at:
 ./nginx/certs/privkey.pem
 ```
 
-Both Compose deploys use the same public-origin routing model: the client, API,
-and WebSocket endpoint are served from the same origin. Local/dev uses HTTP;
-prod uses HTTPS.
+Both Compose deploys use a same-origin routing model: the client, API, and
+WebSocket endpoint are served from the same origin. Local/dev uses HTTP; prod
+uses HTTPS. The browser calls `/rooms`, `/register`, `/config`,
+`/upload-avatar`, `/user-avatars`, and `/ws` directly.
 
 Server defaults are set directly in `docker-compose.yml`. Use a local `.env`
 only for secrets or deployment-specific overrides read by compose, for example:
@@ -53,10 +53,9 @@ only for secrets or deployment-specific overrides read by compose, for example:
 GAME_CLIENT_IMAGE=ghcr.io/you/card-game-client
 GAME_SERVER_IMAGE=ghcr.io/you/card-game-server
 APP_TAG=1.0.0
-PUBLIC_ORIGIN=https://game.example.com
+PUBLIC_ORIGIN=https://app.example.com
 REDIS_PASSWORD=use-a-long-random-password
 REDIS_DB=0
-HTTP_PORT=80
 HTTPS_PORT=443
 ```
 
@@ -85,20 +84,25 @@ cards:
 
 ### 3. Development
 
-Runs Redis in Docker, then runs the Go server and Next.js dev server natively:
+Runs Redis in Docker, then runs the Go server and Vite dev server natively:
 
 ```bash
+cp game-client/.env.example game-client/.env
 make dev
 ```
 
-- Next.js dev server: [http://localhost:3000](http://localhost:3000)
+- Vite dev server: [http://localhost:3000](http://localhost:3000)
 - Game server API: [http://localhost:8080](http://localhost:8080)
+
+Native Vite development requires `game-client/.env` to define
+`INTERNAL_API_URL`. Vite uses it only for the local dev proxy; production
+browser requests stay same-origin through nginx.
 
 Individual targets:
 
 ```bash
 make dev-server   # Redis + Go server only
-make dev-client   # Next.js dev server only
+make dev-client   # Vite dev server only
 make redis        # Redis only (detached)
 ```
 

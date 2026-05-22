@@ -1,16 +1,13 @@
 -include .env
 
-.PHONY: help local lan teardown-lan up up-d prod prod-d down down-v restart logs ps redis dev dev-server dev-client build test lint
-
-help:
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
+.PHONY: help local lan teardown-lan up up-d up-build prod down down-v restart logs ps redis dev dev-server dev-client build test lint
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 dev: 
 	@echo "Starting Redis..."
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up redis -d
-	@echo "Starting Go server and Next.js dev server (Ctrl+C to stop both)..."
+	@docker compose -f docker-compose.yml -f docker-compose.local.yml up redis -d
+	@echo "Starting Go server and Vite dev server (Ctrl+C to stop both)..."
 	@trap 'kill 0' INT; \
 		$(MAKE) -C game-server run & \
 		npm run dev --prefix game-client & \
@@ -19,36 +16,42 @@ dev:
 # ── Docker: manage ───────────────────────────────────────────────────────────
 
 up: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up
 
 up-d: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+
+up-build:
+	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+
+prod: 
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 up-build:
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 down: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.prod.yml down
+	docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.prod.yml down
 
 down-v:
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.prod.yml down -v
+	docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.prod.yml down -v
 
 restart: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml restart
+	docker compose -f docker-compose.yml -f docker-compose.local.yml restart
 
 logs: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f
+	docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f
 
 ps: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
+	docker compose -f docker-compose.yml -f docker-compose.local.yml ps
 
 redis: 
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml up redis -d
+	docker compose -f docker-compose.yml -f docker-compose.local.yml up redis -d
 
 # ── Dev: individual services ─────────────────────────────────────────────────
 
 dev-server:
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up redis -d
+	@docker compose -f docker-compose.yml -f docker-compose.local.yml up redis -d
 	@$(MAKE) -C game-server run
 
 dev-client: 
