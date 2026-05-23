@@ -12,11 +12,12 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig
-	Redis  RedisConfig
-	Logger LoggerConfig
-	WS     WebSocketConfig
-	Game   GameConfig
+	Server  ServerConfig
+	Redis   RedisConfig
+	Logger  LoggerConfig
+	WS      WebSocketConfig
+	Game    GameConfig
+	Storage StorageConfig
 }
 
 type ServerConfig struct {
@@ -31,6 +32,23 @@ type RedisConfig struct {
 	Addr     string
 	Password string
 	DB       int
+}
+
+type StorageConfig struct {
+	Backend              string
+	MaxAvatarUploadBytes int64
+	AvatarUploadPrefix   string
+	LocalObjectDir       string
+	LocalPublicBaseURL   string
+	S3Bucket             string
+	S3Region             string
+	S3Endpoint           string
+	S3AccessKeyID        string
+	S3SecretAccessKey    string
+	S3SessionToken       string
+	S3PublicBaseURL      string
+	S3ForcePathStyle     bool
+	S3ACL                string
 }
 
 type LoggerConfig struct {
@@ -99,6 +117,36 @@ func Load() *Config {
 		log.Fatalf("failed to load game config: %v", err)
 	}
 
+	storageConfig, err := loadStorageConfig()
+	if err != nil {
+		log.Fatalf("failed to load storage config: %v", err)
+	}
+
+	redisDB, err := getEnvAsInt("REDIS_DB", 0)
+	if err != nil {
+		log.Fatalf("failed to load redis config: %v", err)
+	}
+	readBufferSize, err := getEnvAsInt("READ_BUFFER_SIZE", 1024)
+	if err != nil {
+		log.Fatalf("failed to load websocket config: %v", err)
+	}
+	writeBufferSize, err := getEnvAsInt("WRITE_BUFFER_SIZE", 1024)
+	if err != nil {
+		log.Fatalf("failed to load websocket config: %v", err)
+	}
+	sendBufferSize, err := getEnvAsInt("WS_SEND_BUFFER_SIZE", 256)
+	if err != nil {
+		log.Fatalf("failed to load websocket config: %v", err)
+	}
+	rateLimit, err := getEnvAsInt("WS_RATE_LIMIT", 10)
+	if err != nil {
+		log.Fatalf("failed to load websocket config: %v", err)
+	}
+	rateBurst, err := getEnvAsInt("WS_RATE_BURST", 20)
+	if err != nil {
+		log.Fatalf("failed to load websocket config: %v", err)
+	}
+
 	cfg := &Config{
 		Server: ServerConfig{
 			Host:           getEnv("SERVER_HOST", "localhost"),
@@ -108,19 +156,20 @@ func Load() *Config {
 		Redis: RedisConfig{
 			Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
 			Password: getEnv("REDIS_PASSWORD", ""),
-			DB:       getEnvAsInt("REDIS_DB", 0),
+			DB:       redisDB,
 		},
 		Logger: LoggerConfig{
 			Level: getEnv("LOG_LEVEL", "info"),
 		},
 		WS: WebSocketConfig{
-			ReadBufferSize:  getEnvAsInt("READ_BUFFER_SIZE", 1024),
-			WriteBufferSize: getEnvAsInt("WRITE_BUFFER_SIZE", 1024),
-			SendBufferSize:  getEnvAsInt("WS_SEND_BUFFER_SIZE", 256),
-			RateLimit:       getEnvAsInt("WS_RATE_LIMIT", 10),
-			RateBurst:       getEnvAsInt("WS_RATE_BURST", 20),
+			ReadBufferSize:  readBufferSize,
+			WriteBufferSize: writeBufferSize,
+			SendBufferSize:  sendBufferSize,
+			RateLimit:       rateLimit,
+			RateBurst:       rateBurst,
 		},
-		Game: gameConfig,
+		Storage: storageConfig,
+		Game:    gameConfig,
 	}
 	return cfg
 }
@@ -145,23 +194,31 @@ func LoadCardsFile(path string) (CardsFileConfig, error) {
 }
 
 func loadGameConfig(cardTypes []CardTypeConfig) (GameConfig, error) {
-	maxNumberPlayers, err := getGameEnvAsInt("MAX_NUMBER_PLAYERS", 5)
+	maxNumberPlayers, err := getEnvAsInt("MAX_NUMBER_PLAYERS", 5)
 	if err != nil {
 		return GameConfig{}, err
 	}
-	minNumberPlayers, err := getGameEnvAsInt("MIN_NUMBER_PLAYERS", 3)
+	minNumberPlayers, err := getEnvAsInt("MIN_NUMBER_PLAYERS", 3)
 	if err != nil {
 		return GameConfig{}, err
 	}
-	cardsPerTurn, err := getGameEnvAsInt("CARDS_PER_TURN", 2)
+	cardsPerTurn, err := getEnvAsInt("CARDS_PER_TURN", 2)
 	if err != nil {
 		return GameConfig{}, err
 	}
-	maxReshuffles, err := getGameEnvAsInt("MAX_RESHUFFLES", 3)
+	maxReshuffles, err := getEnvAsInt("MAX_RESHUFFLES", 3)
 	if err != nil {
 		return GameConfig{}, err
 	}
-	cardsPerDraw, err := getGameEnvAsInt("CARDS_PER_DRAW", 3)
+	cardsPerDraw, err := getEnvAsInt("CARDS_PER_DRAW", 3)
+	if err != nil {
+		return GameConfig{}, err
+	}
+	lobbyResetSecs, err := getEnvAsInt("LOBBY_RESET_SECS", 30)
+	if err != nil {
+		return GameConfig{}, err
+	}
+	disconnectTimeoutSecs, err := getEnvAsInt("DISCONNECT_TIMEOUT_SECS", 60)
 	if err != nil {
 		return GameConfig{}, err
 	}
@@ -173,8 +230,8 @@ func loadGameConfig(cardTypes []CardTypeConfig) (GameConfig, error) {
 		MaxReshuffles:         maxReshuffles,
 		CardsPerDraw:          cardsPerDraw,
 		Cards:                 CardsConfig{CardTypes: cardTypes},
-		LobbyResetSecs:        getEnvAsInt("LOBBY_RESET_SECS", 30),
-		DisconnectTimeoutSecs: getEnvAsInt("DISCONNECT_TIMEOUT_SECS", 60),
+		LobbyResetSecs:        lobbyResetSecs,
+		DisconnectTimeoutSecs: disconnectTimeoutSecs,
 	}
 	if err := validateGameConfig(cfg); err != nil {
 		return GameConfig{}, err
@@ -207,11 +264,69 @@ func validateGameConfig(cfg GameConfig) error {
 	return nil
 }
 
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+func loadStorageConfig() (StorageConfig, error) {
+	maxAvatarUploadBytes, err := getEnvAsInt("MAX_AVATAR_UPLOAD_BYTES", 2<<20)
+	if err != nil {
+		return StorageConfig{}, err
 	}
-	return defaultValue
+	s3ForcePathStyle, err := getEnvAsBool("S3_FORCE_PATH_STYLE", false)
+	if err != nil {
+		return StorageConfig{}, err
+	}
+
+	cfg := StorageConfig{
+		Backend:              strings.ToLower(strings.TrimSpace(getEnv("STORAGE_BACKEND", "local"))),
+		MaxAvatarUploadBytes: int64(maxAvatarUploadBytes),
+		AvatarUploadPrefix:   strings.Trim(strings.TrimSpace(getEnv("AVATAR_UPLOAD_PREFIX", getEnv("S3_AVATAR_PREFIX", "avatars"))), "/"),
+		LocalObjectDir:       strings.TrimSpace(getEnv("LOCAL_OBJECT_DIR", getEnv("LOCAL_AVATAR_DIR", "./uploads"))),
+		LocalPublicBaseURL:   strings.TrimRight(strings.TrimSpace(getEnv("LOCAL_PUBLIC_BASE_URL", getEnv("LOCAL_AVATAR_PUBLIC_PATH", "/user-assets"))), "/"),
+		S3Bucket:             strings.TrimSpace(getEnv("S3_BUCKET", "")),
+		S3Region:             strings.TrimSpace(getEnv("S3_REGION", "")),
+		S3Endpoint:           strings.TrimSpace(getEnv("S3_ENDPOINT", "")),
+		S3AccessKeyID:        strings.TrimSpace(getEnv("S3_ACCESS_KEY_ID", "")),
+		S3SecretAccessKey:    strings.TrimSpace(getEnv("S3_SECRET_ACCESS_KEY", "")),
+		S3SessionToken:       strings.TrimSpace(getEnv("S3_SESSION_TOKEN", "")),
+		S3PublicBaseURL:      strings.TrimRight(strings.TrimSpace(getEnv("S3_PUBLIC_BASE_URL", "")), "/"),
+		S3ForcePathStyle:     s3ForcePathStyle,
+		S3ACL:                strings.TrimSpace(getEnv("S3_ACL", "")),
+	}
+
+	if err := validateStorageConfig(cfg); err != nil {
+		return StorageConfig{}, err
+	}
+	return cfg, nil
+}
+
+func validateStorageConfig(cfg StorageConfig) error {
+	if cfg.MaxAvatarUploadBytes <= 0 {
+		return fmt.Errorf("MAX_AVATAR_UPLOAD_BYTES must be greater than 0")
+	}
+
+	switch cfg.Backend {
+	case "", "local":
+		if cfg.LocalObjectDir == "" {
+			return fmt.Errorf("LOCAL_OBJECT_DIR is required when STORAGE_BACKEND=local")
+		}
+		if cfg.LocalPublicBaseURL == "" {
+			return fmt.Errorf("LOCAL_PUBLIC_BASE_URL is required when STORAGE_BACKEND=local")
+		}
+	case "s3":
+		if cfg.S3Bucket == "" {
+			return fmt.Errorf("S3_BUCKET is required when STORAGE_BACKEND=s3")
+		}
+		if cfg.S3Region == "" {
+			return fmt.Errorf("S3_REGION is required when STORAGE_BACKEND=s3")
+		}
+		if cfg.S3PublicBaseURL == "" {
+			return fmt.Errorf("S3_PUBLIC_BASE_URL is required when STORAGE_BACKEND=s3")
+		}
+		if (cfg.S3AccessKeyID == "") != (cfg.S3SecretAccessKey == "") {
+			return fmt.Errorf("S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set together when STORAGE_BACKEND=s3")
+		}
+	default:
+		return fmt.Errorf("unsupported STORAGE_BACKEND %q", cfg.Backend)
+	}
+	return nil
 }
 
 func getCardsConfigPath() string {
@@ -225,7 +340,14 @@ func getCardsConfigPath() string {
 	return "cards.yaml"
 }
 
-func getGameEnvAsInt(key string, defaultValue int) (int, error) {
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) (int, error) {
 	valueStr := os.Getenv(key)
 	if valueStr == "" {
 		return defaultValue, nil
@@ -237,12 +359,22 @@ func getGameEnvAsInt(key string, defaultValue int) (int, error) {
 	return value, nil
 }
 
-func getEnvAsInt(key string, defaultValue int) int {
-	valueStr := os.Getenv(key)
-	if value, err := strconv.Atoi(valueStr); err == nil {
-		return value
+func getEnvAsBool(key string, defaultValue bool) (bool, error) {
+	valueStr := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if valueStr == "" {
+		return defaultValue, nil
 	}
-	return defaultValue
+	switch valueStr {
+	case "yes", "y", "on":
+		return true, nil
+	case "no", "n", "off":
+		return false, nil
+	}
+	value, err := strconv.ParseBool(valueStr)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return value, nil
 }
 
 func getEnvAsStringSlice(key string) []string {

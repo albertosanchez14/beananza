@@ -12,9 +12,15 @@ import (
 
 	"github.com/yourusername/game-server/internal/config"
 	"github.com/yourusername/game-server/internal/logger"
+	"github.com/yourusername/game-server/internal/objectstore"
 	"github.com/yourusername/game-server/internal/server"
 	"github.com/yourusername/game-server/internal/storage"
 	"github.com/yourusername/game-server/internal/websocket"
+)
+
+const (
+	objectStoreInitTimeout = 15 * time.Second
+	serverShutdownTimeout  = 15 * time.Second
 )
 
 func main() {
@@ -60,10 +66,17 @@ func run() error {
 	}
 	defer pubsub.Close()
 
+	objectStoreCtx, cancelObjectStoreInit := context.WithTimeout(context.Background(), objectStoreInitTimeout)
+	objectStore, err := objectstore.NewObjectStore(objectStoreCtx, cfg.Storage, log)
+	cancelObjectStoreInit()
+	if err != nil {
+		return fmt.Errorf("failed to initialize object storage: %w", err)
+	}
+
 	hub := websocket.NewHub(cfg, log, repo, pubsub)
 	go hub.Run()
 
-	srv := server.New(cfg, hub, repo, log)
+	srv := server.New(cfg, hub, repo, objectStore, log)
 	serverErrors := make(chan error, 1)
 	go func() {
 		serverErrors <- srv.Start()
@@ -83,7 +96,7 @@ func run() error {
 		)
 
 		// Give outstanding requests a deadline for completion
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 		defer cancel()
 
 		// Asking listener to shut down and shed load

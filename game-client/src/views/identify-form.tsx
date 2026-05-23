@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { register } from "@/lib/register";
 import { useAppRouter } from "@/lib/router";
 import { uploadAvatar } from "@/lib/uploadAvatar";
@@ -29,27 +29,31 @@ export function IdentifyForm({ returnTo }: IdentifyFormProps) {
   const [name, setName] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState(PRESET_AVATARS[0]);
   const [customAvatar, setCustomAvatar] = useState<string | null>(null);
+  const [customAvatarFile, setCustomAvatarFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    return () => {
+      if (customAvatar?.startsWith("blob:")) URL.revokeObjectURL(customAvatar);
+    };
+  }, [customAvatar]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploading(true);
     setError(null);
-    try {
-      const fullUrl = await uploadAvatar(file);
-      setCustomAvatar(fullUrl);
-      setSelectedAvatar(fullUrl);
-    } catch {
-      setError("Could not upload image. Please try again.");
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+    const previewUrl = URL.createObjectURL(file);
+    setCustomAvatar((current) => {
+      if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
+      return previewUrl;
+    });
+    setCustomAvatarFile(file);
+    setSelectedAvatar(previewUrl);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSave = async () => {
@@ -61,7 +65,12 @@ export function IdentifyForm({ returnTo }: IdentifyFormProps) {
 
     try {
       const data = await register(trimmedName);
-      saveProfile(trimmedName, data.player_id, data.auth_token, selectedAvatar);
+      let avatar = selectedAvatar;
+      if (customAvatarFile && selectedAvatar === customAvatar) {
+        setUploading(true);
+        avatar = await uploadAvatar(customAvatarFile, data.auth_token);
+      }
+      saveProfile(trimmedName, data.player_id, data.auth_token, avatar);
       router.push(returnTo);
     } catch (err) {
       setError(
@@ -71,10 +80,11 @@ export function IdentifyForm({ returnTo }: IdentifyFormProps) {
       );
     } finally {
       setLoading(false);
+      setUploading(false);
     }
   };
 
-  const isValid = name.trim().length > 0;
+  const isValid = name.trim().length > 0 && !uploading;
 
   return (
     <div
@@ -144,7 +154,7 @@ export function IdentifyForm({ returnTo }: IdentifyFormProps) {
             <button
               title="Upload custom avatar"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
+              disabled={uploading || loading}
               className="w-12 h-12 rounded-full border-2 border-dashed
 							border-amber-700 hover:border-amber-400 flex items-center
 							justify-center text-white/70 hover:text-white
@@ -209,7 +219,7 @@ export function IdentifyForm({ returnTo }: IdentifyFormProps) {
 						text-white font-semibold py-2.5 text-sm transition-all duration-150
 						cursor-pointer"
           >
-            {loading ? "Saving..." : "Save"}
+            {uploading ? "Uploading..." : loading ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
