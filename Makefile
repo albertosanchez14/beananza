@@ -1,6 +1,5 @@
 -include .env
 
-DOCKER ?= docker
 REGISTRY ?= ghcr.io/albertosanchez14
 VERSION_TAG ?= $(if $(APP_TAG),$(APP_TAG),latest)
 
@@ -20,13 +19,13 @@ dev:
 # ── Docker: manage ───────────────────────────────────────────────────────────
 
 up: 
-	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up
+	docker compose -f docker-compose.yml -f docker-compose.local.yml up
 
 up-d: 
-	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+	docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 
 up-build:
-	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+	docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 prod: 
 	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
