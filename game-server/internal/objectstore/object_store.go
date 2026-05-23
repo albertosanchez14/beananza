@@ -8,6 +8,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -34,7 +36,7 @@ type S3Store struct {
 	client        *s3.Client
 	bucket        string
 	publicBaseURL string
-	acl           string
+	acl           types.ObjectCannedACL
 }
 
 func NewObjectStore(ctx context.Context, cfg config.StorageConfig, logger *zap.Logger) (ObjectStore, error) {
@@ -138,6 +140,11 @@ func NewS3Store(ctx context.Context, cfg config.StorageConfig, logger *zap.Logge
 		return nil, fmt.Errorf("S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set together when STORAGE_BACKEND=s3")
 	}
 
+	acl, err := parseObjectCannedACL(cfg.S3ACL)
+	if err != nil {
+		return nil, err
+	}
+
 	s3Endpoint := strings.TrimRight(cfg.S3Endpoint, "/")
 	if s3Endpoint != "" {
 		endpointURL, err := url.Parse(s3Endpoint)
@@ -190,7 +197,7 @@ func NewS3Store(ctx context.Context, cfg config.StorageConfig, logger *zap.Logge
 		client:        client,
 		bucket:        cfg.S3Bucket,
 		publicBaseURL: publicBaseURL,
-		acl:           cfg.S3ACL,
+		acl:           acl,
 	}, nil
 }
 
@@ -208,7 +215,7 @@ func (s *S3Store) Put(ctx context.Context, key string, body io.Reader, contentTy
 		CacheControl: aws.String("public, max-age=31536000, immutable"),
 	}
 	if s.acl != "" {
-		input.ACL = types.ObjectCannedACL(s.acl)
+		input.ACL = s.acl
 	}
 
 	if _, err := s.client.PutObject(ctx, input); err != nil {
@@ -230,6 +237,25 @@ func (s *S3Store) Delete(ctx context.Context, key string) error {
 		return fmt.Errorf("failed to delete object from S3: %w", err)
 	}
 	return nil
+}
+
+func parseObjectCannedACL(value string) (types.ObjectCannedACL, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "", nil
+	}
+
+	acl := types.ObjectCannedACL(value)
+	if slices.Contains(acl.Values(), acl) {
+		return acl, nil
+	}
+
+	allowedValues := make([]string, 0, len(acl.Values()))
+	for _, allowed := range acl.Values() {
+		allowedValues = append(allowedValues, string(allowed))
+	}
+	sort.Strings(allowedValues)
+	return "", fmt.Errorf("S3_ACL must be one of: %s", strings.Join(allowedValues, ", "))
 }
 
 func cleanObjectKey(key string) (string, error) {
