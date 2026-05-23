@@ -18,6 +18,11 @@ import (
 	"github.com/yourusername/game-server/internal/websocket"
 )
 
+const (
+	objectStoreInitTimeout = 15 * time.Second
+	serverShutdownTimeout  = 15 * time.Second
+)
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -61,7 +66,9 @@ func run() error {
 	}
 	defer pubsub.Close()
 
-	objectStore, err := objectstore.NewObjectStore(context.Background(), cfg.Storage, log)
+	objectStoreCtx, cancelObjectStoreInit := context.WithTimeout(context.Background(), objectStoreInitTimeout)
+	objectStore, err := objectstore.NewObjectStore(objectStoreCtx, cfg.Storage, log)
+	cancelObjectStoreInit()
 	if err != nil {
 		return fmt.Errorf("failed to initialize object storage: %w", err)
 	}
@@ -89,7 +96,7 @@ func run() error {
 		)
 
 		// Give outstanding requests a deadline for completion
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 		defer cancel()
 
 		// Asking listener to shut down and shed load
