@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/yourusername/game-server/internal/config"
+	"go.uber.org/zap"
 )
 
 func TestLocalStorePutNestedObject(t *testing.T) {
@@ -73,44 +74,89 @@ func TestPublicURLForKeyEscapesPathSegments(t *testing.T) {
 	}
 }
 
-func TestS3PublicBaseURLFromDigitalOceanEndpoint(t *testing.T) {
-	got, err := s3PublicBaseURL(config.StorageConfig{
-		S3Bucket:   "beananza-uploads",
-		S3Endpoint: "https://fra1.digitaloceanspaces.com",
-	})
-	if err != nil {
-		t.Fatalf("s3PublicBaseURL() error = %v", err)
+func TestNewS3StoreRequiresBucket(t *testing.T) {
+	_, err := NewS3Store(context.Background(), config.StorageConfig{
+		S3Region:        "us-east-1",
+		S3PublicBaseURL: "https://cdn.example.com",
+	}, zap.NewNop())
+	if err == nil {
+		t.Fatal("NewS3Store() error = nil, want error")
 	}
-	want := "https://beananza-uploads.fra1.digitaloceanspaces.com"
-	if got != want {
-		t.Fatalf("s3PublicBaseURL() = %q, want %q", got, want)
-	}
-}
-
-func TestS3PublicBaseURLUsesExplicitPublicURL(t *testing.T) {
-	got, err := s3PublicBaseURL(config.StorageConfig{
-		S3PublicBaseURL: "https://cdn.example.com/",
-	})
-	if err != nil {
-		t.Fatalf("s3PublicBaseURL() error = %v", err)
-	}
-	want := "https://cdn.example.com"
-	if got != want {
-		t.Fatalf("s3PublicBaseURL() = %q, want %q", got, want)
+	if !strings.Contains(err.Error(), "S3_BUCKET is required when STORAGE_BACKEND=s3") {
+		t.Fatalf("error = %q, want S3_BUCKET required error", err)
 	}
 }
 
-func TestS3PublicBaseURLPathStyle(t *testing.T) {
-	got, err := s3PublicBaseURL(config.StorageConfig{
-		S3Bucket:         "beananza-uploads",
-		S3Endpoint:       "https://storage.example.com",
-		S3ForcePathStyle: true,
-	})
-	if err != nil {
-		t.Fatalf("s3PublicBaseURL() error = %v", err)
+func TestNewS3StoreRequiresRegion(t *testing.T) {
+	_, err := NewS3Store(context.Background(), config.StorageConfig{
+		S3Bucket:        "uploads",
+		S3PublicBaseURL: "https://cdn.example.com",
+	}, zap.NewNop())
+	if err == nil {
+		t.Fatal("NewS3Store() error = nil, want error")
 	}
-	want := "https://storage.example.com/beananza-uploads"
-	if got != want {
-		t.Fatalf("s3PublicBaseURL() = %q, want %q", got, want)
+	if !strings.Contains(err.Error(), "S3_REGION is required when STORAGE_BACKEND=s3") {
+		t.Fatalf("error = %q, want S3_REGION required error", err)
+	}
+}
+
+func TestNewS3StoreRequiresPublicBaseURL(t *testing.T) {
+	_, err := NewS3Store(context.Background(), config.StorageConfig{
+		S3Bucket: "uploads",
+		S3Region: "us-east-1",
+	}, zap.NewNop())
+	if err == nil {
+		t.Fatal("NewS3Store() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "S3_PUBLIC_BASE_URL is required when STORAGE_BACKEND=s3") {
+		t.Fatalf("error = %q, want S3_PUBLIC_BASE_URL required error", err)
+	}
+}
+
+func TestNewS3StoreRejectsPartialCredentials(t *testing.T) {
+	_, err := NewS3Store(context.Background(), config.StorageConfig{
+		S3Bucket:        "uploads",
+		S3Region:        "us-east-1",
+		S3PublicBaseURL: "https://cdn.example.com",
+		S3AccessKeyID:   "key",
+	}, zap.NewNop())
+	if err == nil {
+		t.Fatal("NewS3Store() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "must be set together") {
+		t.Fatalf("error = %q, want credentials pair error", err)
+	}
+}
+
+func TestNewS3StoreUsesCustomEndpointAndStaticCredentials(t *testing.T) {
+	store, err := NewS3Store(context.Background(), config.StorageConfig{
+		S3Bucket:          "uploads",
+		S3Region:          "us-east-1",
+		S3Endpoint:        "http://minio:9000/",
+		S3AccessKeyID:     "minioadmin",
+		S3SecretAccessKey: "miniosecret",
+		S3PublicBaseURL:   "http://localhost:9000/uploads",
+		S3ForcePathStyle:  true,
+	}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("NewS3Store() error = %v", err)
+	}
+
+	options := store.client.Options()
+	if options.BaseEndpoint == nil || *options.BaseEndpoint != "http://minio:9000" {
+		t.Fatalf("BaseEndpoint = %v, want http://minio:9000", options.BaseEndpoint)
+	}
+	if !options.UsePathStyle {
+		t.Fatal("UsePathStyle = false, want true")
+	}
+	creds, err := options.Credentials.Retrieve(context.Background())
+	if err != nil {
+		t.Fatalf("Retrieve() error = %v", err)
+	}
+	if creds.AccessKeyID != "minioadmin" {
+		t.Fatalf("AccessKeyID = %q, want minioadmin", creds.AccessKeyID)
+	}
+	if creds.SecretAccessKey != "miniosecret" {
+		t.Fatalf("SecretAccessKey = %q, want miniosecret", creds.SecretAccessKey)
 	}
 }

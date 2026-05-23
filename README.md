@@ -63,6 +63,7 @@ S3_ENDPOINT=https://fra1.digitaloceanspaces.com
 S3_ACCESS_KEY_ID=your-spaces-key
 S3_SECRET_ACCESS_KEY=your-spaces-secret
 S3_PUBLIC_BASE_URL=https://beananza-uploads.fra1.digitaloceanspaces.com
+S3_FORCE_PATH_STYLE=false
 S3_ACL=public-read
 HTTP_PORT=80
 HTTPS_PORT=443
@@ -73,9 +74,11 @@ specific reason to separate multiple apps in the same Redis instance.
 
 Uploaded assets use local Docker volume storage in the base/dev Compose setup.
 The production override sets `STORAGE_BACKEND=s3`; point the S3 settings at
-DigitalOcean Spaces or another S3-compatible provider. The current client
-uploads avatars to `/upload-avatar`; the server stores them under
-`AVATAR_UPLOAD_PREFIX` and returns the public object URL.
+AWS S3, DigitalOcean Spaces, MinIO, or another S3-compatible provider. Use
+`S3_ENDPOINT` plus `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` when the provider
+is not reached through the default AWS endpoint and credential chain. The
+current client uploads avatars to `/upload-avatar`; the server stores them
+under `AVATAR_UPLOAD_PREFIX` and returns URLs under `S3_PUBLIC_BASE_URL`.
 
 Game rules and card definitions are configured in `./game-server/game.yaml`.
 The file is not baked into the server image; Compose mounts it read-only to

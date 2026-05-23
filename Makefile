@@ -16,25 +16,22 @@ dev:
 # ── Docker: manage ───────────────────────────────────────────────────────────
 
 up: 
-	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up
+	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.s3-local.yml  up
 
 up-d: 
-	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.s3-local.yml up -d
 
 up-build:
-	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+	HTTP_PORT=$(HTTP_PORT) docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.s3-local.yml up -d --build
 
 prod: 
 	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
-up-build:
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-
 down: 
-	docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.prod.yml down
+	docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.prod.yml -f docker-compose.s3-local.yml down
 
 down-v:
-	docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.prod.yml down -v
+	docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.prod.yml -f docker-compose.s3-local.yml down -v
 
 restart: 
 	docker compose -f docker-compose.yml -f docker-compose.local.yml restart

@@ -131,16 +131,30 @@ func NewS3Store(ctx context.Context, cfg config.StorageConfig, logger *zap.Logge
 	if cfg.S3Region == "" {
 		return nil, fmt.Errorf("S3_REGION is required when STORAGE_BACKEND=s3")
 	}
+	if cfg.S3PublicBaseURL == "" {
+		return nil, fmt.Errorf("S3_PUBLIC_BASE_URL is required when STORAGE_BACKEND=s3")
+	}
 	if (cfg.S3AccessKeyID == "") != (cfg.S3SecretAccessKey == "") {
-		return nil, fmt.Errorf("S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set together")
+		return nil, fmt.Errorf("S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set together when STORAGE_BACKEND=s3")
+	}
+
+	s3Endpoint := strings.TrimRight(cfg.S3Endpoint, "/")
+	if s3Endpoint != "" {
+		endpointURL, err := url.Parse(s3Endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid S3_ENDPOINT: %w", err)
+		}
+		if endpointURL.Scheme == "" || endpointURL.Host == "" {
+			return nil, fmt.Errorf("S3_ENDPOINT must include scheme and host")
+		}
 	}
 
 	loadOptions := []func(*awsconfig.LoadOptions) error{
 		awsconfig.WithRegion(cfg.S3Region),
 	}
-	if cfg.S3AccessKeyID != "" && cfg.S3SecretAccessKey != "" {
+	if cfg.S3AccessKeyID != "" {
 		loadOptions = append(loadOptions, awsconfig.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(cfg.S3AccessKeyID, cfg.S3SecretAccessKey, ""),
+			credentials.NewStaticCredentialsProvider(cfg.S3AccessKeyID, cfg.S3SecretAccessKey, cfg.S3SessionToken),
 		))
 	}
 
@@ -149,23 +163,27 @@ func NewS3Store(ctx context.Context, cfg config.StorageConfig, logger *zap.Logge
 		return nil, fmt.Errorf("failed to load S3 config: %w", err)
 	}
 
-	client := s3.NewFromConfig(awsCfg, func(options *s3.Options) {
-		if cfg.S3Endpoint != "" {
-			options.BaseEndpoint = aws.String(cfg.S3Endpoint)
-		}
-		options.UsePathStyle = cfg.S3ForcePathStyle
-	})
-
-	publicBaseURL, err := s3PublicBaseURL(cfg)
-	if err != nil {
-		return nil, err
+	clientOptions := []func(*s3.Options){
+		func(options *s3.Options) {
+			options.UsePathStyle = cfg.S3ForcePathStyle
+		},
 	}
+	if s3Endpoint != "" {
+		clientOptions = append(clientOptions, func(options *s3.Options) {
+			options.BaseEndpoint = aws.String(s3Endpoint)
+		})
+	}
+
+	client := s3.NewFromConfig(awsCfg, clientOptions...)
+	publicBaseURL := strings.TrimRight(cfg.S3PublicBaseURL, "/")
 
 	logger.Info("object storage configured",
 		zap.String("backend", "s3"),
 		zap.String("bucket", cfg.S3Bucket),
 		zap.String("region", cfg.S3Region),
-		zap.String("endpoint", cfg.S3Endpoint),
+		zap.String("endpoint", s3Endpoint),
+		zap.Bool("force_path_style", cfg.S3ForcePathStyle),
+		zap.Bool("static_credentials", cfg.S3AccessKeyID != ""),
 	)
 
 	return &S3Store{
@@ -241,26 +259,4 @@ func escapeObjectKey(key string) string {
 		segments[i] = url.PathEscape(segment)
 	}
 	return strings.Join(segments, "/")
-}
-
-func s3PublicBaseURL(cfg config.StorageConfig) (string, error) {
-	if cfg.S3PublicBaseURL != "" {
-		return strings.TrimRight(cfg.S3PublicBaseURL, "/"), nil
-	}
-	if cfg.S3Endpoint == "" {
-		return "", fmt.Errorf("S3_PUBLIC_BASE_URL is required when S3_ENDPOINT is not set")
-	}
-
-	endpoint, err := url.Parse(cfg.S3Endpoint)
-	if err != nil {
-		return "", fmt.Errorf("invalid S3_ENDPOINT: %w", err)
-	}
-	if endpoint.Scheme == "" || endpoint.Host == "" {
-		return "", fmt.Errorf("S3_ENDPOINT must include scheme and host")
-	}
-
-	if cfg.S3ForcePathStyle {
-		return strings.TrimRight(cfg.S3Endpoint, "/") + "/" + cfg.S3Bucket, nil
-	}
-	return endpoint.Scheme + "://" + cfg.S3Bucket + "." + endpoint.Host, nil
 }

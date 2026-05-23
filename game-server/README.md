@@ -31,8 +31,10 @@ Card definitions live in `cards.yaml`. Docker Compose mounts the same file at
 
 Uploaded assets default to local storage under `./uploads`. Set
 `STORAGE_BACKEND=s3` plus the `S3_*` env vars in `.env.example` to store assets
-in DigitalOcean Spaces or another S3-compatible object store. The current avatar
-upload endpoint stores objects under `AVATAR_UPLOAD_PREFIX` and requires
+in AWS S3, MinIO, DigitalOcean Spaces, or another S3-compatible object store.
+Set `S3_ENDPOINT` and static credentials for providers that do not use the
+default AWS endpoint and credential chain. The current avatar upload endpoint
+stores objects under `AVATAR_UPLOAD_PREFIX` and requires
 `Authorization: Bearer <auth_token>` so the server can replace the player's
 stored avatar key and delete the old uploaded object.
 
