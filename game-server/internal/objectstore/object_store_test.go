@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/yourusername/game-server/internal/config"
 	"go.uber.org/zap"
 )
@@ -137,6 +138,7 @@ func TestNewS3StoreUsesCustomEndpointAndStaticCredentials(t *testing.T) {
 		S3SecretAccessKey: "miniosecret",
 		S3PublicBaseURL:   "http://localhost:9000/uploads",
 		S3ForcePathStyle:  true,
+		S3ACL:             " PUBLIC-READ ",
 	}, zap.NewNop())
 	if err != nil {
 		t.Fatalf("NewS3Store() error = %v", err)
@@ -158,5 +160,8 @@ func TestNewS3StoreUsesCustomEndpointAndStaticCredentials(t *testing.T) {
 	}
 	if creds.SecretAccessKey != "miniosecret" {
 		t.Fatalf("SecretAccessKey = %q, want miniosecret", creds.SecretAccessKey)
+	}
+	if store.acl != types.ObjectCannedACLPublicRead {
+		t.Fatalf("acl = %q, want %q", store.acl, types.ObjectCannedACLPublicRead)
 	}
 }

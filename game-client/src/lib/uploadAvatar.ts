@@ -9,7 +9,10 @@ export async function uploadAvatar(
     headers: { Authorization: `Bearer ${authToken}` },
     body: formData,
   });
-  if (!res.ok) throw new Error("Upload failed");
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text.trim() || "Avatar upload failed. Please try again.");
+  }
   const data: { url: string } = await res.json();
   return data.url;
 }
