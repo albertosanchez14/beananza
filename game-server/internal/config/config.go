@@ -282,7 +282,7 @@ func loadStorageConfig() (StorageConfig, error) {
 		LocalPublicBaseURL:   strings.TrimRight(strings.TrimSpace(getEnv("LOCAL_PUBLIC_BASE_URL", getEnv("LOCAL_AVATAR_PUBLIC_PATH", "/user-assets"))), "/"),
 		S3Bucket:             strings.TrimSpace(getEnv("S3_BUCKET", "")),
 		S3Region:             strings.TrimSpace(getEnv("S3_REGION", "")),
-		S3Endpoint:           strings.TrimSpace(getEnv("S3_ENDPOINT", "/")),
+		S3Endpoint:           strings.TrimSpace(getEnv("S3_ENDPOINT", "")),
 		S3AccessKeyID:        strings.TrimSpace(getEnv("S3_ACCESS_KEY_ID", "")),
 		S3SecretAccessKey:    strings.TrimSpace(getEnv("S3_SECRET_ACCESS_KEY", "")),
 		S3SessionToken:       strings.TrimSpace(getEnv("S3_SESSION_TOKEN", "")),
