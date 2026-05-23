@@ -44,16 +44,16 @@ services:
       CARDS_PER_DRAW: 3
       LOBBY_RESET_SECS: 30
       DISCONNECT_TIMEOUT_SECS: 60
-      STORAGE_BACKEND: local
+      # STORAGE_BACKEND: local
       MAX_AVATAR_UPLOAD_BYTES: 2097152
-      AVATAR_UPLOAD_PREFIX: avatars
-      LOCAL_OBJECT_DIR: /app/uploads
-      LOCAL_PUBLIC_BASE_URL: /beananza-uploads
+      # AVATAR_UPLOAD_PREFIX: avatars
+      # LOCAL_OBJECT_DIR: /app/uploads
+      # LOCAL_PUBLIC_BASE_URL: /beananza-uploads
     depends_on:
       redis:
         condition: service_healthy
     volumes:
-      - uploads_data:/app/uploads
+      # - uploads_data:/app/uploads
       # Adding other card configuration
       # - ./game-server/cards.yaml:/app/config/cards.yaml:ro
     healthcheck:
