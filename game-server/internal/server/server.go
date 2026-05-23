@@ -32,6 +32,8 @@ type Server struct {
 	upgrader    websocket.Upgrader
 }
 
+const avatarCleanupDeleteTimeout = 2 * time.Second
+
 // newUpgrader returns a WebSocket upgrader that validates the request origin
 // against the allowed origins configured via ALLOWED_ORIGINS.
 func newUpgrader(cfg *config.Config) websocket.Upgrader {
@@ -347,7 +349,7 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 
 	oldObjectKey, err := s.repo.UpdatePlayerAvatar(ctx, authToken, avatarURL, objectKey)
 	if err != nil {
-		if deleteErr := s.objectStore.Delete(context.Background(), objectKey); deleteErr != nil {
+		if deleteErr := deleteObjectWithTimeout(s.objectStore, objectKey, avatarCleanupDeleteTimeout); deleteErr != nil {
 			s.logger.Warn("failed to delete newly uploaded avatar after profile update failure",
 				zap.String("object_key", objectKey),
 				zap.Error(deleteErr),
@@ -362,7 +364,7 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if oldObjectKey != "" && oldObjectKey != objectKey {
-		if err := s.objectStore.Delete(context.Background(), oldObjectKey); err != nil {
+		if err := deleteObjectWithTimeout(s.objectStore, oldObjectKey, avatarCleanupDeleteTimeout); err != nil {
 			s.logger.Warn("failed to delete replaced avatar object",
 				zap.String("object_key", oldObjectKey),
 				zap.Error(err),
@@ -377,6 +379,12 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		s.logger.Error("failed to encode upload response", zap.Error(err))
 	}
+}
+
+func deleteObjectWithTimeout(store objectstore.ObjectStore, key string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return store.Delete(ctx, key)
 }
 
 func bearerToken(r *http.Request) string {
