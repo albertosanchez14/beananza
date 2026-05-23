@@ -1,6 +1,10 @@
 -include .env
 
-.PHONY: help local lan teardown-lan up up-d up-build prod down down-v restart logs ps redis dev dev-server dev-client build test lint
+DOCKER ?= docker
+REGISTRY ?= ghcr.io/albertosanchez14
+VERSION_TAG ?= $(if $(APP_TAG),$(APP_TAG),latest)
+
+.PHONY: help up up-d up-build prod down down-v restart logs ps redis dev dev-server dev-client install build test lint docker-build docker-build-client docker-build-server docker-tag docker-tag-client docker-tag-server docker-push docker-push-client docker-push-server
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
@@ -61,11 +65,39 @@ install:
 
 build:
 	$(MAKE) -C game-server build
+	$(MAKE) docker-build-server 
 	$(MAKE) -C game-client build
-
+	$(MAKE) docker-build-client
+	
 test: 
 	$(MAKE) -C game-server test
 
 lint:
 	$(MAKE) -C game-server lint
 	npm run lint --prefix game-client
+
+# ── Docker: images ───────────────────────────────────────────────────────────
+
+docker-build: docker-build-client docker-build-server
+
+docker-build-client:
+	$(MAKE) -C game-client docker-build REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
+
+docker-build-server:
+	$(MAKE) -C game-server docker-build REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
+
+docker-tag: docker-tag-client docker-tag-server
+
+docker-tag-client:
+	$(MAKE) -C game-client docker-tag REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
+
+docker-tag-server:
+	$(MAKE) -C game-server docker-tag REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
+
+docker-push: docker-push-client docker-push-server
+
+docker-push-client:
+	$(MAKE) -C game-client docker-push REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
+
+docker-push-server:
+	$(MAKE) -C game-server docker-push REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"

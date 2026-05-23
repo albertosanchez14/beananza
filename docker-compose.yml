@@ -19,7 +19,7 @@ services:
       retries: 5
 
   game-server:
-    image: ${GAME_SERVER_IMAGE:-card-game-server}:${APP_TAG:-latest}
+    image: ghcr.io/albertosanchez14/beananza-server:latest
     restart: unless-stopped
     deploy:
       mode: replicated
@@ -72,7 +72,7 @@ services:
       retries: 5
 
   game-client:
-    image: ${GAME_CLIENT_IMAGE:-card-game-client}:${APP_TAG:-latest}
+    image: ghcr.io/albertosanchez14/beananza-client:latest
     restart: unless-stopped
     expose:
       - "3000"

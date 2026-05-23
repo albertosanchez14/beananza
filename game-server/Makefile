@@ -1,22 +1,27 @@
-.PHONY: help build run test clean deps redis-up redis-down
+-include ../.env
 
-BINARY_NAME=game-server
+.PHONY: build run test clean deps docker-build docker-tag docker-push 
+
+BIN_DIR=bin
+BINARY_NAME=$(BIN_DIR)/beananza-server
 MAIN_PATH=./cmd/server
 GO=go
 
-help: 
-	@echo 'Usage: make [target]'
-	@echo ''
-	@echo 'Available targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+REGISTRY ?= ghcr.io/albertosanchez14
+VERSION_TAG ?= $(if $(APP_TAG),$(APP_TAG),latest)
+
+IMAGE_NAME ?= beananza-server
+IMAGE_REGISTRY := $(patsubst %/,%,$(REGISTRY))
+LOCAL_IMAGE := $(IMAGE_NAME):$(VERSION_TAG)
+REMOTE_IMAGE := $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(VERSION_TAG)
 
 deps: 
 	$(GO) mod download
 	$(GO) mod tidy
 
 build: 
+	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(BINARY_NAME) $(MAIN_PATH)
-	$(MAKE) docker-build 
 
 run:
 	$(GO) run $(MAIN_PATH)/main.go
@@ -43,9 +48,11 @@ lint:
 	golangci-lint run
 
 docker-build: 
-	docker build -t game-server:latest .
+	docker build --no-cache -t $(LOCAL_IMAGE) .
 
-docker-run:
-	docker run -p 8080:8080 --env-file .env game-server:latest
+docker-tag: docker-build
+	docker tag $(LOCAL_IMAGE) $(REMOTE_IMAGE)
 
-.DEFAULT_GOAL := help
+docker-push: docker-tag
+	docker push $(REMOTE_IMAGE)
+
