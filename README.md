@@ -46,6 +46,31 @@ WebSocket endpoint are served from the same origin. Local/dev uses HTTP; prod
 uses HTTPS. The browser calls `/rooms`, `/register`, `/config`,
 `/upload-avatar`, `/beananza-uploads`, and `/ws` directly.
 
+### 3. Railway nginx gateway
+
+The Railway nginx gateway image is built from `nginx/Dockerfile`. It packages
+`nginx/nginx.railway.conf.template`, listens on Railway's `PORT`, and serves
+plain HTTP because Railway terminates HTTPS at the platform edge.
+
+If the nginx service is built directly from this repository in Railway, set
+`RAILWAY_DOCKERFILE_PATH` to:
+
+```text
+nginx/Dockerfile
+```
+
+The image defaults to the Docker Compose service names, but the upstreams can be
+overridden for Railway private networking:
+
+```env
+GAME_SERVER_HOST=game-server.railway.internal
+GAME_SERVER_PORT=8080
+GAME_CLIENT_HOST=game-client.railway.internal
+GAME_CLIENT_PORT=3000
+OBJECT_STORAGE_HOST=minio.railway.internal
+OBJECT_STORAGE_PORT=9000
+```
+
 Server defaults are set directly in `docker-compose.yml` and the Compose
 overrides. Create a local `.env` for secrets only:
 
@@ -87,7 +112,7 @@ cards:
     count: 6
 ```
 
-### 3. Development
+### 4. Development
 
 Runs Redis in Docker, then runs the Go server and Vite dev server natively:
 

@@ -1,0 +1,25 @@
+#!/bin/sh
+
+set -eu
+
+: "${PORT:=80}"
+: "${GAME_SERVER_HOST:=game-server}"
+: "${GAME_SERVER_PORT:=8080}"
+: "${GAME_CLIENT_HOST:=game-client}"
+: "${GAME_CLIENT_PORT:=3000}"
+: "${OBJECT_STORAGE_HOST:=minio}"
+: "${OBJECT_STORAGE_PORT:=9000}"
+
+if [ -z "${NGINX_RESOLVER:-}" ]; then
+    NGINX_RESOLVER="$(awk '/^nameserver[[:space:]]+/ { print $2; exit }' /etc/resolv.conf || true)"
+fi
+: "${NGINX_RESOLVER:=127.0.0.11}"
+
+export PORT
+export GAME_SERVER_HOST
+export GAME_SERVER_PORT
+export GAME_CLIENT_HOST
+export GAME_CLIENT_PORT
+export OBJECT_STORAGE_HOST
+export OBJECT_STORAGE_PORT
+export NGINX_RESOLVER

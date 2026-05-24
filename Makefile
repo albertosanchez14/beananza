@@ -3,7 +3,7 @@
 REGISTRY ?= ghcr.io/albertosanchez14
 VERSION_TAG ?= $(if $(APP_TAG),$(APP_TAG),latest)
 
-.PHONY: help up up-d up-build prod down down-v restart logs ps redis dev dev-server dev-client install build test lint docker-build docker-build-client docker-build-server docker-tag docker-tag-client docker-tag-server docker-push docker-push-client docker-push-server
+.PHONY: help up up-d up-build prod down down-v restart logs ps redis dev dev-server dev-client install build test lint docker-build docker-build-client docker-build-server docker-build-nginx docker-tag docker-tag-client docker-tag-server docker-tag-nginx docker-push docker-push-client docker-push-server docker-push-nginx
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
@@ -67,6 +67,7 @@ build:
 	$(MAKE) docker-build-server 
 	$(MAKE) -C game-client build
 	$(MAKE) docker-build-client
+	$(MAKE) docker-build-nginx
 	
 test: 
 	$(MAKE) -C game-server test
@@ -77,7 +78,7 @@ lint:
 
 # ── Docker: images ───────────────────────────────────────────────────────────
 
-docker-build: docker-build-client docker-build-server
+docker-build: docker-build-client docker-build-server docker-build-nginx
 
 docker-build-client:
 	$(MAKE) -C game-client docker-build REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
@@ -85,7 +86,10 @@ docker-build-client:
 docker-build-server:
 	$(MAKE) -C game-server docker-build REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
 
-docker-tag: docker-tag-client docker-tag-server
+docker-build-nginx:
+	$(MAKE) -C nginx docker-build REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
+
+docker-tag: docker-tag-client docker-tag-server docker-tag-nginx
 
 docker-tag-client:
 	$(MAKE) -C game-client docker-tag REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
@@ -93,10 +97,16 @@ docker-tag-client:
 docker-tag-server:
 	$(MAKE) -C game-server docker-tag REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
 
-docker-push: docker-push-client docker-push-server
+docker-tag-nginx:
+	$(MAKE) -C nginx docker-tag REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
+
+docker-push: docker-push-client docker-push-server docker-push-nginx
 
 docker-push-client:
 	$(MAKE) -C game-client docker-push REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
 
 docker-push-server:
 	$(MAKE) -C game-server docker-push REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
+
+docker-push-nginx:
+	$(MAKE) -C nginx docker-push REGISTRY="$(REGISTRY)" VERSION_TAG="$(VERSION_TAG)"
