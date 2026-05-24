@@ -3,7 +3,7 @@ events {
 }
 
 http {
-    resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
+    resolver ${NGINX_RESOLVER} valid=10s;
     server_tokens off;
 
     client_max_body_size 2m;

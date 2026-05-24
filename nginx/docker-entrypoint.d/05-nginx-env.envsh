@@ -15,6 +15,17 @@ if [ -z "${NGINX_RESOLVER:-}" ]; then
 fi
 : "${NGINX_RESOLVER:=127.0.0.11}"
 
+case "$NGINX_RESOLVER" in
+    \[*\]*)
+        ;;
+    *:*)
+        resolver_after_first_colon="${NGINX_RESOLVER#*:}"
+        case "$resolver_after_first_colon" in
+            *:*) NGINX_RESOLVER="[$NGINX_RESOLVER]" ;;
+        esac
+        ;;
+esac
+
 export PORT
 export GAME_SERVER_HOST
 export GAME_SERVER_PORT
