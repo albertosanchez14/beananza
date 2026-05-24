@@ -26,8 +26,10 @@ http {
     }
 
     server {
-        listen ${PORT};
+        listen ${PORT}${NGINX_LISTEN_OPTIONS};
         server_name _;
+
+				${NGINX_SSL_CONFIG}
 
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header X-Content-Type-Options "nosniff" always;
@@ -43,7 +45,7 @@ http {
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Proto ${NGINX_FORWARDED_PROTO};
             proxy_connect_timeout 10s;
             proxy_send_timeout 30s;
             proxy_read_timeout 86400s;
@@ -56,7 +58,7 @@ http {
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Proto ${NGINX_FORWARDED_PROTO};
             proxy_connect_timeout 10s;
             proxy_send_timeout 30s;
             proxy_read_timeout 30s;
@@ -68,7 +70,7 @@ http {
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Proto ${NGINX_FORWARDED_PROTO};
             proxy_connect_timeout 10s;
             proxy_send_timeout 30s;
             proxy_read_timeout 30s;
@@ -80,7 +82,7 @@ http {
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Proto ${NGINX_FORWARDED_PROTO};
             proxy_connect_timeout 10s;
             proxy_send_timeout 30s;
             proxy_read_timeout 30s;
@@ -92,7 +94,34 @@ http {
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Proto ${NGINX_FORWARDED_PROTO};
+            proxy_connect_timeout 10s;
+            proxy_send_timeout 30s;
+            proxy_read_timeout 30s;
+        }
+
+        location /beananza-uploads/ {
+            proxy_intercept_errors on;
+            error_page 404 = @beananza_uploads_s3;
+            proxy_pass http://game_servers;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto ${NGINX_FORWARDED_PROTO};
+            proxy_connect_timeout 10s;
+            proxy_send_timeout 30s;
+            proxy_read_timeout 30s;
+        }
+
+        location @beananza_uploads_s3 {
+            set $object_storage_upstream http://${OBJECT_STORAGE_HOST}:${OBJECT_STORAGE_PORT};
+            proxy_pass $object_storage_upstream;
+            proxy_http_version 1.1;
+            proxy_set_header Host ${OBJECT_STORAGE_HOST}:${OBJECT_STORAGE_PORT};
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto ${NGINX_FORWARDED_PROTO};
             proxy_connect_timeout 10s;
             proxy_send_timeout 30s;
             proxy_read_timeout 30s;
@@ -104,7 +133,7 @@ http {
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Proto ${NGINX_FORWARDED_PROTO};
             proxy_connect_timeout 10s;
             proxy_send_timeout 30s;
             proxy_read_timeout 30s;

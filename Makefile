@@ -3,7 +3,7 @@
 REGISTRY ?= ghcr.io/albertosanchez14
 VERSION_TAG ?= $(if $(APP_TAG),$(APP_TAG),latest)
 
-.PHONY: help up up-d up-build prod down down-v restart logs ps redis dev dev-server dev-client install build test lint docker-build docker-build-client docker-build-server docker-build-nginx docker-tag docker-tag-client docker-tag-server docker-tag-nginx docker-push docker-push-client docker-push-server docker-push-nginx
+.PHONY: help up up-d up-build down down-v restart logs ps redis dev dev-server dev-client install build test lint docker-build docker-build-client docker-build-server docker-build-nginx docker-tag docker-tag-client docker-tag-server docker-tag-nginx docker-push docker-push-client docker-push-server docker-push-nginx
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
@@ -27,14 +27,11 @@ up-d:
 up-build:
 	docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
-prod: 
-	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-
 down: 
-	docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.prod.yml down
+	docker compose -f docker-compose.yml -f docker-compose.local.yml down
 
 down-v:
-	docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.prod.yml down -v
+	docker compose -f docker-compose.yml -f docker-compose.local.yml down -v
 
 restart: 
 	docker compose -f docker-compose.yml -f docker-compose.local.yml restart
