@@ -23,12 +23,11 @@ type PubSub struct {
 	mu sync.Mutex
 }
 
-func NewPubSub(addr, password string, db int, logger *zap.Logger) (*PubSub, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: password,
-		DB:       db,
-	})
+func NewPubSub(redisURL string, logger *zap.Logger) (*PubSub, error) {
+	client, addr, err := newRedisClient(redisURL)
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 

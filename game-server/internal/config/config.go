@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -29,9 +30,7 @@ type ServerConfig struct {
 }
 
 type RedisConfig struct {
-	Addr     string
-	Password string
-	DB       int
+	URL string
 }
 
 type StorageConfig struct {
@@ -107,12 +106,7 @@ func Load() *Config {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	cardsConfigPath := getCardsConfigPath()
-	cardsFile, err := LoadCardsFile(cardsConfigPath)
-	if err != nil {
-		log.Fatalf("failed to load cards config: %v", err)
-	}
-	gameConfig, err := loadGameConfig(cardsFile.Cards)
+	gameConfig, err := loadGameConfig()
 	if err != nil {
 		log.Fatalf("failed to load game config: %v", err)
 	}
@@ -122,10 +116,11 @@ func Load() *Config {
 		log.Fatalf("failed to load storage config: %v", err)
 	}
 
-	redisDB, err := getEnvAsInt("REDIS_DB", 0)
+	redisConfig, err := loadRedisConfig()
 	if err != nil {
 		log.Fatalf("failed to load redis config: %v", err)
 	}
+
 	readBufferSize, err := getEnvAsInt("READ_BUFFER_SIZE", 1024)
 	if err != nil {
 		log.Fatalf("failed to load websocket config: %v", err)
@@ -153,11 +148,7 @@ func Load() *Config {
 			Port:           getEnv("SERVER_PORT", "8080"),
 			AllowedOrigins: getEnvAsStringSlice("ALLOWED_ORIGINS"),
 		},
-		Redis: RedisConfig{
-			Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
-			Password: getEnv("REDIS_PASSWORD", ""),
-			DB:       redisDB,
-		},
+		Redis: redisConfig,
 		Logger: LoggerConfig{
 			Level: getEnv("LOG_LEVEL", "info"),
 		},
@@ -172,6 +163,28 @@ func Load() *Config {
 		Game:    gameConfig,
 	}
 	return cfg
+}
+
+func loadRedisConfig() (RedisConfig, error) {
+	redisURL := strings.TrimSpace(os.Getenv("REDIS_URL"))
+	if redisURL == "" {
+		return RedisConfig{}, fmt.Errorf("REDIS_URL is required")
+	}
+
+	parsed, err := url.Parse(redisURL)
+	if err != nil {
+		return RedisConfig{}, fmt.Errorf("REDIS_URL must be a valid Redis URL: %w", err)
+	}
+	if parsed.Host == "" {
+		return RedisConfig{}, fmt.Errorf("REDIS_URL must include a host")
+	}
+	switch parsed.Scheme {
+	case "redis", "rediss":
+	default:
+		return RedisConfig{}, fmt.Errorf("REDIS_URL must use redis:// or rediss://")
+	}
+
+	return RedisConfig{URL: redisURL}, nil
 }
 
 // LoadCardsFile reads and parses the card config YAML file at the given path.
@@ -193,7 +206,13 @@ func LoadCardsFile(path string) (CardsFileConfig, error) {
 	return cfg, nil
 }
 
-func loadGameConfig(cardTypes []CardTypeConfig) (GameConfig, error) {
+func loadGameConfig() (GameConfig, error) {
+	cardsConfigPath := getCardsConfigPath()
+	cardsFile, err := LoadCardsFile(cardsConfigPath)
+	if err != nil {
+		log.Fatalf("failed to load cards config: %v", err)
+	}
+
 	maxNumberPlayers, err := getEnvAsInt("MAX_NUMBER_PLAYERS", 5)
 	if err != nil {
 		return GameConfig{}, err
@@ -229,7 +248,7 @@ func loadGameConfig(cardTypes []CardTypeConfig) (GameConfig, error) {
 		CardsPerTurn:          cardsPerTurn,
 		MaxReshuffles:         maxReshuffles,
 		CardsPerDraw:          cardsPerDraw,
-		Cards:                 CardsConfig{CardTypes: cardTypes},
+		Cards:                 CardsConfig{CardTypes: cardsFile.Cards},
 		LobbyResetSecs:        lobbyResetSecs,
 		DisconnectTimeoutSecs: disconnectTimeoutSecs,
 	}

@@ -16,12 +16,11 @@ type Repository struct {
 	logger *zap.Logger
 }
 
-func NewRepository(addr, password string, db int, logger *zap.Logger) (*Repository, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: password,
-		DB:       db,
-	})
+func NewRepository(redisURL string, logger *zap.Logger) (*Repository, error) {
+	client, addr, err := newRedisClient(redisURL)
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -38,11 +37,19 @@ func NewRepository(addr, password string, db int, logger *zap.Logger) (*Reposito
 	}, nil
 }
 
+func newRedisClient(redisURL string) (*redis.Client, string, error) {
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid redis URL: %w", err)
+	}
+	return redis.NewClient(opts), opts.Addr, nil
+}
+
 func (r *Repository) Close() error {
 	return r.client.Close()
 }
 
-func (r *Repository) SaveGameState(ctx context.Context, roomID string, state interface{}) error {
+func (r *Repository) SaveGameState(ctx context.Context, roomID string, state any) error {
 	key := fmt.Sprintf("room:%s:state", roomID)
 
 	jsonData, err := json.Marshal(state)
@@ -59,7 +66,7 @@ func (r *Repository) SaveGameState(ctx context.Context, roomID string, state int
 	return nil
 }
 
-func (r *Repository) GetGameState(ctx context.Context, roomID string, dest interface{}) error {
+func (r *Repository) GetGameState(ctx context.Context, roomID string, dest any) error {
 	key := fmt.Sprintf("room:%s:state", roomID)
 
 	data, err := r.client.Get(ctx, key).Bytes()
@@ -120,7 +127,7 @@ func (r *Repository) GetRoomPlayers(ctx context.Context, roomID string) ([]strin
 	return players, nil
 }
 
-func (r *Repository) SaveWaitingLobby(ctx context.Context, roomID string, lobby interface{}) error {
+func (r *Repository) SaveWaitingLobby(ctx context.Context, roomID string, lobby any) error {
 	key := fmt.Sprintf("room:%s:lobby", roomID)
 
 	data, err := json.Marshal(lobby)
@@ -136,7 +143,7 @@ func (r *Repository) SaveWaitingLobby(ctx context.Context, roomID string, lobby 
 	return nil
 }
 
-func (r *Repository) GetWaitingLobby(ctx context.Context, roomID string, dest interface{}) error {
+func (r *Repository) GetWaitingLobby(ctx context.Context, roomID string, dest any) error {
 	key := fmt.Sprintf("room:%s:lobby", roomID)
 
 	data, err := r.client.Get(ctx, key).Bytes()
@@ -270,7 +277,7 @@ func (r *Repository) UpdatePlayerAvatar(ctx context.Context, token, avatarURL, a
 	var oldObjectKey string
 	var playerID string
 
-	for attempt := 0; attempt < 3; attempt++ {
+	for range 3 {
 		err := r.client.Watch(ctx, func(tx *redis.Tx) error {
 			data, err := tx.Get(ctx, key).Bytes()
 			if err == redis.Nil {

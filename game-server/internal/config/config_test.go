@@ -21,6 +21,43 @@ func TestLoadStorageConfigDefaultLocal(t *testing.T) {
 	}
 }
 
+func TestLoadRedisConfigRequiresURL(t *testing.T) {
+	t.Setenv("REDIS_URL", "")
+
+	_, err := loadRedisConfig()
+	if err == nil {
+		t.Fatal("loadRedisConfig() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "REDIS_URL is required") {
+		t.Fatalf("error = %q, want REDIS_URL required error", err)
+	}
+}
+
+func TestLoadRedisConfigFromURL(t *testing.T) {
+	t.Setenv("REDIS_URL", "rediss://:secret@redis.example.com:6380")
+
+	cfg, err := loadRedisConfig()
+	if err != nil {
+		t.Fatalf("loadRedisConfig() error = %v", err)
+	}
+
+	if cfg.URL != "rediss://:secret@redis.example.com:6380" {
+		t.Fatalf("URL = %q, want rediss://:secret@redis.example.com:6380", cfg.URL)
+	}
+}
+
+func TestLoadRedisConfigRejectsInvalidURL(t *testing.T) {
+	t.Setenv("REDIS_URL", "localhost:6379")
+
+	_, err := loadRedisConfig()
+	if err == nil {
+		t.Fatal("loadRedisConfig() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "REDIS_URL") {
+		t.Fatalf("error = %q, want REDIS_URL error", err)
+	}
+}
+
 func TestLoadStorageConfigInvalidUploadLimit(t *testing.T) {
 	clearStorageEnv(t)
 	t.Setenv("MAX_AVATAR_UPLOAD_BYTES", "not-a-number")

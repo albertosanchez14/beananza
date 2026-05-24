@@ -45,9 +45,7 @@ func run() error {
 	)
 
 	repo, err := storage.NewRepository(
-		cfg.Redis.Addr,
-		cfg.Redis.Password,
-		cfg.Redis.DB,
+		cfg.Redis.URL,
 		log,
 	)
 	if err != nil {
@@ -56,9 +54,7 @@ func run() error {
 	defer repo.Close()
 
 	pubsub, err := storage.NewPubSub(
-		cfg.Redis.Addr,
-		cfg.Redis.Password,
-		cfg.Redis.DB,
+		cfg.Redis.URL,
 		log,
 	)
 	if err != nil {

@@ -56,16 +56,16 @@ cp .env.example .env
 The supported `.env` values are:
 
 ```env
-REDIS_PASSWORD=use-a-long-random-password
-REDIS_DB=0
+REDIS_URL=redis://redis:6379
 S3_ACCESS_KEY_ID=your-access-key
 S3_SECRET_ACCESS_KEY=your-secret-key
 S3_SESSION_TOKEN=
 ```
 
-`REDIS_DB` must be a numeric Redis database index. Use `0` unless you have a
-specific reason to separate multiple apps in the same Redis instance. Leave
-`S3_SESSION_TOKEN` empty unless the object-storage provider requires one.
+Redis is configured with `REDIS_URL` and the server fails to start if it is not
+set. Use `redis://redis:6379` for Docker Compose and `redis://localhost:6379`
+for a native Go server using the local Compose Redis. Leave `S3_SESSION_TOKEN`
+empty unless the object-storage provider requires one.
 
 Game rules are configured with environment variables:
 
