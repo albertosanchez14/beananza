@@ -15,9 +15,23 @@ env:
 jobs:
   docker-push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - image: beananza-server
+            context: ./game-server
+          - image: beananza-client
+            context: ./game-client
+          - image: beananza-nginx
+            context: ./nginx
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -26,5 +40,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker images
-        run: make docker-push
+      - name: Build and push ${{ matrix.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          no-cache: true
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ matrix.image }}:${{ env.VERSION_TAG }}
