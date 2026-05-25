@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useMemo } from "react";
 import { CardType, ExternalPlayer, OfferCard } from "@/schemas/types";
 import CardComponent from "@/components/card";
@@ -262,7 +260,9 @@ export default function RequestCardsModal({
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => adjustRequested(card.cardName, -1)}
-                        disabled={qty === 0 || (qty === 1 && totalRequested <= 1)}
+                        disabled={
+                          qty === 0 || (qty === 1 && totalRequested <= 1)
+                        }
                         className="w-5 h-5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold leading-none disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                       >
                         −

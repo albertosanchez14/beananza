@@ -1,4 +1,3 @@
-"use client";
 import { m } from "motion/react";
 import { CardType } from "@/schemas/types";
 import { CardFrontFace } from "@/components/card-front-face";
@@ -86,7 +85,10 @@ export function PlantFlyingCard({
           animate={
             hasTilt
               ? deferTilt
-                ? { rotateX: [0, 0, targetRotateX], scaleX: [1, 1, targetScaleX] }
+                ? {
+                    rotateX: [0, 0, targetRotateX],
+                    scaleX: [1, 1, targetScaleX],
+                  }
                 : { rotateX: targetRotateX, scaleX: targetScaleX }
               : undefined
           }

@@ -1,4 +1,3 @@
-"use client";
 import { useCallback } from "react";
 import useWebSocketLib, { ReadyState } from "react-use-websocket";
 import { getWebSocketUrl } from "@/lib/config";

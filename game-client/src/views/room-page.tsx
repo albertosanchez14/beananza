@@ -25,7 +25,7 @@ export default function RoomPage({ roomId }: RoomPageProps) {
   if (!profile)
     return (
       <div
-        className="relative min-h-screen overflow-hidden"
+        className="relative min-h-dvh overflow-hidden"
         style={{
           backgroundImage: "url('/fields/field6.jpeg')",
           backgroundSize: "cover",
@@ -40,8 +40,8 @@ export default function RoomPage({ roomId }: RoomPageProps) {
     viewState === "playing" || viewState === "pause" || viewState === "dealing";
 
   return (
-    <div className="flex h-screen overflow-hidden bg-zinc-50 dark:bg-black">
-      <main className="relative flex h-screen w-full flex-col bg-white dark:bg-black">
+    <div className="flex h-dvh overflow-hidden bg-zinc-50 dark:bg-black">
+      <main className="relative flex h-dvh w-full flex-col bg-white dark:bg-black">
         {viewState === "connecting" && (
           <div className="flex h-full items-center justify-center">
             <span className="text-sm text-zinc-400 dark:text-zinc-600">

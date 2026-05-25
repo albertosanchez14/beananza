@@ -1,5 +1,3 @@
-"use client";
-
 import { Phases } from "@/schemas/messages";
 import { Children, ReactNode, isValidElement } from "react";
 

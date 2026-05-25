@@ -1,5 +1,3 @@
-"use client";
-
 import { m } from "motion/react";
 import { useAppRouter } from "@/lib/router";
 import { AppImage as Image } from "@/components/app-image";

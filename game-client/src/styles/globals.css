@@ -200,15 +200,15 @@ body {
     filter: blur(0px);
   }
   40% {
-    transform: translateX(-50%) translateY(-25vh) scale(1.3);
+    transform: translateX(-50%) translateY(-25dvh) scale(1.3);
     filter: blur(0px);
   }
   72% {
-    transform: translateX(-50%) translateY(-60vh) scale(2);
+    transform: translateX(-50%) translateY(-60dvh) scale(2);
     filter: blur(6px);
   }
   100% {
-    transform: translateX(-50%) translateY(-95vh) scale(2.8);
+    transform: translateX(-50%) translateY(-95dvh) scale(2.8);
     filter: blur(50px);
   }
 }

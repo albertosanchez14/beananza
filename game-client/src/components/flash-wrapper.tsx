@@ -1,5 +1,3 @@
-"use client";
-
 import { motion, useAnimation } from "motion/react";
 import { useEffect, ReactNode } from "react";
 

@@ -10,8 +10,8 @@ A multiplayer card game inspired in the Bohnanza game design by Uwe Rosenberg.
 
 ### 1. Local/Dev with Docker Compose
 
-Builds local client and server images, then runs nginx, Redis, one static Vite
-client, and two replicated Go server containers over HTTP.
+Builds local client, server, and nginx gateway images, then runs nginx, Redis,
+one static Vite client, and the Go server over HTTP.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
@@ -27,14 +27,15 @@ Open [http://localhost](http://localhost).
 
 ### 2. Production with Docker Compose
 
-`docker-compose.yml` is image-only for app services. It expects prebuilt client
-and server images. Use the prod override for an HTTPS deployment on port 443:
+`docker-compose.yml` uses prebuilt client and server images. Use the prod
+override for an HTTPS deployment on port 443:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-The prod override mounts `./nginx/certs` and expects TLS certificates at:
+The prod override enables TLS in the shared nginx template, mounts
+`./nginx/certs`, and expects certificates at:
 
 ```text
 ./nginx/certs/fullchain.crt
@@ -46,11 +47,25 @@ WebSocket endpoint are served from the same origin. Local/dev uses HTTP; prod
 uses HTTPS. The browser calls `/rooms`, `/register`, `/config`,
 `/upload-avatar`, `/beananza-uploads`, and `/ws` directly.
 
-### 3. Railway nginx gateway
+### 3. Shared nginx gateway
 
-The Railway nginx gateway image is built from `nginx/Dockerfile`. It packages
-`nginx/nginx.railway.conf.template`, listens on Railway's `PORT`, and serves
-plain HTTP because Railway terminates HTTPS at the platform edge.
+The nginx gateway image is built from `nginx/Dockerfile`. It packages
+`nginx/nginx.conf.template`, which is the single gateway config used by
+Railway and Docker Compose. Compose builds the same image locally and switches
+behavior through environment variables:
+
+```env
+PORT=80
+NGINX_FORWARDED_PROTO=http
+NGINX_ENABLE_SSL=false
+```
+
+For the prod Compose override, `PORT=443`, `NGINX_ENABLE_SSL=true`, and
+`NGINX_FORWARDED_PROTO=https`.
+
+For Railway, the container still listens on Railway's `PORT` over plain HTTP
+because Railway terminates HTTPS at the platform edge. The image defaults
+`NGINX_FORWARDED_PROTO` to `https` for that deployment shape.
 
 If the nginx service is built directly from this repository in Railway, set
 `RAILWAY_DOCKERFILE_PATH` to:
@@ -59,8 +74,8 @@ If the nginx service is built directly from this repository in Railway, set
 nginx/Dockerfile
 ```
 
-The image defaults to the Docker Compose service names, but the upstreams can be
-overridden for Railway private networking:
+Docker Compose sets upstreams to the Compose service names. For Railway private
+networking, override them with the Railway service hostnames:
 
 ```env
 GAME_SERVER_HOST=game-server.railway.internal

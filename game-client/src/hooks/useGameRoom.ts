@@ -1,4 +1,3 @@
-"use client";
 import { useCallback } from "react";
 import { useGameState, GameState } from "@/hooks/state";
 import { useGameConfig } from "@/hooks/useGameConfig";
@@ -85,7 +84,12 @@ export function useGameRoom(
   );
 
   const counterOffer = useCallback(
-    (parentId: string, offered: OfferCard[], requested: OfferCard[], targetId?: string) =>
+    (
+      parentId: string,
+      offered: OfferCard[],
+      requested: OfferCard[],
+      targetId?: string,
+    ) =>
       send("action", roomId, {
         type: "counterOffer",
         parent_offer_id: parentId,

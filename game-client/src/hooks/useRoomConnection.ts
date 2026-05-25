@@ -1,10 +1,8 @@
-"use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWebSocket, WebSocketMessage } from "@/hooks/useWebSocket";
 import { useWaitingRoom, WaitingRoomContext } from "@/hooks/useWaitingRoom";
 import { useGameRoom, GameRoomContext } from "@/hooks/useGameRoom";
 import { JoinedResponsePayload } from "@/schemas/messages";
-
 
 export type ViewState =
   | "connecting"
@@ -85,7 +83,11 @@ export function useRoomConnection(
     }
 
     if (lastMessage.type === "waitingLobbyState") {
-      if (viewState === "dealing" || viewState === "playing" || viewState === "pause") {
+      if (
+        viewState === "dealing" ||
+        viewState === "playing" ||
+        viewState === "pause"
+      ) {
         dealTriggeredRef.current = false;
         setViewState("waiting");
       }
@@ -111,7 +113,10 @@ export function useRoomConnection(
     }
 
     if (lastMessage.type === "error") {
-      const { code, message } = lastMessage.payload as { code: string; message: string };
+      const { code, message } = lastMessage.payload as {
+        code: string;
+        message: string;
+      };
       if (code === "GAME_ALREADY_STARTED") {
         setViewState("gameAlreadyStarted");
       } else if (code === "unauthorized") {

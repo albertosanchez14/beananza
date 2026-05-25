@@ -1,4 +1,3 @@
-"use client";
 import { m } from "motion/react";
 import { AppImage as Image } from "@/components/app-image";
 import { CardType } from "@/schemas/types";
@@ -58,7 +57,13 @@ export function TurnOverFlyingCard({
           Perspective context matching the Center container (700px scaled by
           cardScale so the 3D effect depth matches the visual card size).
         */}
-        <div style={{ width: "100%", height: "100%", perspective: `${700 * cardScale}px` }}>
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            perspective: `${700 * cardScale}px`,
+          }}
+        >
           {/*
             Static tilt matching the Center container's transform throughout
             the flight. transformOrigin "bottom center" keeps the bottom edge
@@ -78,7 +83,11 @@ export function TurnOverFlyingCard({
               (600px scaled by cardScale).
             */}
             <div
-              style={{ width: "100%", height: "100%", perspective: `${600 * cardScale}px` }}
+              style={{
+                width: "100%",
+                height: "100%",
+                perspective: `${600 * cardScale}px`,
+              }}
             >
               {/* Long-side flip: rotateY 180 → 0 (back→front) */}
               <m.div
@@ -104,7 +113,15 @@ export function TurnOverFlyingCard({
                 {/* Back face — .card-back: same + rotateY(180deg) */}
                 <div className="card-back rounded-xl border-2 border-gray-500 overflow-hidden">
                   {card.backImage ? (
-                    <Image src={card.backImage} alt="Card back" fill sizes="96px" style={{ objectFit: "cover" }} draggable={false} unoptimized />
+                    <Image
+                      src={card.backImage}
+                      alt="Card back"
+                      fill
+                      sizes="96px"
+                      style={{ objectFit: "cover" }}
+                      draggable={false}
+                      unoptimized
+                    />
                   ) : (
                     <div className="w-full h-full bg-green-800 flex items-center justify-center">
                       <div className="w-12 h-16 rounded border-2 border-green-600 bg-green-700" />

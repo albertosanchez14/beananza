@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useEffect, useRef } from "react";
 import { CardType, Offer } from "@/schemas/types";
 import { buildChildrenMap } from "@/utils/offer-tree";

@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef } from "react";
 import { m } from "motion/react";
 import { AppImage as Image } from "@/components/app-image";
@@ -146,7 +144,15 @@ export function FlyingCard({
                   className="rounded-xl border-2 border-gray-500 overflow-hidden"
                 >
                   {card.backImage ? (
-                    <Image src={card.backImage} alt="Card back" fill sizes="96px" style={{ objectFit: "cover" }} draggable={false} unoptimized />
+                    <Image
+                      src={card.backImage}
+                      alt="Card back"
+                      fill
+                      sizes="96px"
+                      style={{ objectFit: "cover" }}
+                      draggable={false}
+                      unoptimized
+                    />
                   ) : (
                     <div className="w-full h-full bg-green-800 flex items-center justify-center">
                       <div className="w-12 h-16 rounded border-2 border-green-600 bg-green-700" />

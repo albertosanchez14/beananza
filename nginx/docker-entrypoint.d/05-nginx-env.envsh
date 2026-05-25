@@ -9,6 +9,12 @@ set -eu
 : "${GAME_CLIENT_PORT:=3000}"
 : "${OBJECT_STORAGE_HOST:=minio}"
 : "${OBJECT_STORAGE_PORT:=9000}"
+: "${NGINX_FORWARDED_PROTO:=https}"
+: "${NGINX_LISTEN_OPTIONS:=}"
+: "${NGINX_ENABLE_SSL:=false}"
+: "${NGINX_SSL_CERTIFICATE:=/etc/nginx/certs/fullchain.crt}"
+: "${NGINX_SSL_CERTIFICATE_KEY:=/etc/nginx/certs/privkey.pem}"
+: "${NGINX_SSL_CONFIG:=}"
 
 if [ -z "${NGINX_RESOLVER:-}" ]; then
     NGINX_RESOLVER="$(awk '/^nameserver[[:space:]]+/ { print $2; exit }' /etc/resolv.conf || true)"
@@ -26,6 +32,28 @@ case "$NGINX_RESOLVER" in
         ;;
 esac
 
+case "$NGINX_ENABLE_SSL" in
+    1|true|TRUE|yes|YES|on|ON)
+        if [ -z "$NGINX_LISTEN_OPTIONS" ]; then
+            NGINX_LISTEN_OPTIONS=" ssl"
+        fi
+
+        if [ -z "$NGINX_SSL_CONFIG" ]; then
+            NGINX_SSL_CONFIG="$(cat <<EOF
+        ssl_certificate ${NGINX_SSL_CERTIFICATE};
+        ssl_certificate_key ${NGINX_SSL_CERTIFICATE_KEY};
+        http2 on;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers off;
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 1d;
+        ssl_session_tickets off;
+EOF
+)"
+        fi
+        ;;
+esac
+
 export PORT
 export GAME_SERVER_HOST
 export GAME_SERVER_PORT
@@ -33,4 +61,7 @@ export GAME_CLIENT_HOST
 export GAME_CLIENT_PORT
 export OBJECT_STORAGE_HOST
 export OBJECT_STORAGE_PORT
+export NGINX_FORWARDED_PROTO
+export NGINX_LISTEN_OPTIONS
+export NGINX_SSL_CONFIG
 export NGINX_RESOLVER

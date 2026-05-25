@@ -1,5 +1,3 @@
-"use client";
-
 import { ReactNode } from "react";
 import { Coins } from "lucide-react";
 
@@ -31,9 +29,7 @@ export default function CurrentPlayer({
   );
 
   return (
-    <div
-      className="absolute bottom-0 left-0 right-0 flex flex-col items-center gap-3 px-6 pb-5 pt-3"
-    >
+    <div className="absolute bottom-0 left-0 right-0 flex flex-col items-center gap-3 px-6 pb-5 pt-3">
       <div style={{ perspective: "700px", position: "relative", zIndex: 15 }}>
         {isNarrow ? (
           <div
@@ -62,7 +58,10 @@ export default function CurrentPlayer({
             {coinsBadge}
             {field}
             {/* Zero-width anchor so tradedCards never shifts the field */}
-            <div className="relative self-stretch" style={{ width: 0, overflow: "visible" }}>
+            <div
+              className="relative self-stretch"
+              style={{ width: 0, overflow: "visible" }}
+            >
               <div
                 className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-2"
                 style={{ pointerEvents: "auto" }}

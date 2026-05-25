@@ -1,5 +1,3 @@
-"use client";
-
 import { useAppRouter } from "@/lib/router";
 
 type RunningRoomProp = {

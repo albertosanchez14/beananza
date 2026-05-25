@@ -190,7 +190,7 @@ export function IdentifyForm({ returnTo }: IdentifyFormProps) {
             maxLength={24}
             className="western-input rounded-lg bg-black/30 border border-amber-800
 						focus:border-amber-500 focus:outline-none text-white
-						px-3 py-2 text-sm transition-colors"
+						px-3 py-2 text-base sm:text-sm transition-colors"
             style={{
               WebkitBoxShadow: "0 0 0 1000px rgba(20, 10, 3, 0.9) inset",
             }}
