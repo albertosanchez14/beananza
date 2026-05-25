@@ -30,7 +30,7 @@ export default function Arrow({ pathStr, color, opacity }: Prop) {
           position: "fixed",
           inset: 0,
           width: "100vw",
-          height: "100vh",
+          height: "100dvh",
           pointerEvents: "none",
           zIndex: 20,
           overflow: "visible",

@@ -1,4 +1,3 @@
-"use client";
 import { useCallback } from "react";
 import { useWaitingLobbyState, WaitingLobbyState } from "@/hooks/state";
 import { SendFn, WebSocketMessage } from "@/hooks/useWebSocket";

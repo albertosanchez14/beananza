@@ -22,7 +22,7 @@ function IdentifyRoute() {
 
   return (
     <div
-      className="relative flex min-h-screen items-center justify-center overflow-hidden px-4"
+      className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4"
       style={{
         backgroundImage: "url('/fields/field6.jpeg')",
         backgroundSize: "cover",

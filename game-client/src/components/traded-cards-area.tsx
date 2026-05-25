@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { CardType, Offer } from "@/schemas/types";
 import TradedCards from "@/components/traded-cards";
@@ -147,7 +145,9 @@ export default function TradedCardsArea({
             }
           : undefined
       }
-      onDragLeave={!readOnly && isTurnTrade ? () => setDragOver(false) : undefined}
+      onDragLeave={
+        !readOnly && isTurnTrade ? () => setDragOver(false) : undefined
+      }
       onDrop={!readOnly && isTurnTrade ? handleDrop : undefined}
       className={[
         "relative flex flex-row items-center gap-2 px-2 rounded-xl transition-all",
@@ -158,9 +158,20 @@ export default function TradedCardsArea({
             : "border-dashed border-white/70"
           : "",
       ].join(" ")}
-      style={readOnly ? undefined : isEditingDraft ? { minHeight: 160 } : { height: 160 }}
+      style={
+        readOnly
+          ? undefined
+          : isEditingDraft
+            ? { minHeight: 160 }
+            : { height: 160 }
+      }
     >
-      <TradedCards pickedCards={pickedCards} selection={selection} readOnly={readOnly} flashSignal={flashSignal} />
+      <TradedCards
+        pickedCards={pickedCards}
+        selection={selection}
+        readOnly={readOnly}
+        flashSignal={flashSignal}
+      />
 
       {draftGroups.length > 0 && (
         <div ref={draftCardsGroupRef} className="flex items-center gap-3">
@@ -333,15 +344,19 @@ export default function TradedCardsArea({
       )}
 
       {/* Has-content + button — hidden when editing */}
-      {!readOnly && isTurnTrade && hasContent && !dragOver && !isEditingDraft && (
-        <button
-          onClick={onOpenModal}
-          className="w-8 h-8 rounded-full bg-black/60 text-white text-lg font-bold
+      {!readOnly &&
+        isTurnTrade &&
+        hasContent &&
+        !dragOver &&
+        !isEditingDraft && (
+          <button
+            onClick={onOpenModal}
+            className="w-8 h-8 rounded-full bg-black/60 text-white text-lg font-bold
             hover:bg-black/80 transition-colors flex items-center justify-center flex-shrink-0"
-        >
-          +
-        </button>
-      )}
+          >
+            +
+          </button>
+        )}
     </div>
   );
 }

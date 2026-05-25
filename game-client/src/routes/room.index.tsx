@@ -22,11 +22,14 @@ function RoomIndexRoute() {
   });
 
   return (
-    <div className="fixed inset-0 z-1 flex items-end overflow-x-auto overflow-y-hidden">
+    <div
+      className="fixed inset-x-0 top-0 z-1 flex items-end overflow-x-auto overflow-y-hidden"
+      style={{ height: "100dvh" }}
+    >
       <div
         className="relative shrink-0"
         style={{
-          width: `max(100%, calc(100vh * ${IMG_W / IMG_H}))`,
+          width: `max(100%, calc(100dvh * ${IMG_W / IMG_H}))`,
           aspectRatio: IMG_W / IMG_H,
         }}
       >

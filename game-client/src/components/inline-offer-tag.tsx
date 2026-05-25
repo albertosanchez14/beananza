@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useState } from "react";
 import { Offer, CardType } from "@/schemas/types";
 import { getLeaves } from "@/utils/offer-tree";
@@ -114,10 +112,16 @@ export default function InlineOfferTag({
             width={96}
             cardHeight={144}
             accent={offerAccent(leaf)}
-            onCtrlClick={hasMultipleNodes && !hasDraft ? () => { setTreeOpen((v) => !v); onHover?.(null); } : undefined}
+            onCtrlClick={
+              hasMultipleNodes && !hasDraft
+                ? () => {
+                    setTreeOpen((v) => !v);
+                    onHover?.(null);
+                  }
+                : undefined
+            }
           />
         ))}
-
       </div>
 
       {showOverlay && (

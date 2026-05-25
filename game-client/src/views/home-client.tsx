@@ -1,4 +1,3 @@
-"use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppRouter } from "@/lib/router";
 import { AppImage as Image } from "@/components/app-image";
@@ -54,8 +53,7 @@ function getCloudFlight(
   }
 
   const centerY = rect.top + rect.height / 2;
-  const baseTop =
-    centerY + bounds.baseScale * (bounds.top - 0.5) * rect.height;
+  const baseTop = centerY + bounds.baseScale * (bounds.top - 0.5) * rect.height;
   const baseBottom =
     centerY + bounds.baseScale * (bounds.bottom - 0.5) * rect.height;
 
@@ -148,7 +146,7 @@ export default function HomeClient() {
 
   return (
     <div
-      className="relative min-h-screen overflow-hidden"
+      className="relative min-h-dvh overflow-hidden"
       style={{
         height: "100dvh",
         minHeight: "100dvh",
@@ -269,8 +267,8 @@ export default function HomeClient() {
           className="cactus-sway"
           style={{
             position: "absolute",
-            bottom: "10%",
-            left: "23%",
+            bottom: "8%",
+            left: "20%",
             height: "31%",
             zIndex: 5,
             animationDuration: "5.5s",
@@ -377,12 +375,12 @@ export default function HomeClient() {
       <m.main
         animate={flying ? { opacity: 0, y: "40dvh" } : { opacity: 1, y: "0px" }}
         transition={flying ? { duration: 0.5, ease: "easeIn" } : {}}
-        className="relative flex flex-col items-center justify-center min-h-screen px-6 text-center"
+        className="relative flex flex-col items-center justify-center min-h-dvh px-6 text-center"
         style={{ zIndex: 10, minHeight: "100dvh" }}
       >
         <div className="flex flex-col items-center gap-3 mb-8">
           <h1
-            className="text-7xl font-bold tracking-widest text-amber-300"
+            className="text-6xl leading-none font-bold tracking-wide text-amber-300 sm:tracking-widest md:text-7xl"
             style={{ textShadow: "2px 4px 12px rgba(0,0,0,0.8)" }}
           >
             BEANANZA

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useEffect, useCallback } from "react";
 import { m } from "motion/react";
 import { CardType, Offer, OfferCard } from "@/schemas/types";

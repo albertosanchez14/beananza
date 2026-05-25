@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useLayoutEffect, useState } from "react";
 import { CardType, ExternalPlayer, OfferCard } from "@/schemas/types";
 import CardComponent from "@/components/card";

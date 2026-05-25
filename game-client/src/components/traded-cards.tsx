@@ -1,5 +1,3 @@
-"use client";
-
 import Card from "@/components/card";
 import { FlashWrapper } from "@/components/flash-wrapper";
 import { CardType } from "@/schemas/types";
@@ -53,13 +51,17 @@ function CardGroup({
             flipped={false}
             draggable={!readOnly}
             isSelected={
-              !readOnly && cards.some((c) => selection.some((s) => s.cardId === c.cardId))
+              !readOnly &&
+              cards.some((c) => selection.some((s) => s.cardId === c.cardId))
             }
             onDragStart={
               readOnly
                 ? undefined
                 : (e) => {
-                    e.dataTransfer.setData("application/card", JSON.stringify(topCard));
+                    e.dataTransfer.setData(
+                      "application/card",
+                      JSON.stringify(topCard),
+                    );
                     e.dataTransfer.effectAllowed = "move";
                   }
             }
